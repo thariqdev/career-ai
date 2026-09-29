@@ -35,3 +35,13 @@ class SkillResponse(BaseModel):
     def _alias_text_only(cls, value: Any) -> Any:
         # When built from the ORM, `aliases` is a list of SkillAlias objects.
         return [getattr(item, "alias", item) for item in value]
+
+
+class UserResponse(BaseModel):
+    """Public shape of the (single, hardcoded) User."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+    full_name: str | None
