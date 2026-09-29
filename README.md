@@ -92,7 +92,7 @@ The foundation documents are approved. The basic FastAPI backend skeleton has be
 - `backend/alembic/` — initial Alembic configuration
 - `backend/tests/test_health.py` — health endpoint test
 
-No domain models, migrations, authentication, AI, or frontend exist yet.
+A minimal, intentionally unstyled frontend skeleton now also exists (see "Phase 2 — Frontend Setup" below) — a real design pass is still a separate future task. (This section is otherwise stale — the backend has grown well past this skeleton; see `HANDOFF.md` for the current state.)
 
 ## Proposed Structure
 
@@ -211,6 +211,21 @@ pytest
 ```
 
 This will run the health endpoint test in `tests/test_health.py`. The test suite does not require a running PostgreSQL server.
+
+## Phase 2 — Frontend Setup
+
+A minimal Next.js frontend now exists in `frontend/` (App Router, TypeScript, Tailwind CSS — scaffolded with `create-next-app`). It is **intentionally unstyled**: it exists only to prove the frontend can reach the backend, not as a real UI. A design pass is a separate future task.
+
+```bash
+cd frontend
+npm install
+cp .env.local.example .env.local   # defaults to http://127.0.0.1:8000, adjust if needed
+npm run dev
+```
+
+The dev server runs at `http://localhost:3000`. With the backend also running (`uvicorn app.main:app --reload`, see above), the home page calls `GET /health` and `GET /me` and displays what comes back.
+
+**CORS:** the backend only allows browser requests from `http://localhost:3000` and `http://127.0.0.1:3000` (see `backend/app/main.py`) — a dev-only allow-list, not `"*"`, since there's no auth yet. It will need revisiting once real auth exists.
 
 ## Next Steps
 

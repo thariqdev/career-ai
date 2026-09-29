@@ -13,7 +13,7 @@
 
 ## Current Status (as of 2026-09-29)
 
-🟢 **The core loop, including the CV side, works end to end over HTTP now.** You can claim a skill, prove it with evidence, link the two, ask for a status change, paste a job posting, pull out its requirements, compare them against what you can prove, and see what's missing — all through real web requests, all automatically scoped to the one hardcoded user. You can now also mark a skill present/absent on your CV (`PATCH /skills/{id}/cv-presence`) and read the combined "what I can prove + what's on my CV" view (`GET /skills/{id}/cv-status`) — the last piece of the CV story that was still missing.
+🟢 **The core loop, including the CV side, works end to end over HTTP now — and there's finally a (bare) frontend that can reach it.** You can claim a skill, prove it with evidence, link the two, ask for a status change, paste a job posting, pull out its requirements, compare them against what you can prove, see what's missing, and mark a skill present/absent on your CV — all through real web requests, all automatically scoped to the one hardcoded user. A minimal Next.js page now exists that calls the backend from a real browser and shows the response — no design yet, just proof the two sides can talk to each other.
 
 **Environment blocker resolved — for good, not just for now.** `psycopg2` was being blocked by Windows Smart App Control (confirmed via the Windows Code Integrity event log). The project switched database drivers permanently to `pg8000`, a pure-Python driver with no compiled file for Windows to block. Full detail in `HANDOFF.md` §9.
 
@@ -48,17 +48,19 @@
 | 21 | 2026-09-29 | Built `CVSkillPresence` (model + migration + tests only) | ✅ Done | A new, tiny table that stores one plain fact: "is this skill on my CV?" It's kept completely separate from whether a skill is *verified* — a skill can be proven true but missing from the CV, or listed on the CV without being proven, and this table doesn't care which. No web endpoint for it yet; that's later. Committed and pushed as its own save. |
 | 22 | 2026-09-29 | Built `cv_service` (`combined_status`, `combined_status_for_all`) + tests | ✅ Done | The piece that finally connects "what I can prove" and "what's on my CV" into one answer, with a plain suggestion attached ("add this to your CV" or "remove this unproven claim from your CV"). It only reads — it can't create or change either fact, just report on them together. Tested against every one of the 10 possible combinations by hand. Committed and pushed as its own save. |
 | 23 | 2026-09-29 | Built `PATCH /skills/{id}/cv-presence` and `GET /skills/{id}/cv-status` + schemas + tests, live-checked | ✅ Done | The web doors for the CV pieces above: one endpoint to say "yes/no, this is on my CV" (updates the same record instead of creating duplicates if you say it again), and one to read the combined verified-plus-CV answer for a skill. Walked through the real flow against the live database and cleaned up afterward. **Committed locally only — not pushed**, per the user's new "don't push every task" instruction. |
+| 24 | 2026-09-29 | Started the frontend: a bare Next.js + TypeScript + Tailwind page that calls the backend and shows the answer, plus CORS on the backend so a browser is allowed to make that call | ✅ Done | The very first piece of the actual website, on purpose kept ugly and simple — its only job is to prove a real webpage can talk to the backend. It loads, asks the backend "are you healthy?" and "who am I?", and shows whatever comes back. Checked that the backend still works exactly as before, that the new frontend code compiles with no errors, and that a real request from the browser's address (`localhost:3000`) is actually let through by the backend. Couldn't take an actual screenshot (no browser tool available in this session), so double-checked everything else that could be checked without one. **Committed locally only — not pushed.** |
 
 ---
 
 ## Pending / Next Up
 
 Remaining backlog, roughly in likely order:
+- A real design pass on the frontend (the current page is deliberately bare/unstyled)
+- Actual frontend pages/features beyond the one proof page (nothing else calls the backend yet)
 - A list-all-my-cv-statuses endpoint (`cv_service.combined_status_for_all` exists but has no route yet — only the single-skill read does)
 - Real LLM-backed requirement extractor (replacing the safe placeholder)
 - `LearningResource`, `LearningPlan`, `LearningProgress` (the learning system)
 - `DELETE` / update endpoints across the API (none exist yet anywhere)
-- Phase 2: the Next.js frontend (not started)
 
 ---
 
