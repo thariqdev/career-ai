@@ -37,7 +37,7 @@
 │    PostgreSQL + SQLAlchemy  │  │   LLM API client        │
 │  - Source of truth          │  │   Structured outputs    │
 │  - Evidence & verification  │  │   Prompt templates      │
-│  - Job descriptions & gaps  │  │   Parsing & suggestions │
+│  - Requirements & results   │  │   Parsing & suggestions │
 │  - Learning plans           │  │   No authority          │
 └─────────────────────────────┘  └─────────────────────────┘
 ```
@@ -67,7 +67,7 @@
   - User profile, skills, projects, work experience, education
   - Evidence records and verification status
   - Job descriptions and extracted requirements
-  - Comparison results and skill gaps
+  - Comparison results (skill gaps are derived from them, not stored)
   - Learning plans and progress
   - CV skill presence
 
@@ -102,11 +102,13 @@
 | `JobDescription` | Raw text plus extracted structured requirements. |
 | `JobRequirement` | A single skill/capability demanded by a job description, normalized to a canonical skill. |
 | `ComparisonResult` | Mapping of a requirement to the user's verification status, CV status, and reasoning. |
-| `SkillGap` | A requirement categorized as `PARTIAL`, `PROVISIONAL`, or `NOT_VERIFIED`. |
+| `SkillGap` | **A derived view, not a stored table.** The latest `ComparisonResult` per requirement whose status is not `VERIFIED` (i.e. `PARTIAL`, `PROVISIONAL`, or `NOT_VERIFIED`), computed by `comparison_service.skill_gaps`. Not stored because it would duplicate `ComparisonResult` and go stale as soon as evidence is added. |
 | `LearningResource` | A recommended official doc, video, or course with mode. |
 | `LearningPlan` | A user-created plan linking skill gaps to resources. |
 | `LearningProgress` | Explicitly recorded progress toward a learning plan. |
 | `CVSkillPresence` | Whether a verified skill appears on the user's CV. |
+
+> **Why `SkillGap` is derived:** `ComparisonResult` rows are append-only snapshots, so the full history is already stored. A "gap" is just the current answer to "which requirements of this job am I not yet verified for?" — the latest result per requirement, minus `VERIFIED`. A dedicated gap table could only copy that information and would go stale. If gap-specific state is ever needed (priority, dismissed, notes), a table can be added later for that state alone.
 
 ## 5. Verification Statuses
 
@@ -200,6 +202,7 @@ PostgreSQL
 4. The comparison engine looks up the user's `UserSkill` records and linked evidence.
 5. Status is determined by the verification layer, not by keyword presence.
 6. Results include evidence references so the UI can explain the decision.
+7. Skill gaps are derived on demand from the latest result per requirement (status not `VERIFIED`); they are never stored and reading them never triggers a new comparison.
 
 ## 11. AI / LLM Integration
 

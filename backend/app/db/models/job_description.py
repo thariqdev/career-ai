@@ -31,3 +31,6 @@ class JobDescription(Base):
     )
 
     user: Mapped["User"] = relationship("User", back_populates="job_descriptions")
+    requirements: Mapped[list["JobRequirement"]] = relationship(
+        "JobRequirement", back_populates="job_description"
+    )

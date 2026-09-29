@@ -87,6 +87,7 @@ The foundation documents are approved. The basic FastAPI backend skeleton has be
 - `backend/app/main.py` — FastAPI entry point
 - `backend/app/config.py` — environment configuration
 - `backend/app/api/health.py` — `GET /health` endpoint
+- `backend/app/api/skills.py` — `/skills` endpoints (create, list, resolve, add alias); `backend/app/api/errors.py` maps domain errors to HTTP statuses
 - `backend/app/db/base.py` — SQLAlchemy engine/session/base
 - `backend/alembic/` — initial Alembic configuration
 - `backend/tests/test_health.py` — health endpoint test
@@ -179,6 +180,29 @@ Expected response:
   "status": "ok"
 }
 ```
+
+Skills endpoints (skills are a shared taxonomy; there is no authentication yet):
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /skills` | Create a canonical skill (`{"name": "...", "category": "..."}`) |
+| `GET /skills` | List skills ordered by name |
+| `GET /skills/resolve?text=...` | Look up the skill a text refers to (`404` if unknown; never creates anything) |
+| `POST /skills/{skill_id}/aliases` | Add an alias to a skill (`{"alias": "..."}`) |
+
+`GET /me` returns the single hardcoded user this system runs as (created automatically on first call).
+
+Job-description endpoints (all scoped to that one user automatically — no `user_id` in any request):
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /job-descriptions` | Paste a job description (`{"raw_text": "..."}`) |
+| `GET /job-descriptions/{id}` | Read it back, with its requirements |
+| `POST /job-descriptions/{id}/extract` | Extract requirements from the text (currently always returns none — no real LLM extractor exists yet) |
+| `POST /job-descriptions/{id}/compare` | Compare its requirements against your verified skills |
+| `GET /job-descriptions/{id}/gaps` | The requirements you're not yet `VERIFIED` for |
+
+Interactive API docs are served at `http://127.0.0.1:8000/docs`.
 
 ### 5. Run tests
 
