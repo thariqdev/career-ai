@@ -44,6 +44,9 @@ class UserSkill(Base):
     evidence_links: Mapped[list["UserSkillEvidence"]] = relationship(
         "UserSkillEvidence", back_populates="user_skill"
     )
+    comparison_results: Mapped[list["ComparisonResult"]] = relationship(
+        "ComparisonResult", back_populates="user_skill"
+    )
 
 
 class UserSkillEvidence(Base):
