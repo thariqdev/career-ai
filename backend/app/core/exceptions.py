@@ -58,6 +58,16 @@ class SkillNameCollisionError(DomainError):
         )
 
 
+class RequirementsAlreadyExistError(DomainError):
+    """Extraction was refused because the job description already has requirements."""
+
+    def __init__(self, job_description_id: int) -> None:
+        super().__init__(
+            f"Job description {job_description_id} already has requirements; "
+            "extraction was not run again."
+        )
+
+
 class AmbiguousSkillMatchError(DomainError):
     """The text matched more than one distinct Skill, so no single answer is safe."""
 
