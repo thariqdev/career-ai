@@ -172,7 +172,7 @@ class UserSkillCreate(BaseModel):
 
 
 class UserSkillResponse(BaseModel):
-    """Public shape of a UserSkill claim; `skill_name` is pulled from the relationship."""
+    """Public shape of a UserSkill claim; `skill_name`/`evidence_ids` are pulled from relationships."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -181,15 +181,18 @@ class UserSkillResponse(BaseModel):
     skill_name: str
     status: str
     notes: str | None
+    evidence_ids: list[int]
     created_at: datetime
     updated_at: datetime
 
     @model_validator(mode="before")
     @classmethod
-    def _skill_name_from_relationship(cls, data: Any) -> Any:
-        # Same reason as JobRequirementResponse.skill_name: `skill_name` has no ORM
-        # attribute counterpart (UserSkill has `.skill`, not `.skill_name`), so a
-        # per-field from_attributes lookup would fail before a field_validator ran.
+    def _skill_name_and_evidence_ids_from_relationships(cls, data: Any) -> Any:
+        # Same reason as JobRequirementResponse.skill_name and
+        # ComparisonResultResponse.evidence_ids: neither `skill_name` (UserSkill has
+        # `.skill`, not `.skill_name`) nor `evidence_ids` (UserSkill has
+        # `.evidence_links`, not `.evidence_ids`) has an ORM attribute counterpart, so
+        # a per-field from_attributes lookup would fail before a field_validator ran.
         if isinstance(data, dict):
             return data
         return {
@@ -198,6 +201,7 @@ class UserSkillResponse(BaseModel):
             "skill_name": data.skill.name,
             "status": data.status,
             "notes": data.notes,
+            "evidence_ids": [link.evidence_id for link in data.evidence_links],
             "created_at": data.created_at,
             "updated_at": data.updated_at,
         }

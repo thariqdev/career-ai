@@ -68,3 +68,25 @@ export type Gap = {
   requirement: JobRequirement;
   result: ComparisonResult;
 };
+
+// Matches backend UserSkillResponse.
+export type UserSkill = {
+  id: number;
+  skill_id: number;
+  skill_name: string;
+  status: string;
+  notes: string | null;
+  evidence_ids: number[];
+  created_at: string;
+  updated_at: string;
+};
+
+// Matches backend EvidenceResponse.
+export type Evidence = {
+  id: number;
+  evidence_type: string;
+  title: string;
+  description: string | null;
+  url: string | null;
+  created_at: string;
+};

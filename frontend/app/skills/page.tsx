@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import type { CVStatus, CVStatusResponse, Skill } from "@/lib/types";
@@ -153,7 +154,11 @@ export default function SkillsPage() {
             <tbody>
               {state.rows.map((row) => (
                 <tr key={row.skill.id} className="border-b border-line">
-                  <td className="py-2 text-ink">{row.skill.name}</td>
+                  <td className="py-2 text-ink">
+                    <Link href={`/skills/${row.skill.id}`} className="hover:underline">
+                      {row.skill.name}
+                    </Link>
+                  </td>
                   <td className="py-2 text-ink-soft">{row.skill.category ?? "—"}</td>
                   <td className="py-2">
                     <StatusBadge status={row.cvStatus.knowledge_status} />
