@@ -233,3 +233,57 @@ class EvidenceLinkCreate(BaseModel):
 class StatusUpdate(BaseModel):
     # Validated against the real VerificationStatus enum by Pydantic itself.
     status: VerificationStatus
+
+
+class CVPresenceUpdate(BaseModel):
+    present: bool
+
+
+class CVPresenceResponse(BaseModel):
+    """Public shape of a CVSkillPresence; `skill_name` is pulled from the relationship."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    skill_id: int
+    skill_name: str
+    present: bool
+    updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _skill_name_from_relationship(cls, data: Any) -> Any:
+        # Same reason as UserSkillResponse.skill_name: `skill_name` has no ORM attribute
+        # counterpart (CVSkillPresence has `.skill`, not `.skill_name`).
+        if isinstance(data, dict):
+            return data
+        return {
+            "skill_id": data.skill_id,
+            "skill_name": data.skill.name,
+            "present": data.present,
+            "updated_at": data.updated_at,
+        }
+
+
+class CVStatusResponse(BaseModel):
+    """One cv_service.CombinedSkillStatus, reshaped for the API."""
+
+    skill_id: int
+    skill_name: str
+    knowledge_status: str | None
+    cv_status: str
+    recommendation: str | None
+
+    @classmethod
+    def from_combined_status(cls, combined: Any) -> "CVStatusResponse":
+        # cv_service.CombinedSkillStatus is a plain dataclass, not an ORM model, so this
+        # is built field-by-field rather than via from_attributes (same pattern as
+        # RejectedRequirementResponse.from_rejection / GapResponse.from_gap).
+        return cls(
+            skill_id=combined.skill.id,
+            skill_name=combined.skill.name,
+            knowledge_status=(
+                combined.knowledge_status.value if combined.knowledge_status is not None else None
+            ),
+            cv_status=combined.cv_status.value,
+            recommendation=combined.recommendation,
+        )

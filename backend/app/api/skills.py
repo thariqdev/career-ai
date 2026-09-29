@@ -5,16 +5,30 @@ after a successful service call. If the service raises a DomainError the route n
 reaches commit; the session closes and the transaction rolls back, and the app-wide
 handler in errors.py turns the error into an HTTP response.
 
-Skills are a shared taxonomy, not per-user data, so nothing here is user-scoped.
+Skills themselves are a shared taxonomy, not per-user data, so most routes here are not
+user-scoped. The cv-presence/cv-status routes are the exception: a skill's presence on
+*your* CV is per-user, so those two use Depends(get_current_user).
+
+Setting CV presence is an UPSERT, not check-then-409 (contrast with user_skills.py's
+claim_skill): restating a fact about your own CV isn't a conflict the way a duplicate
+skill claim is, and CVSkillPresence already guarantees at most one row per (user, skill).
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.models import AliasCreate, SkillCreate, SkillResponse
-from app.core.services import skill_service
-from app.db.models import Skill
-from app.dependencies import get_db
+from app.core.models import (
+    AliasCreate,
+    CVPresenceResponse,
+    CVPresenceUpdate,
+    CVStatusResponse,
+    SkillCreate,
+    SkillResponse,
+)
+from app.core.services import cv_service, skill_service
+from app.db.models import CVSkillPresence, Skill, User
+from app.dependencies import get_current_user, get_db
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -51,3 +65,44 @@ def add_alias(skill_id: int, payload: AliasCreate, db: Session = Depends(get_db)
     skill_service.add_alias(db, skill, payload.alias)
     db.commit()
     return skill
+
+
+@router.patch("/{skill_id}/cv-presence", response_model=CVPresenceResponse)
+def set_cv_presence(
+    skill_id: int,
+    payload: CVPresenceUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CVSkillPresence:
+    skill = skill_service.get_skill(db, skill_id)
+    if skill is None:
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found.")
+
+    presence = db.scalar(
+        select(CVSkillPresence).where(
+            CVSkillPresence.user_id == user.id, CVSkillPresence.skill_id == skill_id
+        )
+    )
+    if presence is None:
+        presence = CVSkillPresence(user=user, skill=skill, present=payload.present)
+        db.add(presence)
+    else:
+        presence.present = payload.present
+    db.commit()
+    return presence
+
+
+@router.get("/{skill_id}/cv-status", response_model=CVStatusResponse)
+def read_cv_status(
+    skill_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CVStatusResponse:
+    skill = skill_service.get_skill(db, skill_id)
+    if skill is None:
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found.")
+    # Read-only: no commit. cv_service.combined_status only reads (same reasoning as
+    # GET .../gaps in job_descriptions.py), and get_current_user already committed the
+    # one write this request could ever need (creating the bootstrap user, if needed).
+    combined = cv_service.combined_status(db, user, skill)
+    return CVStatusResponse.from_combined_status(combined)
