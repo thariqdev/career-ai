@@ -4,7 +4,7 @@
 > **Current phase:** Phase 1 — Backend Foundation (in progress)  
 > **Status:** Foundation documents approved. Basic FastAPI backend skeleton created. Ten SQLAlchemy models now exist — `Skill`, `SkillAlias`, `User`, `Project`, `WorkExperience`, `Education`, `Evidence`, `UserSkill`, `UserSkillEvidence`, `JobDescription` — with migrations applied to a live local PostgreSQL database. No business logic, AI, auth, or frontend yet.
 >
-> **Note:** the psycopg2 / Application Control blocker described in §9 below no longer reproduces on this machine — `psycopg2-binary` imports fine and `database.py` connects to a live local PostgreSQL instance. Leaving §9 as historical context in case it recurs on a different machine.
+> **Note (updated 2026-09-29):** the psycopg2 / Application Control blocker described in §9 below **did recur** on this machine — Windows Smart App Control started blocking `psycopg2`'s compiled `_psycopg....pyd` file (confirmed via the `Microsoft-Windows-CodeIntegrity/Operational` event log, not a guess). Rather than fight that policy, the project **permanently switched database drivers** from `psycopg2-binary` to `pg8000` (a pure-Python PostgreSQL driver with no compiled extension, so there's nothing for the policy to block). See §9 for full detail. `psycopg2` is no longer a dependency of this project at all.
 
 ---
 
@@ -404,11 +404,9 @@ CREATE TABLE evidence (
 ## 9. Environment-Specific Notes
 
 - The local `.venv` was created with **Python 3.14.2**, but `pyproject.toml` requires `>=3.12,<3.13`. This mismatch hasn't caused problems in practice (tests and migrations run fine), but it's still worth recreating the venv with 3.12 at some point for strict reproducibility.
-- The project uses `psycopg2-binary` as the PostgreSQL driver.
-- **Update 2026-09-23:** on the machine currently used for development, `psycopg2` imports without issue and `database.py` connects to a real local PostgreSQL instance (`career_ai` database). The Application Control block described below was **not** reproduced here.
-- Historical note (kept in case this recurs on a different machine): a previous session on a different Windows environment reported `psycopg2` import being blocked by an Application Control policy, meaning any code path creating the real engine would fail there. If that happens again:
-  1. Run on a system where `psycopg2-binary` works, or
-  2. Switch to `pg8000` (pure-Python driver).
+- **The project uses `pg8000` as its PostgreSQL driver — `psycopg2` is not a dependency at all anymore (switched 2026-09-29).** `DATABASE_URL` uses the scheme `postgresql+pg8000://...` (both `.env` and `.env.example` updated; `backend/requirements.txt` lists `pg8000`, not `psycopg2-binary`). Neither `database.py` nor `alembic/env.py` names a driver directly — both just read `DATABASE_URL` and hand it to SQLAlchemy — so this swap touched no application code, only the connection string and the installed dependency.
+- **Why the switch happened, and why it's permanent, not a workaround:** on 2026-09-23 `psycopg2` was working fine on this machine. On 2026-09-28–29 it started failing with `ImportError: DLL load failed while importing _psycopg: An Application Control policy has blocked this file` — reproduced three times in a row, not a fluke. The Windows `Microsoft-Windows-CodeIntegrity/Operational` event log confirmed the exact cause: **Windows Smart App Control** (`VerifiedAndReputablePolicyState = 1`, enforced) blocking `psycopg2`'s compiled native extension (`_psycopg.cp314-win_amd64.pyd`) for not meeting its signing/reputation requirements. Smart App Control gives end users **no per-file exception mechanism** — the only Windows-side fix is to turn it off entirely, which is a one-way action (can't be turned back on without reinstalling Windows). Rather than take that trade-off, the project switched to `pg8000`, a pure-Python driver with no compiled extension — there's nothing left for an Application Control policy to block, on this machine or any other. This was verified against the live database (`alembic check`, full `pytest`, and a live `uvicorn` run doing a real `POST`/`GET` round trip) after the switch.
+- If a similar Application-Control-style block ever appears again for some *other* compiled dependency, the same reasoning applies: prefer a pure-Python alternative over weakening a Windows security feature, when one exists.
 - The real `.env` file exists and is gitignored. Do not commit it.
 
 ---
