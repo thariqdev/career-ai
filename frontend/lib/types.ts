@@ -28,3 +28,43 @@ export type User = {
   email: string;
   full_name: string | null;
 };
+
+// Matches backend JobDescriptionResponse/JobRequirementResponse/ExtractionResponse.
+export type JobRequirement = {
+  id: number;
+  requirement_text: string;
+  is_required: boolean;
+  skill_id: number | null;
+  skill_name: string | null;
+  created_at: string;
+};
+
+export type JobDescription = {
+  id: number;
+  title: string | null;
+  company: string | null;
+  source_url: string | null;
+  raw_text: string;
+  created_at: string;
+  requirements: JobRequirement[];
+};
+
+export type ExtractionResponse = {
+  accepted: JobRequirement[];
+  rejected: { text: string; reason: string }[];
+};
+
+export type ComparisonResult = {
+  id: number;
+  job_requirement_id: number;
+  knowledge_status: string;
+  reasoning: string;
+  evidence_ids: number[];
+  created_at: string;
+};
+
+// Matches backend GapResponse.
+export type Gap = {
+  requirement: JobRequirement;
+  result: ComparisonResult;
+};

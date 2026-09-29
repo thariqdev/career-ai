@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
+import StatusBadge from "@/components/StatusBadge";
 import type { CVStatus, CVStatusResponse, Skill } from "@/lib/types";
 
 // One row = one Skill plus its combined knowledge/CV status. Fetched separately
@@ -14,30 +15,11 @@ type ListState =
   | { status: "loaded"; rows: Row[] }
   | { status: "error"; message: string };
 
-// No design token was given for "no claim at all" (it's not one of the four real
-// knowledge statuses) or for the three cv_status values — those are my own small
-// choices, not specified by the task: a neutral ink-soft/line badge for "no claim",
-// accent (teal) for a skill actually on the CV, warm (amber) for "missing from the
-// CV" since that's the actionable one, and neutral again for "not present".
-function knowledgeBadgeClasses(status: string | null): string {
-  switch (status) {
-    case "verified":
-      return "bg-verified-bg text-verified";
-    case "partial":
-      return "bg-partial-bg text-partial";
-    case "provisional":
-      return "bg-provisional-bg text-provisional";
-    case "not_verified":
-      return "bg-not-verified-bg text-not-verified";
-    default:
-      return "bg-line text-ink-soft";
-  }
-}
-
-function knowledgeBadgeLabel(status: string | null): string {
-  return status === null ? "no claim" : status.replace("_", " ");
-}
-
+// No design token was given for the three cv_status values — this is my own
+// small choice, not specified by the task: accent (teal) for a skill actually
+// on the CV, warm (amber) for "missing from the CV" since that's the
+// actionable one, and neutral for "not present". (The knowledge-status badge
+// itself now lives in components/StatusBadge.tsx, shared with other pages.)
 function cvBadgeClasses(status: CVStatus): string {
   switch (status) {
     case "present":
@@ -174,11 +156,7 @@ export default function SkillsPage() {
                   <td className="py-2 text-ink">{row.skill.name}</td>
                   <td className="py-2 text-ink-soft">{row.skill.category ?? "—"}</td>
                   <td className="py-2">
-                    <span
-                      className={`rounded px-2 py-0.5 font-mono text-xs ${knowledgeBadgeClasses(row.cvStatus.knowledge_status)}`}
-                    >
-                      {knowledgeBadgeLabel(row.cvStatus.knowledge_status)}
-                    </span>
+                    <StatusBadge status={row.cvStatus.knowledge_status} />
                   </td>
                   <td className="py-2">
                     <button

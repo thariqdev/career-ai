@@ -226,7 +226,8 @@ npm run dev
 The dev server runs at `http://localhost:3000`. With the backend also running (`uvicorn app.main:app --reload`, see above):
 
 - `/` is still the original proof page: it calls `GET /health` and `GET /me` and displays what comes back.
-- **`/skills` is the first real, working page.** It lists every skill from `GET /skills`, shows each one's verification status and CV-presence status as colored badges, lets you click a CV badge to flip it (`PATCH /skills/{id}/cv-presence`), and has a small form to add a new skill (`POST /skills`) — duplicate or blank names show the backend's own error message.
+- **`/skills`** lists every skill from `GET /skills`, shows each one's verification status and CV-presence status as colored badges, lets you click a CV badge to flip it (`PATCH /skills/{id}/cv-presence`), and has a small form to add a new skill (`POST /skills`) — duplicate or blank names show the backend's own error message.
+- **`/job-descriptions`** paste a job posting's text and it walks through the real backend pipeline in order: `POST /job-descriptions` → `POST .../extract` → `POST .../compare` → `GET .../gaps`, showing a step-by-step status. Right now `.../extract` always returns zero requirements (there's no real AI reader wired in yet, only a safe placeholder that refuses to guess) — the page says this plainly instead of treating it as an error. It's single-shot: there's no backend endpoint to list past job descriptions yet, so "analyze another" just resets the form.
 
 **CORS:** the backend only allows browser requests from `http://localhost:3000` and `http://127.0.0.1:3000` (see `backend/app/main.py`) — a dev-only allow-list, not `"*"`, since there's no auth yet. It will need revisiting once real auth exists.
 
