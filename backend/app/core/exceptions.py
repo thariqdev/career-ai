@@ -35,3 +35,34 @@ class InsufficientEvidenceError(DomainError):
             f"UserSkill {user_skill_id} cannot be {requested_status}: "
             "no linked evidence. Not enough verified information."
         )
+
+
+class EmptySkillTextError(DomainError):
+    """A skill name or alias was blank or whitespace-only."""
+
+    def __init__(self) -> None:
+        super().__init__("Skill name or alias must not be blank.")
+
+
+class SkillNameCollisionError(DomainError):
+    """The text already belongs to an existing skill name or alias.
+
+    Skill names and aliases share one namespace, so a new name or alias may not
+    normalize to the same text as any existing one.
+    """
+
+    def __init__(self, text: str, existing_skill_name: str) -> None:
+        super().__init__(
+            f'"{text}" already belongs to the skill "{existing_skill_name}" '
+            "(skill names and aliases share one namespace)."
+        )
+
+
+class AmbiguousSkillMatchError(DomainError):
+    """The text matched more than one distinct Skill, so no single answer is safe."""
+
+    def __init__(self, text: str, skill_names: list[str]) -> None:
+        super().__init__(
+            f'"{text}" is ambiguous: it matches multiple skills ({", ".join(sorted(skill_names))}). '
+            "Fix the taxonomy so it maps to exactly one."
+        )
