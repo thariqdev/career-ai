@@ -18,6 +18,7 @@ takes a user_id.
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.ai.client import RequirementExtractor
@@ -64,6 +65,24 @@ def create_job_description(
     db.add(job_description)
     db.commit()
     return job_description
+
+
+@router.get("", response_model=list[JobDescriptionResponse])
+def list_job_descriptions(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[JobDescription]:
+    # Read-only: no commit needed beyond what get_current_user already did.
+    # id.desc() breaks ties when created_at is identical (e.g. two inserts within the
+    # same clock tick — SQLite's CURRENT_TIMESTAMP only has second resolution), so
+    # "most recent first" stays deterministic even then.
+    return list(
+        db.scalars(
+            select(JobDescription)
+            .where(JobDescription.user_id == user.id)
+            .order_by(JobDescription.created_at.desc(), JobDescription.id.desc())
+        )
+    )
 
 
 @router.get("/{job_description_id}", response_model=JobDescriptionResponse)

@@ -197,7 +197,8 @@ Job-description endpoints (all scoped to that one user automatically — no `use
 | Endpoint | Purpose |
 |----------|---------|
 | `POST /job-descriptions` | Paste a job description (`{"raw_text": "..."}`) |
-| `GET /job-descriptions/{id}` | Read it back, with its requirements |
+| `GET /job-descriptions` | List all of your job descriptions, most recently created first |
+| `GET /job-descriptions/{id}` | Read one back, with its requirements |
 | `POST /job-descriptions/{id}/extract` | Extract requirements from the text (currently always returns none — no real LLM extractor exists yet) |
 | `POST /job-descriptions/{id}/compare` | Compare its requirements against your verified skills |
 | `GET /job-descriptions/{id}/gaps` | The requirements you're not yet `VERIFIED` for |
@@ -225,7 +226,7 @@ npm run dev
 
 The dev server runs at `http://localhost:3000`. With the backend also running (`uvicorn app.main:app --reload`, see above):
 
-- `/` is still the original proof page: it calls `GET /health` and `GET /me` and displays what comes back.
+- **`/` is the real Dashboard** now (the old `/health`+`/me` proof page is gone — `GET /me`'s result is still visible via the header's email chip). It shows three numbers (verified skills, open gaps across every job description, job descriptions analyzed), the most recent comparison's gaps inline, and a list of CV recommendations pulled from every skill's combined status.
 - **`/skills`** lists every skill from `GET /skills`, shows each one's verification status and CV-presence status as colored badges, lets you click a CV badge to flip it (`PATCH /skills/{id}/cv-presence`), and has a small form to add a new skill (`POST /skills`) — duplicate or blank names show the backend's own error message.
 - **`/job-descriptions`** paste a job posting's text and it walks through the real backend pipeline in order: `POST /job-descriptions` → `POST .../extract` → `POST .../compare` → `GET .../gaps`, showing a step-by-step status. Right now `.../extract` always returns zero requirements (there's no real AI reader wired in yet, only a safe placeholder that refuses to guess) — the page says this plainly instead of treating it as an error. It's single-shot: there's no backend endpoint to list past job descriptions yet, so "analyze another" just resets the form.
 - **`/skills/{id}`** click a skill's name on `/skills` to land here. It shows the skill's CV/knowledge status, lets you claim it (`POST /user-skills`), attach and link real evidence to it (`POST /evidence`, `POST /user-skills/{id}/evidence-links`), and change its verification status (`POST /user-skills/{id}/status`) with four real buttons — no client-side guessing about whether a status change is allowed. Try clicking "verified" with no evidence linked: the backend genuinely rejects it (409, "Not enough verified information"), and the page shows that exact message. Link a piece of evidence first and the same click succeeds.

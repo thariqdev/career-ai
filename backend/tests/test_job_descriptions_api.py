@@ -81,6 +81,43 @@ def _session(engine: Engine) -> Session:
     return Session(engine, autoflush=False)
 
 
+# --- list -------------------------------------------------------------------------
+
+
+def test_list_is_empty_on_a_fresh_database(client: TestClient) -> None:
+    response = client.get("/job-descriptions")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_returns_most_recent_first(client: TestClient) -> None:
+    first = _create_job(client, "First posting.")
+    second = _create_job(client, "Second posting.")
+    third = _create_job(client, "Third posting.")
+
+    response = client.get("/job-descriptions")
+
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.json()]
+    assert ids == [third["id"], second["id"], first["id"]]
+
+
+def test_list_is_scoped_to_the_current_user(client: TestClient, engine: Engine) -> None:
+    mine = _create_job(client, "Mine.")
+    with _session(engine) as db:
+        other_user = User(email="other@example.com")
+        other_job = JobDescription(user=other_user, raw_text="Not yours.")
+        db.add_all([other_user, other_job])
+        db.commit()
+
+    response = client.get("/job-descriptions")
+
+    assert response.status_code == 200
+    ids = [item["id"] for item in response.json()]
+    assert ids == [mine["id"]]
+
+
 # --- create / read -------------------------------------------------------------
 
 
