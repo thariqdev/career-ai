@@ -13,11 +13,11 @@
 
 ## Current Status (as of 2026-09-29)
 
-🟢 **The core loop works end to end over HTTP now, and everything is committed and pushed.** You can claim a skill, prove it with evidence, link the two, ask for a status change, paste a job posting, pull out its requirements, compare them against what you can prove, and see what's missing — all through real web requests, all automatically scoped to the one hardcoded user. `CVSkillPresence` also now exists as a model, and `cv_service` can now combine it with your verification status into one answer (e.g. "you're verified in Docker but it's not on your CV") — but there's still no way to reach either over the web, and still no way to actually *set* a skill's CV presence at all.
+🟢 **The core loop, including the CV side, works end to end over HTTP now.** You can claim a skill, prove it with evidence, link the two, ask for a status change, paste a job posting, pull out its requirements, compare them against what you can prove, and see what's missing — all through real web requests, all automatically scoped to the one hardcoded user. You can now also mark a skill present/absent on your CV (`PATCH /skills/{id}/cv-presence`) and read the combined "what I can prove + what's on my CV" view (`GET /skills/{id}/cv-status`) — the last piece of the CV story that was still missing.
 
 **Environment blocker resolved — for good, not just for now.** `psycopg2` was being blocked by Windows Smart App Control (confirmed via the Windows Code Integrity event log). The project switched database drivers permanently to `pg8000`, a pure-Python driver with no compiled file for Windows to block. Full detail in `HANDOFF.md` §9.
 
-**Git history is now clean.** The work that had piled up uncommitted was split into 12 proper, one-feature-per-commit commits (reconstructed from a single lump commit, verified byte-identical before and after), plus one more for `CVSkillPresence`. `main` is pushed and up to date with `origin/main`.
+**Housekeeping:** the last task (`PATCH`/`GET .../cv-presence`/`cv-status`) is **committed locally but not pushed** — the user asked to stop pushing automatically after every task; commits from here on stay local until a push is explicitly requested.
 
 ---
 
@@ -47,14 +47,14 @@
 | 20 | 2026-09-29 | Split all the uncommitted work into 12 proper commits, verified the rebuilt history matched byte-for-byte before pushing | ✅ Done | Everything from task 6 onward had piled up as one giant unsaved block. Rewrote it into 12 separate, clearly-labeled saves (one per feature), double-checked after every single one that the save count actually went up, and proved mathematically that no code was lost or changed in the process — just reorganized into a readable history. |
 | 21 | 2026-09-29 | Built `CVSkillPresence` (model + migration + tests only) | ✅ Done | A new, tiny table that stores one plain fact: "is this skill on my CV?" It's kept completely separate from whether a skill is *verified* — a skill can be proven true but missing from the CV, or listed on the CV without being proven, and this table doesn't care which. No web endpoint for it yet; that's later. Committed and pushed as its own save. |
 | 22 | 2026-09-29 | Built `cv_service` (`combined_status`, `combined_status_for_all`) + tests | ✅ Done | The piece that finally connects "what I can prove" and "what's on my CV" into one answer, with a plain suggestion attached ("add this to your CV" or "remove this unproven claim from your CV"). It only reads — it can't create or change either fact, just report on them together. Tested against every one of the 10 possible combinations by hand. Committed and pushed as its own save. |
+| 23 | 2026-09-29 | Built `PATCH /skills/{id}/cv-presence` and `GET /skills/{id}/cv-status` + schemas + tests, live-checked | ✅ Done | The web doors for the CV pieces above: one endpoint to say "yes/no, this is on my CV" (updates the same record instead of creating duplicates if you say it again), and one to read the combined verified-plus-CV answer for a skill. Walked through the real flow against the live database and cleaned up afterward. **Committed locally only — not pushed**, per the user's new "don't push every task" instruction. |
 
 ---
 
 ## Pending / Next Up
 
 Remaining backlog, roughly in likely order:
-- A way to actually *set* `CVSkillPresence.present` (no service or endpoint writes one yet — everything so far only reads)
-- An API endpoint exposing `cv_service`'s combined view over HTTP
+- A list-all-my-cv-statuses endpoint (`cv_service.combined_status_for_all` exists but has no route yet — only the single-skill read does)
 - Real LLM-backed requirement extractor (replacing the safe placeholder)
 - `LearningResource`, `LearningPlan`, `LearningProgress` (the learning system)
 - `DELETE` / update endpoints across the API (none exist yet anywhere)
