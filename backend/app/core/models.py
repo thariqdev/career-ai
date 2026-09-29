@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
+from app.db.models.enums import EvidenceType, VerificationStatus
+
 
 class HealthResponse(BaseModel):
     status: str
@@ -163,3 +165,71 @@ class GapResponse(BaseModel):
             requirement=JobRequirementResponse.model_validate(gap.requirement),
             result=ComparisonResultResponse.model_validate(gap.result),
         )
+
+
+class UserSkillCreate(BaseModel):
+    skill_id: int
+
+
+class UserSkillResponse(BaseModel):
+    """Public shape of a UserSkill claim; `skill_name` is pulled from the relationship."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    skill_id: int
+    skill_name: str
+    status: str
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def _skill_name_from_relationship(cls, data: Any) -> Any:
+        # Same reason as JobRequirementResponse.skill_name: `skill_name` has no ORM
+        # attribute counterpart (UserSkill has `.skill`, not `.skill_name`), so a
+        # per-field from_attributes lookup would fail before a field_validator ran.
+        if isinstance(data, dict):
+            return data
+        return {
+            "id": data.id,
+            "skill_id": data.skill_id,
+            "skill_name": data.skill.name,
+            "status": data.status,
+            "notes": data.notes,
+            "created_at": data.created_at,
+            "updated_at": data.updated_at,
+        }
+
+
+class EvidenceCreate(BaseModel):
+    # Validated against the real EvidenceType enum by Pydantic itself: a bad value is a
+    # 422 shape error before any route code runs, same idea as StatusUpdate.status below.
+    evidence_type: EvidenceType
+    title: str
+    description: str | None = None
+    url: str | None = None
+    work_experience_id: int | None = None
+    project_id: int | None = None
+    education_id: int | None = None
+
+
+class EvidenceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    evidence_type: str
+    title: str
+    description: str | None
+    url: str | None
+    created_at: datetime
+
+
+class EvidenceLinkCreate(BaseModel):
+    evidence_id: int
+
+
+class StatusUpdate(BaseModel):
+    # Validated against the real VerificationStatus enum by Pydantic itself.
+    status: VerificationStatus
