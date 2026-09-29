@@ -4,3 +4,4 @@ sqlalchemy
 pg8000
 alembic
 python-dotenv
+anthropic

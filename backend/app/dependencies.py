@@ -1,9 +1,11 @@
+import os
 from collections.abc import Generator
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.ai.client import RequirementExtractor
+from app.ai.providers.claude_extractor import ClaudeRequirementExtractor
 from app.ai.providers.stub_extractor import NoOpRequirementExtractor
 from app.core.services import user_service
 from app.db.models import User
@@ -46,5 +48,14 @@ def get_current_user(db: Session = Depends(get_db)) -> User:
 
 
 def get_requirement_extractor() -> RequirementExtractor:
-    """The extractor endpoints use by default: the safe placeholder (see stub_extractor)."""
+    """Real Claude extractor if ANTHROPIC_API_KEY is set, otherwise the safe placeholder.
+
+    This is the single wiring point: no key configured (today's state) behaves
+    identically to before this function existed. Adding a real key later switches on
+    the real extractor with no other code change. ClaudeRequirementExtractor() itself
+    never touches the network or reads the key at construction time (see its own
+    docstring) — only checking os.getenv here happens eagerly, not calling the API.
+    """
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return ClaudeRequirementExtractor()
     return _requirement_extractor

@@ -199,11 +199,13 @@ Job-description endpoints (all scoped to that one user automatically — no `use
 | `POST /job-descriptions` | Paste a job description (`{"raw_text": "..."}`) |
 | `GET /job-descriptions` | List all of your job descriptions, most recently created first |
 | `GET /job-descriptions/{id}` | Read one back, with its requirements |
-| `POST /job-descriptions/{id}/extract` | Extract requirements from the text (currently always returns none — no real LLM extractor exists yet) |
+| `POST /job-descriptions/{id}/extract` | Extract requirements from the text — real (Claude-backed) if `ANTHROPIC_API_KEY` is set, otherwise the safe placeholder that always returns none |
 | `POST /job-descriptions/{id}/compare` | Compare its requirements against your verified skills |
 | `GET /job-descriptions/{id}/gaps` | The requirements you're not yet `VERIFIED` for |
 
 Interactive API docs are served at `http://127.0.0.1:8000/docs`.
+
+**Enabling the real requirement extractor:** by default `.env` has no `ANTHROPIC_API_KEY`, so `/extract` uses the safe placeholder that always returns zero requirements — exactly today's behavior. To turn on the real, Claude-backed extractor, add a real key to `.env` (`ANTHROPIC_API_KEY=sk-ant-...`) and restart the server. Nothing else changes — same endpoint, same request/response shape, same validation rules (a real extractor's output is still just an untrusted proposal; see `requirement_service`).
 
 ### 5. Run tests
 
