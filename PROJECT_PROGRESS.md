@@ -13,11 +13,11 @@
 
 ## Current Status (as of 2026-09-29)
 
-🟢 **The core loop, including the CV side, works end to end over HTTP now — and there's finally a (bare) frontend that can reach it.** You can claim a skill, prove it with evidence, link the two, ask for a status change, paste a job posting, pull out its requirements, compare them against what you can prove, see what's missing, and mark a skill present/absent on your CV — all through real web requests, all automatically scoped to the one hardcoded user. A minimal Next.js page now exists that calls the backend from a real browser and shows the response — no design yet, just proof the two sides can talk to each other.
+🟢 **The core loop, including the CV side, works end to end over HTTP now — and the frontend has its first real page.** You can claim a skill, prove it with evidence, link the two, ask for a status change, paste a job posting, pull out its requirements, compare them against what you can prove, see what's missing, and mark a skill present/absent on your CV — all through real web requests, all automatically scoped to the one hardcoded user. The `/skills` page now does this live in a real browser: lists skills with real status badges, lets you toggle CV presence by clicking, and lets you add a new skill — all wired to the real backend, no fake data.
 
 **Environment blocker resolved — for good, not just for now.** `psycopg2` was being blocked by Windows Smart App Control (confirmed via the Windows Code Integrity event log). The project switched database drivers permanently to `pg8000`, a pure-Python driver with no compiled file for Windows to block. Full detail in `HANDOFF.md` §9.
 
-**Housekeeping:** the last task (`PATCH`/`GET .../cv-presence`/`cv-status`) is **committed locally but not pushed** — the user asked to stop pushing automatically after every task; commits from here on stay local until a push is explicitly requested.
+**Housekeeping:** per the user's standing instruction ("I will commit and push"), nothing in this session has been committed — every change since task 23 is sitting uncommitted in the working tree, left for the user to commit and push themselves.
 
 ---
 
@@ -49,14 +49,15 @@
 | 22 | 2026-09-29 | Built `cv_service` (`combined_status`, `combined_status_for_all`) + tests | ✅ Done | The piece that finally connects "what I can prove" and "what's on my CV" into one answer, with a plain suggestion attached ("add this to your CV" or "remove this unproven claim from your CV"). It only reads — it can't create or change either fact, just report on them together. Tested against every one of the 10 possible combinations by hand. Committed and pushed as its own save. |
 | 23 | 2026-09-29 | Built `PATCH /skills/{id}/cv-presence` and `GET /skills/{id}/cv-status` + schemas + tests, live-checked | ✅ Done | The web doors for the CV pieces above: one endpoint to say "yes/no, this is on my CV" (updates the same record instead of creating duplicates if you say it again), and one to read the combined verified-plus-CV answer for a skill. Walked through the real flow against the live database and cleaned up afterward. **Committed locally only — not pushed**, per the user's new "don't push every task" instruction. |
 | 24 | 2026-09-29 | Started the frontend: a bare Next.js + TypeScript + Tailwind page that calls the backend and shows the answer, plus CORS on the backend so a browser is allowed to make that call | ✅ Done | The very first piece of the actual website, on purpose kept ugly and simple — its only job is to prove a real webpage can talk to the backend. It loads, asks the backend "are you healthy?" and "who am I?", and shows whatever comes back. Checked that the backend still works exactly as before, that the new frontend code compiles with no errors, and that a real request from the browser's address (`localhost:3000`) is actually let through by the backend. Couldn't take an actual screenshot (no browser tool available in this session), so double-checked everything else that could be checked without one. **Committed locally only — not pushed.** |
+| 25 | 2026-09-29 | Built the first real frontend page (`/skills`), a shared site header, and a reusable set of colors/fonts every future page will use | ✅ Done | Before this, the only webpage was a plain proof that the site could reach the backend. Now there's a real page: it shows every skill you've defined, with a colored label for how well you've proven it and another colored label for whether it's on your CV — and clicking that second label toggles it on or off instantly. There's also a small form to add a new skill, which shows the backend's exact complaint if you try a blank or duplicate name. A shared header (site name + menu + your email) now sits above every page automatically. All the colors and fonts are defined in exactly one place instead of being copy-pasted into every page. No backend code changed at all — this task only used doors that already existed. Verified: the frontend builds with zero errors, the backend's 185 tests still all pass untouched, and every real button/toggle on the page was traced by hand against the live backend (create a skill, flip its CV status, trigger the duplicate-name and blank-name error messages) with the responses matching exactly what the page displays. Cleaned up every test row afterward, leaving a pre-existing user account from the user's own earlier testing session untouched. **Left uncommitted — the user will commit and push this themselves.** |
 
 ---
 
 ## Pending / Next Up
 
 Remaining backlog, roughly in likely order:
-- A real design pass on the frontend (the current page is deliberately bare/unstyled)
-- Actual frontend pages/features beyond the one proof page (nothing else calls the backend yet)
+- Dashboard page (`/`, currently still the old proof page) and a Job Descriptions page (`/job-descriptions`, currently a dead nav link)
+- A skill-detail page, and a real visual/design pass beyond having colors and fonts defined
 - A list-all-my-cv-statuses endpoint (`cv_service.combined_status_for_all` exists but has no route yet — only the single-skill read does)
 - Real LLM-backed requirement extractor (replacing the safe placeholder)
 - `LearningResource`, `LearningPlan`, `LearningProgress` (the learning system)

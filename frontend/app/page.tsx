@@ -37,13 +37,13 @@ export default function Home() {
   }, []);
 
   return (
-    <main style={{ padding: 24, fontFamily: "monospace" }}>
-      <h1>Career AI — backend connection check</h1>
+    <main className="p-6 font-mono text-sm text-ink">
+      <h1 className="font-display text-lg">Career AI — backend connection check</h1>
 
-      {state.status === "loading" && <p>Loading…</p>}
+      {state.status === "loading" && <p className="text-ink-soft">Loading…</p>}
 
       {state.status === "error" && (
-        <p style={{ color: "red" }}>Error: {state.message}</p>
+        <p className="text-not-verified">Error: {state.message}</p>
       )}
 
       {state.status === "loaded" && (

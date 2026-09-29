@@ -6,8 +6,9 @@
  * needs to be readable in browser-side code, not just on the server — without
  * it, the value would only exist during the server build and be undefined here.
  *
- * This is deliberately minimal: one function, no retries, no caching, no request
- * library. It just calls `fetch`, checks the status, and parses JSON.
+ * This is deliberately minimal: three functions sharing one internal helper, no
+ * retries, no caching, no request library. They just call `fetch`, check the
+ * status, and parse JSON.
  */
 
 const API_BASE_URL =
@@ -23,13 +24,40 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`);
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {
-    throw new ApiError(
-      `${path} responded with ${response.status}`,
-      response.status,
-    );
+    // The backend's DomainError handler returns {"detail": "<message>"} as a plain
+    // string (see backend/app/api/errors.py) — surface that exact message when
+    // present, rather than a generic one, so e.g. a 409 duplicate-name error shows
+    // the real reason instead of just "409".
+    const body: unknown = await response.json().catch(() => null);
+    const detail =
+      body && typeof body === "object" && "detail" in body &&
+      typeof (body as { detail: unknown }).detail === "string"
+        ? (body as { detail: string }).detail
+        : `${path} responded with ${response.status}`;
+    throw new ApiError(detail, response.status);
   }
   return (await response.json()) as T;
+}
+
+export function apiGet<T>(path: string): Promise<T> {
+  return request<T>(path);
+}
+
+export function apiPost<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }

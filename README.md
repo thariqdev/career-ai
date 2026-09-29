@@ -214,7 +214,7 @@ This will run the health endpoint test in `tests/test_health.py`. The test suite
 
 ## Phase 2 — Frontend Setup
 
-A minimal Next.js frontend now exists in `frontend/` (App Router, TypeScript, Tailwind CSS — scaffolded with `create-next-app`). It is **intentionally unstyled**: it exists only to prove the frontend can reach the backend, not as a real UI. A design pass is a separate future task.
+A minimal Next.js frontend now exists in `frontend/` (App Router, TypeScript, Tailwind CSS v4 — scaffolded with `create-next-app`). It now has a shared design token system (colors/fonts, see `HANDOFF.md`) and a shared header that appears on every page, but is otherwise still deliberately basic — the first real page is functional, not designed.
 
 ```bash
 cd frontend
@@ -223,7 +223,10 @@ cp .env.local.example .env.local   # defaults to http://127.0.0.1:8000, adjust i
 npm run dev
 ```
 
-The dev server runs at `http://localhost:3000`. With the backend also running (`uvicorn app.main:app --reload`, see above), the home page calls `GET /health` and `GET /me` and displays what comes back.
+The dev server runs at `http://localhost:3000`. With the backend also running (`uvicorn app.main:app --reload`, see above):
+
+- `/` is still the original proof page: it calls `GET /health` and `GET /me` and displays what comes back.
+- **`/skills` is the first real, working page.** It lists every skill from `GET /skills`, shows each one's verification status and CV-presence status as colored badges, lets you click a CV badge to flip it (`PATCH /skills/{id}/cv-presence`), and has a small form to add a new skill (`POST /skills`) — duplicate or blank names show the backend's own error message.
 
 **CORS:** the backend only allows browser requests from `http://localhost:3000` and `http://127.0.0.1:3000` (see `backend/app/main.py`) — a dev-only allow-list, not `"*"`, since there's no auth yet. It will need revisiting once real auth exists.
 
