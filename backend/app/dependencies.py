@@ -3,9 +3,18 @@ from collections.abc import Generator
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.ai.client import RequirementExtractor
+from app.ai.providers.stub_extractor import NoOpRequirementExtractor
 from app.core.services import user_service
 from app.db.models import User
 from database import SessionLocal
+
+# Holds no state, so one shared instance is fine. This is the single wiring point that
+# changes when a real LLM-backed provider exists — swap what this returns, and every
+# endpoint using Depends(get_requirement_extractor) picks it up with no other changes.
+# Tests override this dependency with a fake extractor to exercise real accept/reject
+# behavior over HTTP; production traffic gets the safe no-op placeholder until then.
+_requirement_extractor = NoOpRequirementExtractor()
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -34,3 +43,8 @@ def get_current_user(db: Session = Depends(get_db)) -> User:
     user = user_service.get_or_create_default_user(db)
     db.commit()
     return user
+
+
+def get_requirement_extractor() -> RequirementExtractor:
+    """The extractor endpoints use by default: the safe placeholder (see stub_extractor)."""
+    return _requirement_extractor
