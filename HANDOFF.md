@@ -2,7 +2,7 @@
 
 > **Date:** 2026-09-23  
 > **Current phase:** Phase 1 — Backend Foundation (in progress)  
-> **Status (updated 2026-09-29):** The verification data-entry side is now reachable over HTTP too: claim a skill (`/user-skills`), record evidence (`/evidence`), link the two, and request a status change — all thin routes over the unchanged `verification_service`. Combined with the earlier `/job-descriptions` flow (create → extract → compare → gaps), the whole loop this project exists for — claim a skill, prove it, then check it against a real job posting — is now exercisable end to end over HTTP, all scoped to the single hardcoded user via `Depends(get_current_user)`; no `user_id` ever appears in a request. Requirement extraction's real LLM provider still does not exist (see §7). Foundation documents approved. Basic FastAPI backend skeleton created. Thirteen SQLAlchemy models now exist — `Skill`, `SkillAlias`, `User`, `Project`, `WorkExperience`, `Education`, `Evidence`, `UserSkill`, `UserSkillEvidence`, `JobDescription`, `JobRequirement`, `ComparisonResult`, `ComparisonResultEvidence` — with migrations applied to a live local PostgreSQL database. Three domain services exist (`verification_service`, `skill_service`, `comparison_service`), and the first HTTP endpoints (`/skills`) sit on top of `skill_service`. No AI, auth, or frontend yet.
+> **Status (updated 2026-09-29):** The verification data-entry side is now reachable over HTTP too: claim a skill (`/user-skills`), record evidence (`/evidence`), link the two, and request a status change — all thin routes over the unchanged `verification_service`. Combined with the earlier `/job-descriptions` flow (create → extract → compare → gaps), the whole loop this project exists for — claim a skill, prove it, then check it against a real job posting — is now exercisable end to end over HTTP, all scoped to the single hardcoded user via `Depends(get_current_user)`; no `user_id` ever appears in a request. `CVSkillPresence` also now exists as a model (deliberately independent of verification status — see §7), but with no service or endpoint yet. Requirement extraction's real LLM provider still does not exist (see §7). Foundation documents approved. Basic FastAPI backend skeleton created. Fourteen SQLAlchemy models now exist — `Skill`, `SkillAlias`, `User`, `Project`, `WorkExperience`, `Education`, `Evidence`, `UserSkill`, `UserSkillEvidence`, `JobDescription`, `JobRequirement`, `ComparisonResult`, `ComparisonResultEvidence`, `CVSkillPresence` — with migrations applied to a live local PostgreSQL database. Three domain services exist (`verification_service`, `skill_service`, `comparison_service`), and the first HTTP endpoints (`/skills`) sit on top of `skill_service`. No AI, auth, or frontend yet.
 >
 > **Note (updated 2026-09-29):** the psycopg2 / Application Control blocker described in §9 below **did recur** on this machine — Windows Smart App Control started blocking `psycopg2`'s compiled `_psycopg....pyd` file (confirmed via the `Microsoft-Windows-CodeIntegrity/Operational` event log, not a guess). Rather than fight that policy, the project **permanently switched database drivers** from `psycopg2-binary` to `pg8000` (a pure-Python PostgreSQL driver with no compiled extension, so there's nothing for the policy to block). See §9 for full detail. `psycopg2` is no longer a dependency of this project at all.
 
@@ -128,7 +128,8 @@ career-ai/
     │       ├── 2e2ab2aa40bd_create_user_skills_and_user_skill_.py
     │       ├── e78e547c3ccc_create_job_descriptions_table.py
     │       ├── ed7c26469959_create_job_requirements_table.py
-    │       └── 845323acae55_create_comparison_results_and_.py
+    │       ├── 845323acae55_create_comparison_results_and_.py
+    │       └── 8b7d8f0de9ae_create_cv_skill_presences_table.py
     ├── app/
     │   ├── __init__.py
     │   ├── main.py             ← FastAPI app; registers the DomainError handler + health/skills/me/job-descriptions/user-skills/evidence routers
@@ -156,7 +157,7 @@ career-ai/
     │   ├── db/
     │   │   ├── __init__.py
     │   │   └── models/
-    │   │       ├── __init__.py     ← registers all 13 models
+    │   │       ├── __init__.py     ← registers all 14 models
     │   │       ├── skill.py
     │   │       ├── skill_alias.py
     │   │       ├── user.py
@@ -168,6 +169,7 @@ career-ai/
     │   │       ├── job_description.py
     │   │       ├── job_requirement.py
     │   │       ├── comparison_result.py    ← ComparisonResult + ComparisonResultEvidence
+    │   │       ├── cv_skill_presence.py    ← CVSkillPresence
     │   │       └── enums.py        ← EvidenceType, VerificationStatus
     │   └── ai/                 ← interface + schemas + a safe placeholder only; NO real provider, prompt, key or network code yet
     │       ├── __init__.py
@@ -194,7 +196,8 @@ career-ai/
         ├── test_me_api.py
         ├── test_job_descriptions_api.py
         ├── test_user_skills_api.py
-        └── test_evidence_api.py
+        ├── test_evidence_api.py
+        └── test_cv_skill_presence.py
 ```
 
 ---
@@ -526,6 +529,7 @@ Nine migrations exist, applied in order, all consistent with the models (`alembi
 - `e78e547c3ccc_create_job_descriptions_table.py` — creates `job_descriptions`.
 - `ed7c26469959_create_job_requirements_table.py` — creates `job_requirements`.
 - `845323acae55_create_comparison_results_and_.py` — creates `comparison_results` and the `comparison_result_evidence` join table. It **reuses** the existing `verification_status` type via `postgresql.ENUM(..., create_type=False)` (autogenerate emitted a plain `sa.Enum`, which would have tried to re-create the type — corrected by hand), and its `downgrade()` deliberately does **not** drop the type because `user_skills` still uses it.
+- `8b7d8f0de9ae_create_cv_skill_presences_table.py` — creates `cv_skill_presences` (`present` is a plain `Boolean`, no enum involved, so no downgrade hand-edit was needed — autogenerate's output was used as-is after review).
 
 The SQL below covers the tables from the first five migrations only (later tables are described in §10 and in their model files' docstrings):
 
@@ -612,8 +616,9 @@ CREATE TABLE evidence (
 - `tests/test_job_descriptions_api.py` (14 tests) covers: create-then-get round trip; `404` for a missing id and for another user's id (inserted directly, bypassing the API, to prove the check actually filters by owner and not just existence); `/extract` splitting a mix of grounded/invented/duplicate/unmapped-skill proposals into the right accepted/rejected lists, with accepted ones then visible via `GET`; extracting twice → `409` with the fake extractor's call counter proving it was **not** called the second time; extracting with the **default, non-overridden stub** → `{"accepted": [], "rejected": []}`, proving the safe placeholder is actually wired; `/compare` producing correct statuses (including a real `VERIFIED` claim built via `verification_service`/`skill_service` and an unmapped requirement), and doubling the stored count on a second call; `/gaps` empty before compare, reflecting non-`VERIFIED` requirements after, and a requirement disappearing from gaps (while the older stored result is untouched) once evidence is linked and `set_status(VERIFIED)` is applied directly and compare re-run; `404` on every id-based route for a missing/not-owned id; and `/openapi.json`/`/docs` including the five new paths. The ownership check and the stub extractor's "returns nothing" guarantee were each mutation-checked.
 - `tests/test_user_skills_api.py` (15 tests) covers: claim → list, unknown skill → 404, duplicate claim → 409 with only one row, list ordering, linking evidence (visible via a follow-up load), duplicate link → 409, evidence owned by another user → 409, linking to a not-owned/nonexistent claim → 404, linking nonexistent evidence → 404, `VERIFIED` with no evidence → 409 with status unchanged, linking then verifying → 200, downgrading to `PROVISIONAL` always succeeding, a bad status value → 422, and status updates on a not-owned/nonexistent claim → 404.
 - `tests/test_evidence_api.py` (8 tests) covers: create → list, a bad `evidence_type` → 422, referencing a nonexistent or another user's work-experience/education record → 404, listing only the current user's evidence, and ordering by `created_at`.
+- `tests/test_cv_skill_presence.py` (5 tests incl. parametrized) covers: a presence row linking to its `User` and `Skill`; `present=True`/`False` both persisting correctly (no third "unknown" state exists — a skill with no row simply has never had its CV presence stated); the `(user_id, skill_id)` unique constraint raising `IntegrityError` on a duplicate; and independence from `UserSkill` — a presence row coexisting with no `UserSkill` at all, with a `VERIFIED` claim, and with a `NOT_VERIFIED` claim, in every combination, without conflict.
 - **Live check (2026-09-29):** the same server pattern was walked through the exact flow requested: claim a skill, attempt `VERIFIED` with no evidence → `409`, add evidence, link it, set `VERIFIED` → `200` with `status: "verified"`. A duplicate claim also returned `409` mid-flow. `/docs`/`/openapi.json` both returned 200 and listed the new paths. The one user, skill, user-skill, evidence, and evidence-link row created were all deleted afterward (in FK-safe order) and every id sequence reset, leaving `career_ai` exactly as found (every table checked back at 0 rows).
-- Full test suite: `156 passed` (`test_health.py` 1, `test_profile_models.py` 3, `test_user_skill.py` 3, `test_job_description.py` 1, `test_job_requirement.py` 2, `test_comparison_result.py` 3, `test_verification_service.py` 11, `test_skill_service.py` 28, `test_comparison_service.py` 26, `test_skills_api.py` 19, `test_requirement_service.py` 16, `test_user_service.py` 4, `test_me_api.py` 2, `test_job_descriptions_api.py` 14, `test_user_skills_api.py` 15, `test_evidence_api.py` 8).
+- Full test suite: `161 passed` (`test_health.py` 1, `test_profile_models.py` 3, `test_user_skill.py` 3, `test_job_description.py` 1, `test_job_requirement.py` 2, `test_comparison_result.py` 3, `test_verification_service.py` 11, `test_skill_service.py` 28, `test_comparison_service.py` 26, `test_skills_api.py` 19, `test_requirement_service.py` 16, `test_user_service.py` 4, `test_me_api.py` 2, `test_job_descriptions_api.py` 14, `test_user_skills_api.py` 15, `test_evidence_api.py` 8, `test_cv_skill_presence.py` 5).
 - **Live check (2026-09-27):** `uvicorn app.main:app` was run against the live local Postgres; `GET /me` called twice returned `{"id": 1, "email": "me@career-ai.local", "full_name": null}` both times (same id); `/docs` and `/openapi.json` (listing `/me`) both returned 200. The one row it created was then deleted and the `users_id_seq` reset, leaving `career_ai` exactly as found (all tables empty).
 - **Live check (2026-09-28):** the same server was walked through the full job-description flow: `GET /me` bootstrapped the user; `POST /job-descriptions` created a row; `GET` returned it with empty requirements; `POST .../extract` with the **default** stub extractor returned `{"accepted": [], "rejected": []}`; `POST .../compare` on zero requirements returned `[]`; `GET .../gaps` returned `[]`; `GET /job-descriptions/999999` returned `404` naming only the id. `/openapi.json` listed all five new paths and `/docs` returned 200. The one user row and one job description row created were then deleted and both id sequences reset, leaving `career_ai` exactly as found (every table checked back at 0 rows).
 
@@ -649,7 +654,7 @@ Continue building the backend incrementally. Each step should be small, tested, 
    - `LearningResource` — not started
    - `LearningPlan` — not started
    - `LearningProgress` — not started
-   - `CVSkillPresence` — not started
+   - ~~`CVSkillPresence`~~ ✅ done 2026-09-29 (`app/db/models/cv_skill_presence.py`; `(user_id, skill_id)` unique constraint, one evolving row like `UserSkill` rather than an append-only history like `ComparisonResult`; `present: Boolean` has no default — the caller must always state it explicitly; **deliberately independent** of `UserSkill`/`Evidence`/`ComparisonResult` — no FK to any of them, so a skill can be `VERIFIED` and not on the CV, or `NOT_VERIFIED` and on the CV, with no conflict — verified with real coexisting rows in `tests/test_cv_skill_presence.py`). **Scope of this task: model + migration + tests only.** No service, no API endpoint, and no combined "knowledge + CV" view — those are separate future tasks.
 
    Reference these concepts from `ARCHITECTURE.md` and `PROJECT_RULES.md`. Suggested next sub-batch: `UserSkill` alone (it's the piece that finally connects `Skill` to `User`/`Evidence` and lets verification-status rules become testable), since everything from `JobRequirement` onward depends on it existing.
 
@@ -660,7 +665,7 @@ Continue building the backend incrementally. Each step should be small, tested, 
 4. **Create domain services** in `backend/app/core/services/`:
    - ~~`verification_service.py`~~ ✅ done 2026-09-25 — `link_evidence` + `set_status` (see §7). Still pending: HTTP endpoints that call it, and any `unlink_evidence`.
    - ~~`skill_service.py`~~ ✅ partially done 2026-09-25 — canonical skill lookup (`resolve_skill`) + safe creation (`create_skill`, `add_alias`) + read helpers (`list_skills`, `get_skill`), see §7. HTTP endpoints for these now exist (see item 5). Still pending: skill/alias rename/deletion.
-   - ~~`comparison_service.py`~~ ✅ done 2026-09-25 — `compare_job_description`; read side added 2026-09-26 — `latest_results` + `skill_gaps` (see §7). Still pending: HTTP endpoints and `cv_status` (needs `CVSkillPresence`).
+   - ~~`comparison_service.py`~~ ✅ done 2026-09-25 — `compare_job_description`; read side added 2026-09-26 — `latest_results` + `skill_gaps` (see §7). Still pending: HTTP endpoints and `cv_status`. `CVSkillPresence` (the model `cv_status` would read from) now exists (2026-09-29), but `comparison_service` has **not** been changed to use it yet — that's the separate "combined knowledge + CV view" task, still not started.
    - ~~`requirement_service.py`~~ ✅ done 2026-09-26 **at the service level with a FAKE extractor** — `extract_requirements` validates an untrusted extractor's proposals (grounding check, dedup, skill mapping only via `resolve_skill`) and stores `JobRequirement` rows (see §7). Still pending: the **real LLM provider implementation + prompt** (`app/ai/providers/`, `app/ai/prompts/`), an **API endpoint** that runs extraction, and any **re-extraction workflow** (a re-run is currently refused).
    - `learning_service.py` — learning plans and progress.
 

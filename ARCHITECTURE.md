@@ -106,7 +106,7 @@
 | `LearningResource` | A recommended official doc, video, or course with mode. |
 | `LearningPlan` | A user-created plan linking skill gaps to resources. |
 | `LearningProgress` | Explicitly recorded progress toward a learning plan. |
-| `CVSkillPresence` | Whether a verified skill appears on the user's CV. |
+| `CVSkillPresence` | Whether a skill is currently listed on the user's CV — **not restricted to verified skills**. This is a fact the user states directly and is kept fully independent of `UserSkill.status` (section 12): a skill can be `VERIFIED` and absent from the CV, or `NOT_VERIFIED` and present on it. No service infers or sets this automatically. |
 
 > **Why `SkillGap` is derived:** `ComparisonResult` rows are append-only snapshots, so the full history is already stored. A "gap" is just the current answer to "which requirements of this job am I not yet verified for?" — the latest result per requirement, minus `VERIFIED`. A dedicated gap table could only copy that information and would go stale. If gap-specific state is ever needed (priority, dismissed, notes), a table can be added later for that state alone.
 

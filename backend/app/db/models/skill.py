@@ -19,4 +19,7 @@ class Skill(Base):
     job_requirements: Mapped[list["JobRequirement"]] = relationship(
         "JobRequirement", back_populates="skill"
     )
+    cv_skill_presences: Mapped[list["CVSkillPresence"]] = relationship(
+        "CVSkillPresence", back_populates="skill"
+    )
 

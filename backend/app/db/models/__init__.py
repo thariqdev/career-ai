@@ -9,6 +9,7 @@ from app.db.models.user_skill import UserSkill, UserSkillEvidence
 from app.db.models.job_description import JobDescription
 from app.db.models.job_requirement import JobRequirement
 from app.db.models.comparison_result import ComparisonResult, ComparisonResultEvidence
+from app.db.models.cv_skill_presence import CVSkillPresence
 
 __all__ = [
     "Skill",
@@ -24,4 +25,5 @@ __all__ = [
     "JobRequirement",
     "ComparisonResult",
     "ComparisonResultEvidence",
+    "CVSkillPresence",
 ]

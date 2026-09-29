@@ -28,3 +28,6 @@ class User(Base):
     job_descriptions: Mapped[list["JobDescription"]] = relationship(
         "JobDescription", back_populates="user"
     )
+    cv_skill_presences: Mapped[list["CVSkillPresence"]] = relationship(
+        "CVSkillPresence", back_populates="user"
+    )
