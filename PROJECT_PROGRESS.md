@@ -13,11 +13,11 @@
 
 ## Current Status (as of 2026-09-29)
 
-🟢 **The core loop works end to end over HTTP now.** You can claim a skill, prove it with evidence, link the two, ask for a status change, paste a job posting, pull out its requirements, compare them against what you can prove, and see what's missing — all through real web requests, all automatically scoped to the one hardcoded user. Nothing about the underlying services changed to make this happen; this task only added the HTTP doors to code that already existed and was already tested.
+🟢 **The core loop works end to end over HTTP now, and everything is committed and pushed.** You can claim a skill, prove it with evidence, link the two, ask for a status change, paste a job posting, pull out its requirements, compare them against what you can prove, and see what's missing — all through real web requests, all automatically scoped to the one hardcoded user. `CVSkillPresence` also now exists as a model — a deliberately separate, independent fact about whether a skill is on your CV — though it has no service or endpoint yet.
 
 **Environment blocker resolved — for good, not just for now.** `psycopg2` was being blocked by Windows Smart App Control (confirmed via the Windows Code Integrity event log). The project switched database drivers permanently to `pg8000`, a pure-Python driver with no compiled file for Windows to block. Full detail in `HANDOFF.md` §9.
 
-**Housekeeping to keep in mind:** Only one commit exists so far (`ac637fc`, the initial backend foundation through the `JobDescription` model). Everything since — 5 more models, 4 migrations, 5 services, 5 API routers, all their schemas, the driver swap, and roughly 155 tests — is still **uncommitted** in the working tree. Worth committing in logical chunks before the pile grows further.
+**Git history is now clean.** The work that had piled up uncommitted was split into 12 proper, one-feature-per-commit commits (reconstructed from a single lump commit, verified byte-identical before and after), plus one more for `CVSkillPresence`. `main` is pushed and up to date with `origin/main`.
 
 ---
 
@@ -44,18 +44,20 @@
 | 17 | 2026-09-28 | Created this progress-tracking file | ✅ Done | Set up `PROJECT_PROGRESS.md` as the always-up-to-date "what's done, what's next" log for this project. |
 | 18 | 2026-09-29 | Diagnosed the `psycopg2` block precisely (Windows Event Viewer), then switched the database driver from `psycopg2` to `pg8000` | ✅ Done | Found the exact Windows security feature causing the block (Smart App Control), explained the two possible fixes and their trade-offs, and — at the user's choice — swapped to a driver with no compiled file for Windows to block. Nothing about the actual app code changed (models, services, routes are all untouched); only the connection string and the installed package changed. Confirmed working: driver check, full test suite (133 tests), migration check, and a real server request against the live database. |
 | 19 | 2026-09-29 | Built the `/user-skills` and `/evidence` APIs (claim a skill, list claims, link evidence, change status, record evidence, list evidence) + schemas + tests, live-checked | ✅ Done | The last two pieces needed to actually *use* the verification system from outside test code: you can now claim a skill, back it up with real proof, connect the two, and ask the system to mark it verified — and it will refuse if there's no proof attached. Combined with last task's job-description flow, the whole point of this app now works end to end over the web. |
+| 20 | 2026-09-29 | Split all the uncommitted work into 12 proper commits, verified the rebuilt history matched byte-for-byte before pushing | ✅ Done | Everything from task 6 onward had piled up as one giant unsaved block. Rewrote it into 12 separate, clearly-labeled saves (one per feature), double-checked after every single one that the save count actually went up, and proved mathematically that no code was lost or changed in the process — just reorganized into a readable history. |
+| 21 | 2026-09-29 | Built `CVSkillPresence` (model + migration + tests only) | ✅ Done | A new, tiny table that stores one plain fact: "is this skill on my CV?" It's kept completely separate from whether a skill is *verified* — a skill can be proven true but missing from the CV, or listed on the CV without being proven, and this table doesn't care which. No web endpoint for it yet; that's later. Committed and pushed as its own save. |
 
 ---
 
 ## Pending / Next Up
 
-1. **Commit the accumulated uncommitted work** (see Housekeeping above) — worth doing in logical chunks rather than one giant commit. This now also includes the driver swap (`requirements.txt`, `.env.example`, docs) and the `/user-skills` + `/evidence` APIs.
-2. Remaining backlog, roughly in likely order:
-   - Real LLM-backed requirement extractor (replacing the safe placeholder)
-   - `CVSkillPresence` model + endpoints (CV status is a separate axis from verification status, intentionally not built yet)
-   - `LearningResource`, `LearningPlan`, `LearningProgress` (the learning system)
-   - `DELETE` / update endpoints across the API (none exist yet anywhere)
-   - Phase 2: the Next.js frontend (not started)
+Remaining backlog, roughly in likely order:
+- A service + API endpoint for `CVSkillPresence` (set/read CV presence over HTTP)
+- A combined "knowledge + CV" view (reads both `UserSkill.status` and `CVSkillPresence.present` together) — explicitly deferred until now, still not started
+- Real LLM-backed requirement extractor (replacing the safe placeholder)
+- `LearningResource`, `LearningPlan`, `LearningProgress` (the learning system)
+- `DELETE` / update endpoints across the API (none exist yet anywhere)
+- Phase 2: the Next.js frontend (not started)
 
 ---
 
