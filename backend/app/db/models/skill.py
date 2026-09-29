@@ -16,4 +16,7 @@ class Skill(Base):
         "SkillAlias", back_populates="skill"
     )
     user_skills: Mapped[list["UserSkill"]] = relationship("UserSkill", back_populates="skill")
+    job_requirements: Mapped[list["JobRequirement"]] = relationship(
+        "JobRequirement", back_populates="skill"
+    )
 
