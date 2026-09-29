@@ -22,6 +22,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      // Browser extensions sometimes stamp their own attributes onto <html> before
+      // React hydrates, which looks like a mismatch but isn't a real bug (see the
+      // "Frontend skeleton" section of HANDOFF.md). This only quiets warnings about
+      // this one tag; it does not hide real mismatches anywhere else in the page.
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
