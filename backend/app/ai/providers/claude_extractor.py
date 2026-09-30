@@ -1,8 +1,8 @@
 """The real, Claude-backed requirement extractor.
 
-This is the real implementation behind the interface (RequirementExtractor) the
-codebase has had ready for months, with only a placeholder (stub_extractor.py)
-behind it until now. Nothing about the trust boundary changes: requirement_service
+An LLM-backed implementation of RequirementExtractor, used only when ANTHROPIC_API_KEY
+is set (otherwise the deterministic skill_list_extractor is used). Nothing about the
+trust boundary changes: requirement_service
 still treats whatever this returns as an untrusted PROPOSAL — the same grounding
 check, dedup, and skill mapping apply unchanged, regardless of which extractor
 produced it. This class's only job is turning raw text into a typed guess.

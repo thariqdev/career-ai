@@ -210,16 +210,42 @@ def test_extract_twice_is_409_and_the_extractor_is_not_called_again(
     assert extractor.calls == ["Need Python experience."]  # not called a second time
 
 
-def test_extract_with_the_default_stub_extractor_accepts_and_rejects_nothing(
-    client: TestClient,
+def test_default_extractor_with_no_saved_skills_accepts_and_rejects_nothing(
+    client: TestClient, monkeypatch
 ) -> None:
-    """Proves the safe placeholder is actually wired: no override, no fabrication."""
+    """No override and no taxonomy: the skill-list matcher has nothing to find, so it
+    proposes nothing rather than guessing."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     body = _create_job(client, "Need Python experience.")
 
     response = client.post(f"/job-descriptions/{body['id']}/extract")
 
     assert response.status_code == 200
     assert response.json() == {"accepted": [], "rejected": []}
+
+
+def test_default_extractor_finds_saved_skills_and_maps_them(
+    client: TestClient, engine: Engine, monkeypatch
+) -> None:
+    """No override: the real default wiring reads the taxonomy and links each skill."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with _session(engine) as db:
+        skill_service.create_skill(db, "Python")
+        skill_service.create_skill(db, "Java")
+        postgres = skill_service.create_skill(db, "PostgreSQL")
+        skill_service.add_alias(db, postgres, "Postgres")
+        db.commit()
+    body = _create_job(client, "Need Postgres and Python; JavaScript is a plus.")
+
+    response = client.post(f"/job-descriptions/{body['id']}/extract")
+
+    assert response.status_code == 200
+    result = response.json()
+    assert [(r["requirement_text"], r["skill_name"]) for r in result["accepted"]] == [
+        ("Postgres", "PostgreSQL"),
+        ("Python", "Python"),
+    ]
+    assert result["rejected"] == []
 
 
 def test_extract_on_a_nonexistent_or_not_owned_id_is_404(client: TestClient, engine: Engine) -> None:

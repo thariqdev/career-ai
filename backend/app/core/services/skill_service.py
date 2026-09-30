@@ -78,6 +78,15 @@ def list_skills(db: Session) -> list[Skill]:
     return list(db.scalars(select(Skill).order_by(Skill.name, Skill.id)))
 
 
+def skill_terms(db: Session) -> dict[str, list[str]]:
+    """Each canonical skill name mapped to [its name, *its aliases]. Read-only.
+
+    Plain strings only, so a caller (the skill-list extractor) can use the taxonomy
+    without holding ORM objects or a Session.
+    """
+    return {skill.name: [skill.name, *(a.alias for a in skill.aliases)] for skill in list_skills(db)}
+
+
 def get_skill(db: Session, skill_id: int) -> Skill | None:
     """Look up a Skill by primary key, or None. Read-only."""
     db.flush()

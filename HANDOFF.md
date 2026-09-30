@@ -172,12 +172,13 @@ career-ai/
     │   │       ├── comparison_result.py    ← ComparisonResult + ComparisonResultEvidence
     │   │       ├── cv_skill_presence.py    ← CVSkillPresence
     │   │       └── enums.py        ← EvidenceType, VerificationStatus
-    │   └── ai/                 ← interface + schemas + a safe placeholder only; NO real provider, prompt, key or network code yet
+    │   └── ai/                 ← extractor interface, schemas, and two implementations
     │       ├── __init__.py
     │       ├── client.py       ← RequirementExtractor (typing.Protocol)
     │       ├── providers/
     │       │   ├── __init__.py
-    │       │   └── stub_extractor.py  ← NoOpRequirementExtractor (TEMPORARY placeholder, wired as the default)
+    │       │   ├── skill_list_extractor.py  ← SkillListExtractor (deterministic, no AI; the default)
+    │       │   └── claude_extractor.py      ← ClaudeRequirementExtractor (used only when ANTHROPIC_API_KEY is set)
     │       ├── prompts/        ← empty
     │       └── schemas.py      ← ExtractedRequirement, ExtractionResult (structured-output contract)
     └── tests/
@@ -452,7 +453,7 @@ Added 2026-09-28 — the first end-to-end path over HTTP: create a job descripti
 
 **`POST ""` has no service call.** There is no business rule to enforce beyond shape, which Pydantic's `JobDescriptionCreate` already checks — no blank check, no uniqueness, nothing like `create_skill`'s collision rules. So the route builds the `JobDescription` row directly, the same way `SkillCreate` itself needs no service (only `create_skill`'s actual rules warrant one).
 
-**The stub extractor (`app/ai/providers/stub_extractor.py`):** `NoOpRequirementExtractor` — **a TEMPORARY placeholder**, always returns zero proposed requirements. It never guesses, matching the same anti-hallucination stance as everything else in this project. It's wired as the *default* via `get_requirement_extractor` in `app/dependencies.py`, a module-level singleton (it holds no state) — so `/extract` is a real, provable endpoint today. **Swapping in a real LLM-backed provider later means changing only that one dependency; no endpoint or service changes.** Tests override the dependency with a fake extractor to exercise real accept/reject behavior over HTTP.
+**The stub extractor (`app/ai/providers/stub_extractor.py`) — REMOVED 2026-10-01, replaced as the default by `SkillListExtractor`; see "The skill-list matcher" section below.** Historical description: `NoOpRequirementExtractor` — **a TEMPORARY placeholder**, always returns zero proposed requirements. It never guesses, matching the same anti-hallucination stance as everything else in this project. It's wired as the *default* via `get_requirement_extractor` in `app/dependencies.py`, a module-level singleton (it holds no state) — so `/extract` is a real, provable endpoint today. **Swapping in a real LLM-backed provider later means changing only that one dependency; no endpoint or service changes.** Tests override the dependency with a fake extractor to exercise real accept/reject behavior over HTTP.
 
 **New schemas** (`app/core/models.py`): `JobDescriptionCreate`, `JobDescriptionResponse`, `JobRequirementResponse`, `RejectedRequirementResponse`, `ExtractionResponse`, `ComparisonResultResponse`, `GapResponse`. Two of these needed something other than `SkillResponse`'s `field_validator(mode="before")` pattern: `JobRequirementResponse.skill_name` and `ComparisonResultResponse.evidence_ids` have **no matching attribute at all** on their ORM source (`JobRequirement` has `.skill`, not `.skill_name`; `ComparisonResult` has `.evidence_links`, not `.evidence_ids`) — a per-field `from_attributes` lookup fails before a `field_validator` ever runs (confirmed: raises `pydantic.ValidationError: Field required`). Both use `model_validator(mode="before")` instead, which intercepts the whole source object first. `RejectedRequirementResponse` and `GapResponse` build from `requirement_service`'s/`comparison_service`'s plain dataclasses (not ORM objects) via small `from_rejection`/`from_gap` classmethods rather than `from_attributes`.
 
@@ -726,6 +727,50 @@ Added 2026-09-29. **NOT YET LIVE-TESTED — there is no `ANTHROPIC_API_KEY` conf
   2. Restart the backend (`uvicorn app.main:app --reload`).
   3. Use the app exactly as before — paste a job description on `/job-descriptions`, click Analyze. No frontend change, no other backend change; `get_requirement_extractor` picks up the real extractor automatically.
   4. Check the response: `extraction.accepted` should now contain real, verbatim-quoted requirements instead of always being empty — and any proposal Claude invents or paraphrases should still show up in `rejected` with a `"not found in job description text"` reason, proving the grounding check still guards a real model exactly as it guarded the placeholder.
+
+### The skill-list matcher: `SkillListExtractor`, the new default extractor
+
+Added 2026-10-01. Replaces `NoOpRequirementExtractor` as the no-key default, so extraction, comparison, gaps and the Dashboard now produce real data for free. No AI is involved. (The sections above that say "extraction always returns zero" or "no key returns `NoOpRequirementExtractor`" describe the state before this change.)
+
+- **`app/ai/providers/skill_list_extractor.py`** — `SkillListExtractor(terms_by_skill)`. It is given `{canonical name: [name, *aliases]}` as plain strings and proposes one `ExtractedRequirement` per skill found in the text. Its `text` and `skill_mention` are both the exact matched substring, and `is_required` is always `True`.
+  - **Always grounded:** because it only copies text, every proposal passes `requirement_service`'s grounding check. Because `skill_mention` is a registered name or alias, the existing `resolve_skill` maps it without any new mapping code. `requirement_service` itself is unchanged.
+  - **Term boundaries:** a term can't sit next to a letter, digit, `_`, `+` or `#` (`_TERM_CHAR = r"[\w+#]"`). So "Java" doesn't match inside "JavaScript", and "C" doesn't match inside "C++" or "C#". `.` is deliberately not a boundary character, so "Node.js." still matches at the end of a sentence. The trade-off is that a skill named "Node" would match inside "Node.js".
+  - **Case:** matching ignores case, except terms of `SHORT_TERM_MAX_LENGTH = 2` characters or fewer ("Go", "R", "C#"), which must match exactly. Known limitation: a capitalized "Go" at the start of a sentence still matches.
+  - **Whitespace:** words in a multi-word term match across any whitespace run.
+  - **Deduplication:** one proposal per skill, from its earliest-matching term, returned in text order.
+- **`skill_service.skill_terms(db)`** — new read-only helper that builds that mapping from `list_skills`.
+- **`get_requirement_extractor(db: Session = Depends(get_db))`** — now takes the request's `Session`. FastAPI caches `get_db` per request, so this is the same session the route uses. If `ANTHROPIC_API_KEY` is set it returns `ClaudeRequirementExtractor()` (unchanged); otherwise `SkillListExtractor(skill_service.skill_terms(db))`. The matcher gets a string snapshot and never holds the session. That preserves `client.py`'s rule that an extractor "knows nothing about the database": the dependency reads the taxonomy, not the extractor. With no skills saved it proposes nothing, which is exactly as safe as the removed placeholder.
+- **Removed:** `app/ai/providers/stub_extractor.py` (`NoOpRequirementExtractor`), which nothing referenced any more.
+- **Frontend:** `/job-descriptions`'s zero-requirements message no longer says "the real AI reader isn't connected yet". It now says none of your saved skills appear in the posting, and links to `/skills`.
+- **Tests:**
+  - new `tests/test_skill_list_extractor.py` (10 tests):
+    - case-insensitive match using the text's own words
+    - empty taxonomy
+    - whole terms (Java/JavaScript)
+    - C vs C++/C#
+    - `Node.js.` at the end of a sentence
+    - short terms needing an exact match
+    - multi-word terms across whitespace
+    - aliases collapsing to the earliest match
+    - text order
+    - default wiring with no key, using a real taxonomy including an alias
+
+    Every case also asserts that each proposal's text is a literal substring of the input.
+  - `test_claude_extractor.py`: its "no key → placeholder" test was removed (that case moved to the new file), and the key-switch test now passes a SQLite `Session`.
+  - `test_job_descriptions_api.py`: the "default stub accepts nothing" test was renamed for the no-skills case. A new HTTP test uses the real default wiring: skills Python, Java, and PostgreSQL with alias Postgres; the posting "Need Postgres and Python; JavaScript is a plus." gives accepted `[("Postgres","PostgreSQL"), ("Python","Python")]`.
+  - Suite total: **201 passed**, run with no `ANTHROPIC_API_KEY` present.
+- **Mutation check:** setting `_TERM_CHAR` to `r"[#]"` (weakening the boundaries) made exactly `test_matches_whole_terms_only` and `test_c_is_not_found_inside_c_plus_plus_or_c_sharp` fail. The file was restored byte-identical.
+- **Live check** (no dev server was running, so a temporary `uvicorn` was started on :8000 and stopped afterwards):
+  - Created Python, PostgreSQL (alias Postgres) and Docker.
+  - Posted "We need strong Python and Postgres experience. JavaScript is a plus. Docker knowledge preferred."
+  - `/extract` accepted Python, Postgres→PostgreSQL and Docker, with nothing rejected.
+  - `/compare` returned 3 × `not_verified` (no claims), and `/gaps` returned all 3.
+  - All created rows were deleted in foreign-key order and sequences reset, back to baseline (1 user, 0 elsewhere).
+- **Known limitations, deliberately not addressed:**
+  - It can't tell required from preferred ("Docker knowledge preferred" is stored as required).
+  - It can't find non-skill requirements ("3+ years").
+  - It only finds skills already saved.
+  - The matcher and Claude aren't combined.
 
 ---
 

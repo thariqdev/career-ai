@@ -6,17 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.ai.client import RequirementExtractor
 from app.ai.providers.claude_extractor import ClaudeRequirementExtractor
-from app.ai.providers.stub_extractor import NoOpRequirementExtractor
-from app.core.services import user_service
+from app.ai.providers.skill_list_extractor import SkillListExtractor
+from app.core.services import skill_service, user_service
 from app.db.models import User
 from database import SessionLocal
-
-# Holds no state, so one shared instance is fine. This is the single wiring point that
-# changes when a real LLM-backed provider exists — swap what this returns, and every
-# endpoint using Depends(get_requirement_extractor) picks it up with no other changes.
-# Tests override this dependency with a fake extractor to exercise real accept/reject
-# behavior over HTTP; production traffic gets the safe no-op placeholder until then.
-_requirement_extractor = NoOpRequirementExtractor()
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -47,15 +40,15 @@ def get_current_user(db: Session = Depends(get_db)) -> User:
     return user
 
 
-def get_requirement_extractor() -> RequirementExtractor:
-    """Real Claude extractor if ANTHROPIC_API_KEY is set, otherwise the safe placeholder.
+def get_requirement_extractor(db: Session = Depends(get_db)) -> RequirementExtractor:
+    """Claude if ANTHROPIC_API_KEY is set, otherwise the deterministic skill-list matcher.
 
-    This is the single wiring point: no key configured (today's state) behaves
-    identically to before this function existed. Adding a real key later switches on
-    the real extractor with no other code change. ClaudeRequirementExtractor() itself
-    never touches the network or reads the key at construction time (see its own
-    docstring) — only checking os.getenv here happens eagerly, not calling the API.
+    The single wiring point for extraction. ClaudeRequirementExtractor() never touches
+    the network at construction time (see its docstring). The matcher gets a snapshot
+    of skill names/aliases as plain strings and never holds the Session itself; with no
+    skills saved it proposes nothing. FastAPI caches get_db per request, so this reads
+    through the same Session the route uses.
     """
     if os.getenv("ANTHROPIC_API_KEY"):
         return ClaudeRequirementExtractor()
-    return _requirement_extractor
+    return SkillListExtractor(skill_service.skill_terms(db))

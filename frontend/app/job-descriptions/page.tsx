@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
 import type {
@@ -148,9 +149,12 @@ export default function JobDescriptionsPage() {
         <div className="mt-8">
           {state.extraction.accepted.length === 0 ? (
             <p className="text-ink-soft">
-              No requirements were found. The real AI reader isn&apos;t connected yet — only
-              a safe placeholder that never guesses. This page is ready and will work
-              automatically once that piece exists.
+              None of your saved skills appear in this posting. Requirements are found by
+              matching the skills (and aliases) you&apos;ve added on the{" "}
+              <Link href="/skills" className="underline">
+                Skills
+              </Link>{" "}
+              page — add the ones this job mentions, then analyze it again.
             </p>
           ) : (
             <>

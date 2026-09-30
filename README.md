@@ -199,13 +199,13 @@ Job-description endpoints (all scoped to that one user automatically — no `use
 | `POST /job-descriptions` | Paste a job description (`{"raw_text": "..."}`) |
 | `GET /job-descriptions` | List all of your job descriptions, most recently created first |
 | `GET /job-descriptions/{id}` | Read one back, with its requirements |
-| `POST /job-descriptions/{id}/extract` | Extract requirements from the text — real (Claude-backed) if `ANTHROPIC_API_KEY` is set, otherwise the safe placeholder that always returns none |
+| `POST /job-descriptions/{id}/extract` | Extract requirements from the text — by default, finds your saved skills (and their aliases) in it; Claude-backed instead if `ANTHROPIC_API_KEY` is set |
 | `POST /job-descriptions/{id}/compare` | Compare its requirements against your verified skills |
 | `GET /job-descriptions/{id}/gaps` | The requirements you're not yet `VERIFIED` for |
 
 Interactive API docs are served at `http://127.0.0.1:8000/docs`.
 
-**Enabling the real requirement extractor:** by default `.env` has no `ANTHROPIC_API_KEY`, so `/extract` uses the safe placeholder that always returns zero requirements — exactly today's behavior. To turn on the real, Claude-backed extractor, add a real key to `.env` (`ANTHROPIC_API_KEY=sk-ant-...`) and restart the server. Nothing else changes — same endpoint, same request/response shape, same validation rules (a real extractor's output is still just an untrusted proposal; see `requirement_service`).
+**How requirements are extracted:** by default (no `ANTHROPIC_API_KEY` in `.env`), `/extract` uses a skill-list matcher. It looks for every skill name and alias you've saved, whole words only, and turns each one it finds into a requirement using the posting's exact words. It is free, instant, and can't invent anything, but it only finds skills you've already added. To use the Claude-backed extractor instead, add a real key to `.env` (`ANTHROPIC_API_KEY=sk-ant-...`) and restart the server. This costs money per call. Either way, the same validation rules apply (see `requirement_service`).
 
 ### 5. Run tests
 
@@ -230,7 +230,7 @@ The dev server runs at `http://localhost:3000`. With the backend also running (`
 
 - **`/` is the real Dashboard** now (the old `/health`+`/me` proof page is gone — `GET /me`'s result is still visible via the header's email chip). It shows three numbers (verified skills, open gaps across every job description, job descriptions analyzed), the most recent comparison's gaps inline, and a list of CV recommendations pulled from every skill's combined status.
 - **`/skills`** lists every skill from `GET /skills`, shows each one's verification status and CV-presence status as colored badges, lets you click a CV badge to flip it (`PATCH /skills/{id}/cv-presence`), and has a small form to add a new skill (`POST /skills`) — duplicate or blank names show the backend's own error message.
-- **`/job-descriptions`** paste a job posting's text and it walks through the real backend pipeline in order: `POST /job-descriptions` → `POST .../extract` → `POST .../compare` → `GET .../gaps`, showing a step-by-step status. Right now `.../extract` always returns zero requirements (there's no real AI reader wired in yet, only a safe placeholder that refuses to guess) — the page says this plainly instead of treating it as an error. It's single-shot: there's no backend endpoint to list past job descriptions yet, so "analyze another" just resets the form.
+- **`/job-descriptions`** paste a job posting's text and it walks through the real backend pipeline in order: `POST /job-descriptions` → `POST .../extract` → `POST .../compare` → `GET .../gaps`, showing a step-by-step status. Requirements are the saved skills found in the posting (see "How requirements are extracted" above); if none are found, the page says so and points you to the Skills page. It's single-shot: "analyze another" just resets the form.
 - **`/skills/{id}`** click a skill's name on `/skills` to land here. It shows the skill's CV/knowledge status, lets you claim it (`POST /user-skills`), attach and link real evidence to it (`POST /evidence`, `POST /user-skills/{id}/evidence-links`), and change its verification status (`POST /user-skills/{id}/status`) with four real buttons — no client-side guessing about whether a status change is allowed. Try clicking "verified" with no evidence linked: the backend genuinely rejects it (409, "Not enough verified information"), and the page shows that exact message. Link a piece of evidence first and the same click succeeds.
 
 **CORS:** the backend only allows browser requests from `http://localhost:3000` and `http://127.0.0.1:3000` (see `backend/app/main.py`) — a dev-only allow-list, not `"*"`, since there's no auth yet. It will need revisiting once real auth exists.
