@@ -58,6 +58,30 @@ class SkillNameCollisionError(DomainError):
         )
 
 
+class EmptyProfileFieldError(DomainError):
+    """A required profile field (project name, company, role, institution) was blank."""
+
+    def __init__(self, field: str) -> None:
+        super().__init__(f"{field} must not be blank.")
+
+
+class InvalidDateRangeError(DomainError):
+    """An end date falls before its start date."""
+
+    def __init__(self) -> None:
+        super().__init__("The end date can't be before the start date.")
+
+
+class ProfileRecordInUseError(DomainError):
+    """A project/work experience/education can't be removed while evidence cites it."""
+
+    def __init__(self, label: str, count: int) -> None:
+        pieces, come = ("piece", "comes") if count == 1 else ("pieces", "come")
+        super().__init__(
+            f"{label} can't be removed because {count} {pieces} of evidence {come} from it."
+        )
+
+
 class SkillInUseError(DomainError):
     """A skill can't be deleted because other records depend on it."""
 

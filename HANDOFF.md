@@ -131,7 +131,8 @@ career-ai/
     │       ├── 845323acae55_create_comparison_results_and_.py
     │       ├── 8b7d8f0de9ae_create_cv_skill_presences_table.py
     │       ├── 9bd5ef6ad2a1_create_learning_resources_table.py
-    │       └── e034a498adb5_create_learning_progress_table.py
+    │       ├── e034a498adb5_create_learning_progress_table.py
+    │       └── 10b8111a70ad_evidence_at_most_one_source.py  ← hand-written check constraint
     ├── app/
     │   ├── __init__.py
     │   ├── main.py             ← FastAPI app; registers the DomainError handler + health/skills/me/job-descriptions/user-skills/evidence routers
@@ -144,6 +145,7 @@ career-ai/
     │   │   ├── evidence.py     ← /evidence endpoints (create, list)
     │   │   ├── cv.py                 ← POST /cv/scan (preview), PUT /cv/presence (confirmed save), GET /cv/status
     │   │   ├── learning_progress.py  ← PUT /skills/{id}/learning-progress + GET /learning-progress
+    │   │   ├── profile.py            ← /projects, /work-experiences, /educations (list, add, remove)
     │   │   ├── learning_resources.py ← /skills/{id}/learning-resources (list, add) + DELETE /learning-resources/{id}
     │   │   ├── me.py           ← GET /me (proof endpoint for the single-user bootstrap)
     │   │   ├── job_descriptions.py  ← /job-descriptions endpoints (create, read, extract, compare, gaps)
@@ -162,6 +164,7 @@ career-ai/
     │   │   │   ├── cv_import_service.py     ← extract_text() (PDF/.docx/.txt), scan_cv() (read-only)
     │   │   │   ├── cv_service.py            ← combined_status(), combined_status_for_all(), CVStatus, CombinedSkillStatus
     │   │   │   ├── learning_progress_service.py ← get/list/set_progress() (never touches UserSkill/Evidence)
+    │   │   │   ├── profile_service.py       ← create_project/work_experience/education, list_records, delete_record
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
     │   ├── db/
@@ -215,7 +218,8 @@ career-ai/
         ├── test_skills_cv_api.py
         ├── test_learning_resources_api.py
         ├── test_learning_progress_api.py
-        └── test_cv_api.py
+        ├── test_cv_api.py
+        └── test_profile_api.py
 ```
 
 ---
@@ -1181,6 +1185,76 @@ Added 2026-10-01. Frontend only, with no visual or behavioral change intended.
   - **Read-only check against the user's own running server:** for every real skill (Docker, PostgreSQL, pytho n, Python), the per-skill `GET /skills/{id}/cv-status` and the new `/cv/status`-based value were identical, with 0 mismatches. That's 5 requests the old way and 2 the new way.
   - No database writes, so nothing to clean up.
   - Not checked in a real browser (no browser tooling here); the user was asked to glance at Skills and the Dashboard.
+
+### My Profile: projects, work experience, education, and evidence sources
+
+Added 2026-10-01. The `Project`, `WorkExperience` and `Education` tables have existed since task 2, but nothing could create them. Evidence could only cite them by an id the user had no way to get.
+
+- **Found and fixed:** the "evidence comes from at most one source" rule (implied by the model docstring) **was not enforced anywhere**. It's now enforced twice:
+  1. **`EvidenceCreate`** has a `model_validator(mode="after")` that gives a 422 with a clear message.
+  2. **The database** has the check constraint `ck_evidence_at_most_one_source` on `evidence`. It's written with `CASE … END` sums, not Postgres-only `num_nonnulls`, so the same constraint works in the SQLite tests created by `create_all`.
+
+  The constraint's migration, **`10b8111a70ad`, was written by hand**, because autogenerate doesn't detect check constraints added to an existing table. Its upgrade and downgrade were both run on live Postgres, and `alembic check` is clean. Existing data was checked first: 0 violating rows.
+
+  A first attempt to prove the constraint live returned a SQLAlchemy `InvalidRequestError`, caused by a transaction misuse in the test script, so it was **not** accepted as proof. A redo inside an explicitly rolled-back transaction got the real Postgres error `23514 … violates check constraint "ck_evidence_at_most_one_source"`. No rows remained, and the sequences were reset.
+- **`EvidenceResponse`** now includes `work_experience_id`, `project_id` and `education_id`.
+- **`app/core/web_links.require_web_link`:** the http(s)-with-host rule, moved out of `learning_service` so it can be shared. `learning_service.add_resource` and project links both use it; behavior is unchanged and the learning-resource tests still pass.
+- **`profile_service`:**
+  - `create_project` / `create_work_experience` / `create_education`:
+    - required text is trimmed, and blank raises `EmptyProfileFieldError` (422, e.g. "Company must not be blank.")
+    - blank optional text is stored as NULL
+    - end < start raises `InvalidDateRangeError` (422); equal dates are fine
+    - project `url` goes through `require_web_link`
+  - `list_records` orders by `start_date desc nulls last, id desc`.
+  - `delete_record` counts the `Evidence` rows citing the record (via a `_EVIDENCE_COLUMN` map) and raises **`ProfileRecordInUseError` (409)**, e.g. *Project "FundsApp" can't be removed because 1 piece of evidence comes from it.* (singular and plural are both handled).
+- **API** (`app/api/profile.py`, user-scoped): `GET` / `POST /projects`, `DELETE /projects/{id}`, and the same for `/work-experiences` and `/educations`. Another user's record and a missing one are the same 404.
+- **Frontend:**
+  - **`app/profile/page.tsx` ("My Profile" in `AppHeader`):** one generic `ProfileSection<T>`, configured three times with its fields, label and details. Each section has its own list with Remove (behind a confirm) and an add form. Empty inputs are sent as `null`, which is required for dates, and backend messages are shown verbatim. It uses the fetch-first effect pattern.
+  - **`lib/profile.ts`:**
+    - labels: `projectLabel`, `workLabel`, `educationLabel`
+    - `dateRange` and `monthYear`. "YYYY-MM-DD" is parsed by parts, not `new Date(iso)`, which would read it as UTC midnight and could show the previous month in some time zones.
+  - **Skill Detail page:**
+    - `fetchSkillPage` also loads the three lists (still all in parallel)
+    - "Add new evidence" gets a **Comes from** `<select>` with `<optgroup>`s; the value is encoded as `project:3` / `work:2` / `education:1`, and only that one id is sent
+    - with no profile records, it links to My Profile
+    - evidence rows show `· from project FundsApp`, via `evidenceSource()`
+- **Verified:**
+  - **Tests:** 27 new in `test_profile_api.py`, many parametrized over all three kinds:
+    - add then list
+    - a blank required field returns 422, with nothing saved
+    - end before start returns 422, while equal dates are OK
+    - a work experience needs a start date
+    - blank optional text becomes null and text is trimmed
+    - the project link must be a web link
+    - list order is most recent first, undated last
+    - only your own records are listed or removable
+    - remove an unused record (then 404)
+    - removing a cited record returns 409 with nothing deleted
+    - the singular message wording
+    - evidence reports exactly its one source
+    - two sources return 422 with nothing saved
+    - **SQLite itself raises `IntegrityError` for a two-source row**, proving the constraint is real, not just the API check
+
+    Suite: **312 passed**.
+  - **Mutation checks:**
+    - end-date rule off: 3 failures
+    - in-use guard off: 3 failures
+    - API one-source check off: `test_evidence_with_two_sources…` failed, and **the database constraint still refused the row** (IntegrityError), showing the backstop works
+
+    Each file was restored byte-identical.
+  - `npm run build` is clean with `/profile`, and `npx eslint .` reports zero problems.
+  - **Live check against Postgres** (temporary :8011; the user's server and data untouched):
+    - adding one of each kind returned 201
+    - end before start returned 422, and a `javascript:` link returned 422
+    - evidence from the project returned only `project_id` set; two sources returned 422
+    - removing the cited project returned 409; removing the unused job and education returned 204, with real FKs enforced
+    - **this run surfaced the "1 piece of evidence come" grammar bug**, which was fixed and given a test
+    - cleanup deleted only the test evidence and project, by asserted id and title, and counts matched the snapshot
+- **Not done:**
+  - editing records
+  - filling them in from the CV
+  - showing them on the Dashboard
+  - an evidence delete endpoint (none exists; test rows were cleaned up via SQL)
 
 ---
 

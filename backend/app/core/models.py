@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -223,6 +223,18 @@ class EvidenceCreate(BaseModel):
     project_id: int | None = None
     education_id: int | None = None
 
+    @model_validator(mode="after")
+    def _at_most_one_source(self) -> "EvidenceCreate":
+        # A clear 422 up front; the database's ck_evidence_at_most_one_source check
+        # constraint is the backstop if some future code path skips this schema.
+        sources = [self.work_experience_id, self.project_id, self.education_id]
+        if sum(source is not None for source in sources) > 1:
+            raise ValueError(
+                "Evidence can come from at most one source: a work experience, a project, "
+                "or an education record."
+            )
+        return self
+
 
 class EvidenceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -232,6 +244,73 @@ class EvidenceResponse(BaseModel):
     title: str
     description: str | None
     url: str | None
+    work_experience_id: int | None
+    project_id: int | None
+    education_id: int | None
+    created_at: datetime
+
+
+class ProjectCreate(BaseModel):
+    name: str
+    role: str | None = None
+    description: str | None = None
+    url: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+class ProjectResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    role: str | None
+    description: str | None
+    url: str | None
+    start_date: date | None
+    end_date: date | None
+    created_at: datetime
+
+
+class WorkExperienceCreate(BaseModel):
+    company: str
+    role: str
+    start_date: date
+    end_date: date | None = None  # None means "current job"
+    description: str | None = None
+
+
+class WorkExperienceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    company: str
+    role: str
+    start_date: date
+    end_date: date | None
+    description: str | None
+    created_at: datetime
+
+
+class EducationCreate(BaseModel):
+    institution: str
+    degree: str | None = None
+    field_of_study: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    description: str | None = None
+
+
+class EducationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    institution: str
+    degree: str | None
+    field_of_study: str | None
+    start_date: date | None
+    end_date: date | None
+    description: str | None
     created_at: datetime
 
 

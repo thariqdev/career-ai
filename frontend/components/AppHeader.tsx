@@ -25,6 +25,9 @@ export default function AppHeader() {
           <Link href="/cv" className="hover:text-ink">
             My CV
           </Link>
+          <Link href="/profile" className="hover:text-ink">
+            My Profile
+          </Link>
         </nav>
 
         <span className="font-mono text-xs text-ink-soft">

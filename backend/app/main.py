@@ -9,6 +9,7 @@ from app.api import (
     learning_progress,
     learning_resources,
     me,
+    profile,
     skills,
     user_skills,
 )
@@ -38,3 +39,4 @@ app.include_router(evidence.router)
 app.include_router(learning_resources.router)
 app.include_router(learning_progress.router)
 app.include_router(cv.router)
+app.include_router(profile.router)

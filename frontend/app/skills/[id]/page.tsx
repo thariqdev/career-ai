@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import AliasEditor from "@/components/AliasEditor";
@@ -8,15 +9,19 @@ import LearningProgressControl from "@/components/LearningProgressControl";
 import StatusBadge from "@/components/StatusBadge";
 import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
 import { MODE_LABEL } from "@/lib/learning";
+import { educationLabel, projectLabel, workLabel } from "@/lib/profile";
 import type {
   CVStatusResponse,
+  Education,
   Evidence,
   LearningModeResources,
   LearningProgress,
   LearningProgressStatus,
+  Project,
   Skill,
   SkillLearningResources,
   UserSkill,
+  WorkExperience,
 } from "@/lib/types";
 
 // The same five EvidenceType values as backend/app/db/models/enums.py, hardcoded
@@ -142,23 +147,48 @@ type Loaded = {
   evidence: Evidence[];
   learning: SkillLearningResources;
   progress: LearningProgressStatus;
+  projects: Project[];
+  works: WorkExperience[];
+  educations: Education[];
 };
 
 type PageState = { status: "loading" } | { status: "error"; message: string } | Loaded;
+
+// "from project FundsApp" / "from Engineer at Acme" / "from BSc, State University",
+// or null when the evidence has no source (or the source can't be found).
+function evidenceSource(item: Evidence, page: Loaded): string | null {
+  if (item.project_id !== null) {
+    const p = page.projects.find((x) => x.id === item.project_id);
+    return p ? `from project ${projectLabel(p)}` : null;
+  }
+  if (item.work_experience_id !== null) {
+    const w = page.works.find((x) => x.id === item.work_experience_id);
+    return w ? `from ${workLabel(w)}` : null;
+  }
+  if (item.education_id !== null) {
+    const e = page.educations.find((x) => x.id === item.education_id);
+    return e ? `from ${educationLabel(e)}` : null;
+  }
+  return null;
+}
 
 // Everything this page shows, as a finished state (never throws). The requests
 // don't depend on each other, so they run in parallel. No GET /skills/{id} exists,
 // so the one skill is found by scanning the full list.
 async function fetchSkillPage(skillId: number): Promise<PageState> {
   try {
-    const [skills, cvStatus, userSkills, evidence, learning, allProgress] = await Promise.all([
-      apiGet<Skill[]>("/skills"),
-      apiGet<CVStatusResponse>(`/skills/${skillId}/cv-status`),
-      apiGet<UserSkill[]>("/user-skills"),
-      apiGet<Evidence[]>("/evidence"),
-      apiGet<SkillLearningResources>(`/skills/${skillId}/learning-resources`),
-      apiGet<LearningProgress[]>("/learning-progress"),
-    ]);
+    const [skills, cvStatus, userSkills, evidence, learning, allProgress, projects, works, educations] =
+      await Promise.all([
+        apiGet<Skill[]>("/skills"),
+        apiGet<CVStatusResponse>(`/skills/${skillId}/cv-status`),
+        apiGet<UserSkill[]>("/user-skills"),
+        apiGet<Evidence[]>("/evidence"),
+        apiGet<SkillLearningResources>(`/skills/${skillId}/learning-resources`),
+        apiGet<LearningProgress[]>("/learning-progress"),
+        apiGet<Project[]>("/projects"),
+        apiGet<WorkExperience[]>("/work-experiences"),
+        apiGet<Education[]>("/educations"),
+      ]);
     const skill = skills.find((s) => s.id === skillId);
     if (!skill) return { status: "error", message: `Skill ${skillId} not found.` };
     return {
@@ -169,6 +199,9 @@ async function fetchSkillPage(skillId: number): Promise<PageState> {
       evidence,
       learning,
       progress: allProgress.find((p) => p.skill_id === skillId)?.status ?? "not_started",
+      projects,
+      works,
+      educations,
     };
   } catch (error) {
     return {
@@ -191,6 +224,8 @@ export default function SkillDetailPage() {
   const [evidenceType, setEvidenceType] = useState<(typeof EVIDENCE_TYPES)[number]>("project");
   const [evidenceTitle, setEvidenceTitle] = useState("");
   const [evidenceDescription, setEvidenceDescription] = useState("");
+  // "" (no source) or "project:3" / "work:2" / "education:1".
+  const [evidenceSourceChoice, setEvidenceSourceChoice] = useState("");
   const [evidenceFormError, setEvidenceFormError] = useState<string | null>(null);
 
   // Refresh after an action. The page stays on screen until the new data arrives,
@@ -309,13 +344,20 @@ export default function SkillDetailPage() {
       // Creating evidence and linking it stay two distinct, visible actions,
       // matching how the backend itself keeps POST /evidence and
       // POST /user-skills/{id}/evidence-links separate — this does not auto-link.
+      const [kind, id] = evidenceSourceChoice.split(":");
+      const sourceId = id ? Number(id) : null;
       await apiPost("/evidence", {
         evidence_type: evidenceType,
         title: evidenceTitle,
         description: evidenceDescription.trim() === "" ? null : evidenceDescription,
+        // At most one source; the backend (and the database) reject more than one.
+        project_id: kind === "project" ? sourceId : null,
+        work_experience_id: kind === "work" ? sourceId : null,
+        education_id: kind === "education" ? sourceId : null,
       });
       setEvidenceTitle("");
       setEvidenceDescription("");
+      setEvidenceSourceChoice("");
       await loadAll();
     } catch (error) {
       setEvidenceFormError(
@@ -447,6 +489,9 @@ export default function SkillDetailPage() {
                   <li key={item.id} className="rounded border border-line px-3 py-2 text-sm">
                     <span className="font-mono text-xs text-ink-soft">{item.evidence_type}</span>{" "}
                     <span className="text-ink">{item.title}</span>
+                    {evidenceSource(item, state) && (
+                      <span className="text-ink-soft"> · {evidenceSource(item, state)}</span>
+                    )}
                     {item.description && (
                       <p className="mt-1 text-ink-soft">{item.description}</p>
                     )}
@@ -467,6 +512,9 @@ export default function SkillDetailPage() {
                       <span>
                         <span className="font-mono text-xs text-ink-soft">{item.evidence_type}</span>{" "}
                         <span className="text-ink">{item.title}</span>
+                        {evidenceSource(item, state) && (
+                          <span className="text-ink-soft"> · {evidenceSource(item, state)}</span>
+                        )}
                       </span>
                       <button
                         type="button"
@@ -518,6 +566,52 @@ export default function SkillDetailPage() {
                   onChange={(e) => setEvidenceDescription(e.target.value)}
                   className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
                 />
+              </label>
+              <label className="flex flex-col text-sm text-ink-soft">
+                Comes from (optional)
+                <select
+                  value={evidenceSourceChoice}
+                  onChange={(e) => setEvidenceSourceChoice(e.target.value)}
+                  className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
+                >
+                  <option value="">Nothing specific</option>
+                  {state.projects.length > 0 && (
+                    <optgroup label="Projects">
+                      {state.projects.map((p) => (
+                        <option key={p.id} value={`project:${p.id}`}>
+                          {projectLabel(p)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {state.works.length > 0 && (
+                    <optgroup label="Work experience">
+                      {state.works.map((w) => (
+                        <option key={w.id} value={`work:${w.id}`}>
+                          {workLabel(w)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {state.educations.length > 0 && (
+                    <optgroup label="Education">
+                      {state.educations.map((e) => (
+                        <option key={e.id} value={`education:${e.id}`}>
+                          {educationLabel(e)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                {state.projects.length + state.works.length + state.educations.length === 0 && (
+                  <span className="mt-1 text-xs">
+                    Add projects, jobs or education on{" "}
+                    <Link href="/profile" className="underline">
+                      My Profile
+                    </Link>{" "}
+                    to pick them here.
+                  </span>
+                )}
               </label>
               <button
                 type="submit"

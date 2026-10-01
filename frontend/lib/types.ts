@@ -140,12 +140,49 @@ export type CVPresence = {
   updated_at: string;
 };
 
-// Matches backend EvidenceResponse.
+// Matches backend EvidenceResponse. At most one of the three source ids is set.
 export type Evidence = {
   id: number;
   evidence_type: string;
   title: string;
   description: string | null;
   url: string | null;
+  work_experience_id: number | null;
+  project_id: number | null;
+  education_id: number | null;
+  created_at: string;
+};
+
+// Matches backend ProjectResponse / WorkExperienceResponse / EducationResponse.
+// Dates are "YYYY-MM-DD" strings.
+export type Project = {
+  id: number;
+  name: string;
+  role: string | null;
+  description: string | null;
+  url: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  created_at: string;
+};
+
+export type WorkExperience = {
+  id: number;
+  company: string;
+  role: string;
+  start_date: string;
+  end_date: string | null;
+  description: string | null;
+  created_at: string;
+};
+
+export type Education = {
+  id: number;
+  institution: string;
+  degree: string | null;
+  field_of_study: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  description: string | null;
   created_at: string;
 };

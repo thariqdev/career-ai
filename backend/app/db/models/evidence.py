@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, func
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,16 @@ class Evidence(Base):
     """
 
     __tablename__ = "evidence"
+    # At most one source record. Written with CASE (not Postgres' num_nonnulls) so the
+    # same constraint also works in the SQLite test database.
+    __table_args__ = (
+        CheckConstraint(
+            "(CASE WHEN work_experience_id IS NOT NULL THEN 1 ELSE 0 END"
+            " + CASE WHEN project_id IS NOT NULL THEN 1 ELSE 0 END"
+            " + CASE WHEN education_id IS NOT NULL THEN 1 ELSE 0 END) <= 1",
+            name="ck_evidence_at_most_one_source",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)

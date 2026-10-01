@@ -12,16 +12,13 @@ Same conventions as the other services: plain functions taking a Session, no HTT
 knowledge, flush but never commit, and flush before reading (autoflush=False).
 """
 
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import quote_plus
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import (
-    DuplicateLearningResourceError,
-    EmptyResourceTitleError,
-    InvalidResourceUrlError,
-)
+from app.core.exceptions import DuplicateLearningResourceError, EmptyResourceTitleError
+from app.core.web_links import require_web_link
 from app.db.models import LearningResource, Skill
 from app.db.models.enums import LearningMode
 
@@ -61,10 +58,7 @@ def add_resource(
     if not clean_title:
         raise EmptyResourceTitleError()
 
-    clean_url = url.strip()
-    parsed = urlparse(clean_url)
-    if parsed.scheme.lower() not in ("http", "https") or not parsed.netloc:
-        raise InvalidResourceUrlError(clean_url)
+    clean_url = require_web_link(url)
 
     db.flush()
     existing = db.scalar(
