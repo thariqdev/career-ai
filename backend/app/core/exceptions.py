@@ -27,6 +27,31 @@ class EvidenceAlreadyLinkedError(DomainError):
         )
 
 
+class EvidenceNotLinkedError(DomainError):
+    """The evidence isn't linked to this UserSkill, so there's nothing to unlink."""
+
+    def __init__(self, user_skill_id: int, evidence_id: int) -> None:
+        super().__init__(f"Evidence {evidence_id} is not linked to UserSkill {user_skill_id}.")
+
+
+class LastEvidenceError(DomainError):
+    """Unlinking would leave a VERIFIED/PARTIAL claim with no evidence at all."""
+
+    def __init__(self, skill_name: str, status: str) -> None:
+        super().__init__(
+            f"This is the last piece of evidence for {skill_name}, which is {status}. "
+            "A skill can't stay verified without proof, so change its status first, "
+            "then unlink."
+        )
+
+
+class EvidenceInUseError(DomainError):
+    """Evidence can't be deleted while a claim or comparison history depends on it."""
+
+    def __init__(self, title: str, reasons: list[str]) -> None:
+        super().__init__(f'"{title}" can\'t be deleted because it is {" and ".join(reasons)}.')
+
+
 class InsufficientEvidenceError(DomainError):
     """A status that requires supporting evidence was requested with none linked."""
 

@@ -113,3 +113,18 @@ def update_status(
     verification_service.set_status(db, user_skill, payload.status)
     db.commit()
     return user_skill
+
+
+@router.delete("/{user_skill_id}/evidence-links/{evidence_id}", response_model=UserSkillResponse)
+def unlink_evidence(
+    user_skill_id: int,
+    evidence_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserSkill:
+    # 404 if not linked (EvidenceNotLinkedError); 409 if it's the last evidence of a
+    # VERIFIED/PARTIAL claim (LastEvidenceError). The Evidence itself is kept.
+    user_skill = _get_owned_user_skill(db, user_skill_id, user)
+    verification_service.unlink_evidence(db, user_skill, evidence_id)
+    db.commit()
+    return user_skill

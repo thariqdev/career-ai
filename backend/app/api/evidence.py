@@ -15,11 +15,12 @@ Every route resolves user: User = Depends(get_current_user); no route or schema 
 takes a user_id.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.models import EvidenceCreate, EvidenceResponse
+from app.core.services import evidence_service
 from app.db.models import Education, Evidence, Project, User, WorkExperience
 from app.dependencies import get_current_user, get_db
 
@@ -73,3 +74,18 @@ def list_evidence(
             .order_by(Evidence.created_at, Evidence.id)
         )
     )
+
+
+@router.delete("/{evidence_id}", status_code=204)
+def delete_evidence(
+    evidence_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    evidence = db.get(Evidence, evidence_id)
+    if evidence is None or evidence.user_id != user.id:
+        raise HTTPException(status_code=404, detail=f"Evidence {evidence_id} not found.")
+    # 409 (EvidenceInUseError) while linked to a skill or cited by a past comparison.
+    evidence_service.delete_evidence(db, evidence)
+    db.commit()
+    return Response(status_code=204)

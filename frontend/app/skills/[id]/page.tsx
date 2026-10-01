@@ -336,6 +336,37 @@ export default function SkillDetailPage() {
     }
   }
 
+  // No client-side check for "last evidence of a verified skill": the backend refuses
+  // it (409) and its message tells the user to change the status first.
+  async function handleUnlinkEvidence(evidenceId: number) {
+    if (state.status !== "loaded" || state.userSkill === null) return;
+    setLinkError(null);
+    setBusy(true);
+    try {
+      await apiDelete<UserSkill>(`/user-skills/${state.userSkill.id}/evidence-links/${evidenceId}`);
+      await loadAll();
+    } catch (error) {
+      setLinkError(error instanceof ApiError ? error.message : "Could not unlink this evidence.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteEvidence(item: Evidence) {
+    if (!window.confirm(`Delete the evidence "${item.title}"? This can't be undone.`)) return;
+    setLinkError(null);
+    setBusy(true);
+    try {
+      await apiDelete(`/evidence/${item.id}`);
+      await loadAll();
+    } catch (error) {
+      // e.g. 409: it's part of a past comparison result.
+      setLinkError(error instanceof ApiError ? error.message : "Could not delete this evidence.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleCreateEvidence(event: FormEvent) {
     event.preventDefault();
     setEvidenceFormError(null);
@@ -486,15 +517,28 @@ export default function SkillDetailPage() {
             ) : (
               <ul className="mt-3 flex flex-col gap-2">
                 {linkedEvidence.map((item) => (
-                  <li key={item.id} className="rounded border border-line px-3 py-2 text-sm">
-                    <span className="font-mono text-xs text-ink-soft">{item.evidence_type}</span>{" "}
-                    <span className="text-ink">{item.title}</span>
-                    {evidenceSource(item, state) && (
-                      <span className="text-ink-soft"> · {evidenceSource(item, state)}</span>
-                    )}
-                    {item.description && (
-                      <p className="mt-1 text-ink-soft">{item.description}</p>
-                    )}
+                  <li
+                    key={item.id}
+                    className="flex items-start justify-between gap-3 rounded border border-line px-3 py-2 text-sm"
+                  >
+                    <div>
+                      <span className="font-mono text-xs text-ink-soft">{item.evidence_type}</span>{" "}
+                      <span className="text-ink">{item.title}</span>
+                      {evidenceSource(item, state) && (
+                        <span className="text-ink-soft"> · {evidenceSource(item, state)}</span>
+                      )}
+                      {item.description && (
+                        <p className="mt-1 text-ink-soft">{item.description}</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => handleUnlinkEvidence(item.id)}
+                      className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
+                    >
+                      Unlink
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -516,14 +560,24 @@ export default function SkillDetailPage() {
                           <span className="text-ink-soft"> · {evidenceSource(item, state)}</span>
                         )}
                       </span>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => handleLinkEvidence(item.id)}
-                        className="rounded border border-line px-2 py-1 text-xs text-ink disabled:opacity-50"
-                      >
-                        Link
-                      </button>
+                      <span className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => handleLinkEvidence(item.id)}
+                          className="rounded border border-line px-2 py-1 text-xs text-ink disabled:opacity-50"
+                        >
+                          Link
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => handleDeleteEvidence(item)}
+                          className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </span>
                     </li>
                   ))}
                 </ul>

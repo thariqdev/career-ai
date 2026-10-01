@@ -165,6 +165,7 @@ career-ai/
     │   │   │   ├── cv_service.py            ← combined_status(), combined_status_for_all(), CVStatus, CombinedSkillStatus
     │   │   │   ├── learning_progress_service.py ← get/list/set_progress() (never touches UserSkill/Evidence)
     │   │   │   ├── profile_service.py       ← create_project/work_experience/education, list_records, delete_record
+    │   │   │   ├── evidence_service.py      ← delete_evidence() (refuses while linked or in comparison history)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
     │   ├── db/
@@ -219,7 +220,8 @@ career-ai/
         ├── test_learning_resources_api.py
         ├── test_learning_progress_api.py
         ├── test_cv_api.py
-        └── test_profile_api.py
+        ├── test_profile_api.py
+        └── test_evidence_removal_api.py
 ```
 
 ---
@@ -1254,7 +1256,47 @@ Added 2026-10-01. The `Project`, `WorkExperience` and `Education` tables have ex
   - editing records
   - filling them in from the CV
   - showing them on the Dashboard
-  - an evidence delete endpoint (none exists; test rows were cleaned up via SQL)
+  - an evidence delete endpoint (none existed at the time; test rows were cleaned up via SQL). ✅ Added in the next section.
+
+### Unlinking and deleting evidence, keeping "VERIFIED needs proof" true
+
+Added 2026-10-01. Before this, evidence and links were permanent. The interesting part is that **an invariant enforced only on the way in isn't an invariant**: `set_status` refused VERIFIED without evidence, but nothing stopped removing the evidence afterwards.
+
+- **`verification_service.unlink_evidence(db, user_skill, evidence_id)`**, added in the module that already owns all link and status writes (its docstring is updated to say so):
+  - not linked raises `EvidenceNotLinkedError` (404)
+  - the **last** link of a `VERIFIED`/`PARTIAL` claim raises **`LastEvidenceError` (409)**: *"This is the last piece of evidence for X, which is VERIFIED… change its status first, then unlink."* The count comes from the database (`_linked_evidence_count`), not the possibly stale collection.
+  - it **never lowers the status itself**, matching "status only changes through an explicit `set_status`"
+  - after deleting the link it expires `user_skill.evidence_links`, so the response is fresh
+- **`evidence_service.delete_evidence(db, evidence)`** (new module; evidence creation stays inline in the route, as before) raises **`EvidenceInUseError` (409)** listing the reasons:
+  - linked to N skills ("unlink it first")
+  - and/or part of N past comparison results, because `ComparisonResultEvidence` is append-only history
+
+  It refuses rather than cascading.
+- **API:**
+  - `DELETE /user-skills/{id}/evidence-links/{evidence_id}` (`user_skills.py`) returns the updated `UserSkillResponse`, with the same not-yours-is-404 helper as the other claim routes.
+  - `DELETE /evidence/{id}` (`evidence.py`) returns 204, or 404 if missing or not yours.
+- **Frontend (Skill Detail):** linked evidence gets **Unlink**, and "your other evidence" gets **Delete** behind a confirm. There's no client-side guard: the backend's 409 message is shown in the existing `linkError` slot.
+- **Verified:**
+  - **Tests:** 11 new in `test_evidence_removal_api.py`:
+    - unlink from a provisional claim keeps the evidence
+    - **the last evidence of verified and of partial each returns 409, with status and links unchanged**
+    - one of two from a verified claim can be unlinked
+    - **lower the status first, then unlinking the last evidence works** (the path the message prescribes)
+    - not linked, an unknown claim, or an unknown evidence id returns 404
+    - another user's claim returns 404 with the link intact
+    - unused evidence can be deleted (then 404)
+    - linked evidence returns 409
+    - **evidence in comparison history returns 409**, set up end to end with the real matcher: verify, compare, lower, unlink, then delete
+    - another user's evidence returns 404
+
+    Suite: **323 passed**.
+  - **Mutation checks:** the last-proof guard off made both 409 cases fail; the still-linked delete guard off made `test_deleting_linked_evidence_is_409` fail. Each file was restored byte-identical.
+  - `npm run build` is clean, and `npx eslint .` reports zero problems.
+  - **Live check against Postgres** (temporary :8011; the user's server and data untouched): every guard and message above was reproduced, including the comparison-history 409 on a real compare. Cleanup removed only the test ids, asserted first, in foreign-key order, and counts matched the snapshot.
+- **Not done:**
+  - editing evidence text
+  - automatic status lowering (deliberately the user's explicit step)
+  - deleting evidence that's in comparison history
 
 ---
 
