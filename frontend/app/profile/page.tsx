@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { apiDelete, apiGet, apiPost, ApiError } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import { dateRange, educationLabel, projectLabel, workLabel } from "@/lib/profile";
 import type { Education, Project, WorkExperience } from "@/lib/types";
 
@@ -42,6 +42,21 @@ function ProfileSection<T extends Item>({
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The record being edited, or null when the form adds a new one.
+  const [editing, setEditing] = useState<T | null>(null);
+
+  function startEdit(item: T) {
+    const record = item as unknown as Record<string, unknown>;
+    setValues(Object.fromEntries(fields.map((f) => [f.key, (record[f.key] as string | null) ?? ""])));
+    setEditing(item);
+    setError(null);
+  }
+
+  function cancelEdit() {
+    setEditing(null);
+    setValues({});
+    setError(null);
+  }
 
   // Fetch first, then set state only in the promise callbacks.
   useEffect(() => {
@@ -64,8 +79,12 @@ function ProfileSection<T extends Item>({
       const body = Object.fromEntries(
         fields.map((f) => [f.key, (values[f.key] ?? "").trim() === "" ? null : values[f.key]]),
       );
-      await apiPost(path, body);
+      // Editing sends every field (PATCH): an emptied optional field is cleared, and
+      // the backend refuses to clear a required one.
+      if (editing) await apiPatch(`${path}/${editing.id}`, body);
+      else await apiPost(path, body);
       setValues({});
+      setEditing(null);
       setItems(await apiGet<T[]>(path));
     } catch (err) {
       setError(errorMessage(err));
@@ -110,20 +129,33 @@ function ProfileSection<T extends Item>({
                 <p className="text-xs text-ink-soft">{details(item)}</p>
                 {item.description && <p className="mt-1 text-ink-soft">{item.description}</p>}
               </div>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleRemove(item)}
-                className="rounded border border-line px-2 py-0.5 text-xs text-ink-soft disabled:opacity-50"
-              >
-                Remove
-              </button>
+              <span className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => startEdit(item)}
+                  className="rounded border border-line px-2 py-0.5 text-xs text-ink-soft disabled:opacity-50"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => handleRemove(item)}
+                  className="rounded border border-line px-2 py-0.5 text-xs text-ink-soft disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              </span>
             </li>
           ))}
         </ul>
       )}
 
       <form onSubmit={handleAdd} className="mt-4 grid gap-2 rounded border border-line p-3 sm:grid-cols-2">
+        {editing && (
+          <p className="text-sm text-ink sm:col-span-2">Editing &ldquo;{label(editing)}&rdquo;</p>
+        )}
         {fields.map((field) => (
           <label
             key={field.key}
@@ -150,14 +182,23 @@ function ProfileSection<T extends Item>({
             )}
           </label>
         ))}
-        <div className="sm:col-span-2">
+        <div className="flex gap-2 sm:col-span-2">
           <button
             type="submit"
             disabled={busy}
             className="rounded bg-accent px-3 py-1.5 text-sm text-surface disabled:opacity-50"
           >
-            Add
+            {editing ? "Save changes" : "Add"}
           </button>
+          {editing && (
+            <button
+              type="button"
+              onClick={cancelEdit}
+              className="rounded border border-line px-3 py-1.5 text-sm text-ink"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       </form>
       {error && <p className="mt-2 text-sm text-not-verified">{error}</p>}

@@ -130,6 +130,44 @@ def create_education(
     return education
 
 
+# Fields that can't be cleared, with the label used in the error message.
+_REQUIRED = {
+    Project: {"name": "Project name"},
+    WorkExperience: {"company": "Company", "role": "Role", "start_date": "Start date"},
+    Education: {"institution": "Institution"},
+}
+
+
+def update_record(db: Session, record: Any, changes: dict[str, Any]) -> Any:
+    """Apply only the fields present in `changes` (a PATCH), then re-check every rule.
+
+    A key that's absent keeps its value; None (or blank text) clears an optional field
+    and is refused for a required one. Date order is checked on the record as it WILL
+    be, so moving only the start date past the existing end date is caught too.
+    """
+    required = _REQUIRED[type(record)]
+    clean: dict[str, Any] = {}
+    for key, value in changes.items():
+        if key in required:
+            if value is None or (isinstance(value, str) and not value.strip()):
+                raise EmptyProfileFieldError(required[key])
+            clean[key] = value.strip() if isinstance(value, str) else value
+        elif value is None or isinstance(value, str):
+            clean[key] = _optional(value)
+        else:
+            clean[key] = value  # dates
+    if clean.get("url") is not None:
+        clean["url"] = require_web_link(clean["url"])
+
+    _check_dates(
+        clean.get("start_date", record.start_date), clean.get("end_date", record.end_date)
+    )
+    for key, value in clean.items():
+        setattr(record, key, value)
+    db.flush()
+    return record
+
+
 def list_records(db: Session, user: User, model: type) -> list[Any]:
     """The user's records of one kind, most recent first (undated ones last). Read-only."""
     db.flush()

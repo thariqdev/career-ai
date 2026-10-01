@@ -1337,6 +1337,56 @@ Added 2026-10-01. This fulfils README item 9 ("prepare for interviews based on t
   - saving or editing the sheet
   - PDF export (the browser's print-to-PDF works)
 
+### Editing evidence and profile records (PATCH)
+
+Added 2026-10-01. The first partial-update endpoints in the API.
+
+- **Partial-update semantics:**
+  - Update schemas (`EvidenceUpdate`, `ProjectUpdate`, `WorkExperienceUpdate`, `EducationUpdate`) make every field optional.
+  - Routes pass **`payload.model_dump(exclude_unset=True)`**, so a field the client didn't send isn't in the dict at all and keeps its value. A field sent as `null` *is* in the dict: it clears an optional field and is refused for a required one.
+  - This "unset vs explicitly null" distinction is the core of correct `PATCH` handling in Pydantic v2.
+- **Rules are re-checked on the record as it will be after the edit**, not just on the changed fields:
+  - **`profile_service.update_record(db, record, changes)`:**
+    - `_REQUIRED` maps each model's non-clearable fields to error labels (project name; company, role and start date; institution), giving `EmptyProfileFieldError` (422)
+    - optional text that's blank or null becomes NULL, and text is trimmed
+    - `url` goes through `require_web_link`
+    - **date order is checked with `changes.get(field, record.field)` for both dates**, so moving only the start past an existing end is caught
+  - **`evidence_service.update_evidence(db, evidence, changes)`:**
+    - title and type can't be cleared
+    - description and url can be cleared, and url must be http(s)
+    - **the final source count must be ≤ 1** (`TooManyEvidenceSourcesError`, 422). Switching source therefore means sending the old id as `null` in the same request. The database check constraint `ck_evidence_at_most_one_source` remains the backstop.
+  - **Editing evidence never touches any claim's status.** Past `ComparisonResultEvidence` rows still point at the same id, so they show the corrected text.
+- **The create path was aligned too:** `POST /evidence` now refuses a blank title (422) and validates a non-blank `url` with `require_web_link`; a blank url becomes NULL. The user's existing evidence was checked first: its only row had no link.
+- **API:** `PATCH /evidence/{id}` checks ownership of any newly referenced source record (404), plus `PATCH /projects/{id}`, `/work-experiences/{id}` and `/educations/{id}`. All return the updated record, and another user's or a missing record is a 404.
+- **Frontend:**
+  - **New `components/EvidenceForm.tsx`:** the Skill page's inline add form moved into a reusable component that also serves as the edit form. It gains a **Link** field the old add form never had, and it always sends all three source ids with at most one set.
+  - **Skill page:** each evidence row has **Edit**, which swaps the row for a pre-filled form. The page's old form state and `handleCreateEvidence` are gone.
+  - **`ProfileSection`:** **Edit** pre-fills the section's form, which then sends `PATCH` with every field, shows "Editing …" and has a Cancel button.
+- **Verified:**
+  - **Tests:** 20 new in `test_editing_api.py`:
+    - one-field edit leaves the rest equal
+    - null and blank clear optional fields, while omitted fields are kept
+    - 5 required-field clears return 422 with the record unchanged
+    - **end before the existing start and start after the existing end both return 422**
+    - the web-link rule holds on edit
+    - another user's record and missing records return 404
+    - evidence: one-field edit, the 4 rule violations, create-path title and link checks, a blank link becoming null
+    - **adding a second source returns 422, while switching with the old one cleared works**
+    - pointing at another user's record returns 404
+    - **editing linked evidence leaves the claim VERIFIED with the same evidence ids**
+
+    Suite: **351 passed**.
+  - **Mutation checks:**
+    - the date check ignoring saved dates made both final-state date tests fail
+    - the source check ignoring the saved source made the switch test fail, with the database constraint raising `IntegrityError` underneath again
+
+    Each file was restored byte-identical.
+  - `npm run build` is clean, and `npx eslint .` reports zero problems.
+  - **Live check against Postgres** (temporary :8011): a name typo fix kept role and dates; a start after the end returned 422; a null role cleared; a `javascript:` link on create returned 422; a second source without clearing returned 422; a switch plus rename worked; and the verified claim was unchanged. Cleanup removed only the test ids, and counts matched the snapshot.
+- **Not done:**
+  - editing skills, job descriptions or requirements
+  - edit history or an audit log
+
 ---
 
 ## 8. What Is Already Working

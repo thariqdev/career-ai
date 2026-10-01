@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import AliasEditor from "@/components/AliasEditor";
+import EvidenceForm, { type EvidenceBody } from "@/components/EvidenceForm";
 import LearningProgressControl from "@/components/LearningProgressControl";
 import StatusBadge from "@/components/StatusBadge";
 import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
@@ -23,12 +23,6 @@ import type {
   UserSkill,
   WorkExperience,
 } from "@/lib/types";
-
-// The same five EvidenceType values as backend/app/db/models/enums.py, hardcoded
-// here — the same small, acceptable duplication StatusBadge already has for
-// VerificationStatus (see its own comment). If the backend enum ever changes,
-// this list has to change to match, same as everywhere else in this frontend.
-const EVIDENCE_TYPES = ["work_experience", "project", "certification", "artifact", "other"] as const;
 
 // The four real statuses a claim can be set to, in a fixed display order.
 const STATUS_OPTIONS = ["verified", "partial", "provisional", "not_verified"] as const;
@@ -221,12 +215,7 @@ export default function SkillDetailPage() {
   const router = useRouter();
   const [statusError, setStatusError] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
-  const [evidenceType, setEvidenceType] = useState<(typeof EVIDENCE_TYPES)[number]>("project");
-  const [evidenceTitle, setEvidenceTitle] = useState("");
-  const [evidenceDescription, setEvidenceDescription] = useState("");
-  // "" (no source) or "project:3" / "work:2" / "education:1".
-  const [evidenceSourceChoice, setEvidenceSourceChoice] = useState("");
-  const [evidenceFormError, setEvidenceFormError] = useState<string | null>(null);
+  const [editingEvidenceId, setEditingEvidenceId] = useState<number | null>(null);
 
   // Refresh after an action. The page stays on screen until the new data arrives,
   // instead of flashing back to "Loading…".
@@ -367,36 +356,19 @@ export default function SkillDetailPage() {
     }
   }
 
-  async function handleCreateEvidence(event: FormEvent) {
-    event.preventDefault();
-    setEvidenceFormError(null);
-    setBusy(true);
-    try {
-      // Creating evidence and linking it stay two distinct, visible actions,
-      // matching how the backend itself keeps POST /evidence and
-      // POST /user-skills/{id}/evidence-links separate — this does not auto-link.
-      const [kind, id] = evidenceSourceChoice.split(":");
-      const sourceId = id ? Number(id) : null;
-      await apiPost("/evidence", {
-        evidence_type: evidenceType,
-        title: evidenceTitle,
-        description: evidenceDescription.trim() === "" ? null : evidenceDescription,
-        // At most one source; the backend (and the database) reject more than one.
-        project_id: kind === "project" ? sourceId : null,
-        work_experience_id: kind === "work" ? sourceId : null,
-        education_id: kind === "education" ? sourceId : null,
-      });
-      setEvidenceTitle("");
-      setEvidenceDescription("");
-      setEvidenceSourceChoice("");
-      await loadAll();
-    } catch (error) {
-      setEvidenceFormError(
-        error instanceof ApiError ? error.message : "Could not create this evidence.",
-      );
-    } finally {
-      setBusy(false);
-    }
+  // Errors propagate to EvidenceForm, which shows the backend's message. Creating
+  // evidence and linking it stay two distinct, visible actions, matching how the
+  // backend keeps POST /evidence and POST /user-skills/{id}/evidence-links separate.
+  async function createEvidence(body: EvidenceBody) {
+    await apiPost("/evidence", body);
+    await loadAll();
+  }
+
+  // Never changes the skill's verification status (the backend doesn't either).
+  async function updateEvidence(evidenceId: number, body: EvidenceBody) {
+    await apiPatch(`/evidence/${evidenceId}`, body);
+    setEditingEvidenceId(null);
+    await loadAll();
   }
 
   async function handleSetStatus(status: (typeof STATUS_OPTIONS)[number]) {
@@ -433,6 +405,18 @@ export default function SkillDetailPage() {
   }
 
   const { skill, cvStatus, userSkill, evidence } = state;
+  const editorFor = (item: Evidence) => (
+    <EvidenceForm
+      heading="Edit evidence"
+      submitLabel="Save"
+      initial={item}
+      projects={state.projects}
+      works={state.works}
+      educations={state.educations}
+      onSubmit={(body) => updateEvidence(item.id, body)}
+      onCancel={() => setEditingEvidenceId(null)}
+    />
+  );
   const linkedEvidence = userSkill
     ? evidence.filter((e) => userSkill.evidence_ids.includes(e.id))
     : [];
@@ -516,7 +500,10 @@ export default function SkillDetailPage() {
               <p className="mt-2 text-ink-soft">No evidence linked yet.</p>
             ) : (
               <ul className="mt-3 flex flex-col gap-2">
-                {linkedEvidence.map((item) => (
+                {linkedEvidence.map((item) =>
+                  editingEvidenceId === item.id ? (
+                    <li key={item.id}>{editorFor(item)}</li>
+                  ) : (
                   <li
                     key={item.id}
                     className="flex items-start justify-between gap-3 rounded border border-line px-3 py-2 text-sm"
@@ -531,16 +518,27 @@ export default function SkillDetailPage() {
                         <p className="mt-1 text-ink-soft">{item.description}</p>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => handleUnlinkEvidence(item.id)}
-                      className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
-                    >
-                      Unlink
-                    </button>
+                    <span className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => setEditingEvidenceId(item.id)}
+                        className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => handleUnlinkEvidence(item.id)}
+                        className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
+                      >
+                        Unlink
+                      </button>
+                    </span>
                   </li>
-                ))}
+                  ),
+                )}
               </ul>
             )}
 
@@ -548,7 +546,10 @@ export default function SkillDetailPage() {
               <div className="mt-4">
                 <h3 className="text-sm text-ink-soft">Your other evidence</h3>
                 <ul className="mt-2 flex flex-col gap-2">
-                  {unlinkedEvidence.map((item) => (
+                  {unlinkedEvidence.map((item) =>
+                    editingEvidenceId === item.id ? (
+                      <li key={item.id}>{editorFor(item)}</li>
+                    ) : (
                     <li
                       key={item.id}
                       className="flex items-center justify-between rounded border border-line px-3 py-2 text-sm"
@@ -572,6 +573,14 @@ export default function SkillDetailPage() {
                         <button
                           type="button"
                           disabled={busy}
+                          onClick={() => setEditingEvidenceId(item.id)}
+                          className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
                           onClick={() => handleDeleteEvidence(item)}
                           className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
                         >
@@ -579,105 +588,23 @@ export default function SkillDetailPage() {
                         </button>
                       </span>
                     </li>
-                  ))}
+                    ),
+                  )}
                 </ul>
               </div>
             )}
             {linkError && <p className="mt-2 text-sm text-not-verified">{linkError}</p>}
 
-            <form
-              onSubmit={handleCreateEvidence}
-              className="mt-6 flex flex-col gap-3 rounded border border-line p-4"
-            >
-              <h3 className="text-sm text-ink-soft">Add new evidence</h3>
-              <label className="flex flex-col text-sm text-ink-soft">
-                Type
-                <select
-                  value={evidenceType}
-                  onChange={(e) => setEvidenceType(e.target.value as (typeof EVIDENCE_TYPES)[number])}
-                  className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
-                >
-                  {EVIDENCE_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type.replace("_", " ")}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col text-sm text-ink-soft">
-                Title
-                <input
-                  value={evidenceTitle}
-                  onChange={(e) => setEvidenceTitle(e.target.value)}
-                  required
-                  className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
-                />
-              </label>
-              <label className="flex flex-col text-sm text-ink-soft">
-                Description (optional)
-                <textarea
-                  value={evidenceDescription}
-                  onChange={(e) => setEvidenceDescription(e.target.value)}
-                  className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
-                />
-              </label>
-              <label className="flex flex-col text-sm text-ink-soft">
-                Comes from (optional)
-                <select
-                  value={evidenceSourceChoice}
-                  onChange={(e) => setEvidenceSourceChoice(e.target.value)}
-                  className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
-                >
-                  <option value="">Nothing specific</option>
-                  {state.projects.length > 0 && (
-                    <optgroup label="Projects">
-                      {state.projects.map((p) => (
-                        <option key={p.id} value={`project:${p.id}`}>
-                          {projectLabel(p)}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {state.works.length > 0 && (
-                    <optgroup label="Work experience">
-                      {state.works.map((w) => (
-                        <option key={w.id} value={`work:${w.id}`}>
-                          {workLabel(w)}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                  {state.educations.length > 0 && (
-                    <optgroup label="Education">
-                      {state.educations.map((e) => (
-                        <option key={e.id} value={`education:${e.id}`}>
-                          {educationLabel(e)}
-                        </option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-                {state.projects.length + state.works.length + state.educations.length === 0 && (
-                  <span className="mt-1 text-xs">
-                    Add projects, jobs or education on{" "}
-                    <Link href="/profile" className="underline">
-                      My Profile
-                    </Link>{" "}
-                    to pick them here.
-                  </span>
-                )}
-              </label>
-              <button
-                type="submit"
-                disabled={busy}
-                className="self-start rounded bg-accent px-4 py-1.5 text-sm text-surface disabled:opacity-50"
-              >
-                Add evidence
-              </button>
-              {evidenceFormError && (
-                <p className="text-sm text-not-verified">{evidenceFormError}</p>
-              )}
-            </form>
+            <div className="mt-6">
+              <EvidenceForm
+                heading="Add new evidence"
+                submitLabel="Add evidence"
+                projects={state.projects}
+                works={state.works}
+                educations={state.educations}
+                onSubmit={createEvidence}
+              />
+            </div>
           </section>
         </div>
       )}

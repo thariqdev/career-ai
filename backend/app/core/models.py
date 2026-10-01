@@ -365,6 +365,47 @@ class EducationResponse(BaseModel):
     created_at: datetime
 
 
+# PATCH bodies: every field optional. Routes read model_dump(exclude_unset=True), so a
+# field that's left out is "keep as is", while an explicit null is "clear it" (refused
+# by the service for required fields).
+
+
+class EvidenceUpdate(BaseModel):
+    evidence_type: EvidenceType | None = None
+    title: str | None = None
+    description: str | None = None
+    url: str | None = None
+    work_experience_id: int | None = None
+    project_id: int | None = None
+    education_id: int | None = None
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    description: str | None = None
+    url: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+class WorkExperienceUpdate(BaseModel):
+    company: str | None = None
+    role: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    description: str | None = None
+
+
+class EducationUpdate(BaseModel):
+    institution: str | None = None
+    degree: str | None = None
+    field_of_study: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    description: str | None = None
+
+
 class EvidenceLinkCreate(BaseModel):
     evidence_id: int
 

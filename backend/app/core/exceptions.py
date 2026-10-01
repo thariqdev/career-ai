@@ -27,6 +27,16 @@ class EvidenceAlreadyLinkedError(DomainError):
         )
 
 
+class TooManyEvidenceSourcesError(DomainError):
+    """After an edit, evidence would point at more than one source record."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Evidence can come from at most one source: a work experience, a project, or an "
+            "education record. Clear the current source to pick a different one."
+        )
+
+
 class EvidenceNotLinkedError(DomainError):
     """The evidence isn't linked to this UserSkill, so there's nothing to unlink."""
 

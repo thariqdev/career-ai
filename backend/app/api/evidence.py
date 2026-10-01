@@ -19,8 +19,10 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.models import EvidenceCreate, EvidenceResponse
+from app.core.exceptions import EmptyProfileFieldError
+from app.core.models import EvidenceCreate, EvidenceResponse, EvidenceUpdate
 from app.core.services import evidence_service
+from app.core.web_links import require_web_link
 from app.db.models import Education, Evidence, Project, User, WorkExperience
 from app.dependencies import get_current_user, get_db
 
@@ -47,18 +49,41 @@ def create_evidence(
     _require_owned_reference(db, WorkExperience, payload.work_experience_id, user, "Work experience")
     _require_owned_reference(db, Project, payload.project_id, user, "Project")
     _require_owned_reference(db, Education, payload.education_id, user, "Education")
+    if not payload.title.strip():
+        raise EmptyProfileFieldError("Title")
 
     evidence = Evidence(
         user=user,
         evidence_type=payload.evidence_type,
-        title=payload.title,
+        title=payload.title.strip(),
         description=payload.description,
-        url=payload.url,
+        # Same rule as edits and project links: the frontend renders this as a link.
+        url=require_web_link(payload.url) if payload.url and payload.url.strip() else None,
         work_experience_id=payload.work_experience_id,
         project_id=payload.project_id,
         education_id=payload.education_id,
     )
     db.add(evidence)
+    db.commit()
+    return evidence
+
+
+@router.patch("/{evidence_id}", response_model=EvidenceResponse)
+def update_evidence(
+    evidence_id: int,
+    payload: EvidenceUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Evidence:
+    """Change only the fields sent. Never changes any skill's verification status."""
+    evidence = db.get(Evidence, evidence_id)
+    if evidence is None or evidence.user_id != user.id:
+        raise HTTPException(status_code=404, detail=f"Evidence {evidence_id} not found.")
+    changes = payload.model_dump(exclude_unset=True)
+    _require_owned_reference(db, WorkExperience, changes.get("work_experience_id"), user, "Work experience")
+    _require_owned_reference(db, Project, changes.get("project_id"), user, "Project")
+    _require_owned_reference(db, Education, changes.get("education_id"), user, "Education")
+    evidence_service.update_evidence(db, evidence, changes)
     db.commit()
     return evidence
 

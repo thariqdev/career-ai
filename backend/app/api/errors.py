@@ -30,6 +30,7 @@ from app.core.exceptions import (
     RequirementsAlreadyExistError,
     SkillInUseError,
     SkillNameCollisionError,
+    TooManyEvidenceSourcesError,
 )
 
 _STATUS_BY_ERROR: dict[type[DomainError], int] = {
@@ -45,6 +46,7 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     EvidenceNotLinkedError: 404,
     LastEvidenceError: 409,
     EvidenceInUseError: 409,
+    TooManyEvidenceSourcesError: 422,
     UnsupportedCVFileError: 415,
     CVFileTooLargeError: 413,
     NoCVTextError: 422,
