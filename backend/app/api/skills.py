@@ -12,7 +12,7 @@ user-scoped. The cv-presence/cv-status routes are the exception: a skill's prese
 Setting CV presence is an UPSERT (see cv_presence_service, shared with the CV upload).
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.core.models import (
@@ -42,6 +42,26 @@ def create_skill(payload: SkillCreate, db: Session = Depends(get_db)) -> Skill:
 @router.get("", response_model=list[SkillResponse])
 def list_skills(db: Session = Depends(get_db)) -> list[Skill]:
     return skill_service.list_skills(db)
+
+
+# Declared before any future "/{skill_id}" GET route so "similar" is never captured as an id.
+@router.get("/similar", response_model=list[SkillResponse])
+def similar_skills(name: str, db: Session = Depends(get_db)) -> list[Skill]:
+    """Read-only look-alike check ("pytho n" -> Python) for a "did you mean?" warning.
+
+    Never blocks or changes anything; creating a skill is still governed by create_skill.
+    """
+    return skill_service.similar_skills(db, name)
+
+
+@router.delete("/{skill_id}", status_code=204)
+def delete_skill(skill_id: int, db: Session = Depends(get_db)) -> Response:
+    skill = skill_service.get_skill(db, skill_id)
+    if skill is None:
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found.")
+    skill_service.delete_skill(db, skill)
+    db.commit()
+    return Response(status_code=204)
 
 
 # Declared before any future "/{skill_id}" GET route so "resolve" is never captured as an id.

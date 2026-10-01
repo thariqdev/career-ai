@@ -22,6 +22,7 @@ from app.core.exceptions import (
     InsufficientEvidenceError,
     InvalidResourceUrlError,
     RequirementsAlreadyExistError,
+    SkillInUseError,
     SkillNameCollisionError,
 )
 
@@ -31,6 +32,7 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     InvalidResourceUrlError: 422,
     DuplicateLearningResourceError: 409,
     AliasNotFoundError: 404,
+    SkillInUseError: 409,
     UnsupportedCVFileError: 415,
     CVFileTooLargeError: 413,
     NoCVTextError: 422,

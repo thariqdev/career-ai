@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import AliasEditor from "@/components/AliasEditor";
 import LearningProgressControl from "@/components/LearningProgressControl";
@@ -152,6 +152,8 @@ export default function SkillDetailPage() {
 
   const [state, setState] = useState<PageState>({ status: "loading" });
   const [busy, setBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const router = useRouter();
   const [statusError, setStatusError] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [evidenceType, setEvidenceType] = useState<(typeof EVIDENCE_TYPES)[number]>("project");
@@ -213,6 +215,21 @@ export default function SkillDetailPage() {
       await apiPost(`/skills/${skillId}/learning-resources`, { mode, title, url });
       await reloadLearning();
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDeleteSkill() {
+    if (state.status !== "loaded") return;
+    if (!window.confirm(`Delete "${state.skill.name}"? This can't be undone.`)) return;
+    setDeleteError(null);
+    setBusy(true);
+    try {
+      await apiDelete(`/skills/${skillId}`);
+      router.push("/skills");
+    } catch (error) {
+      // e.g. the backend's 409: '"Python" can't be deleted because it is claimed.'
+      setDeleteError(error instanceof ApiError ? error.message : "Could not delete the skill.");
       setBusy(false);
     }
   }
@@ -517,6 +534,23 @@ export default function SkillDetailPage() {
             />
           ))}
         </div>
+      </section>
+
+      <section className="mt-12 border-t border-line pt-6">
+        <h2 className="font-display text-lg text-ink">Delete this skill</h2>
+        <p className="mt-1 text-sm text-ink-soft">
+          Only possible while nothing uses it: no claim, no job requirements, not marked on
+          your CV, no saved links, no learning progress. Its nicknames are deleted with it.
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={handleDeleteSkill}
+          className="mt-3 rounded border border-not-verified px-3 py-1.5 text-sm text-not-verified disabled:opacity-50"
+        >
+          Delete skill
+        </button>
+        {deleteError && <p className="mt-2 text-sm text-not-verified">{deleteError}</p>}
       </section>
     </main>
   );

@@ -28,6 +28,9 @@ export default function SkillsPage() {
   const [category, setCategory] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Names of existing skills that look like the one being added ("pytho n" -> Python).
+  // Non-null means we're waiting for the user to choose "Add anyway" or "Cancel".
+  const [lookalikes, setLookalikes] = useState<string[] | null>(null);
 
   async function loadAll() {
     setState({ status: "loading" });
@@ -48,6 +51,26 @@ export default function SkillsPage() {
 
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
+    setFormError(null);
+    setSubmitting(true);
+    try {
+      // Only a warning: the user can still choose "Add anyway".
+      const similar = await apiGet<Skill[]>(`/skills/similar?name=${encodeURIComponent(name)}`);
+      if (similar.length > 0) {
+        setLookalikes(similar.map((s) => s.name));
+        return;
+      }
+    } catch {
+      // If the check itself fails, don't block adding; the backend still rejects
+      // exact duplicates on its own.
+    } finally {
+      setSubmitting(false);
+    }
+    await createSkill();
+  }
+
+  async function createSkill() {
+    setLookalikes(null);
     setFormError(null);
     setSubmitting(true);
     try {
@@ -92,7 +115,10 @@ export default function SkillsPage() {
           Name
           <input
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => {
+              setName(e.target.value);
+              setLookalikes(null);
+            }}
             required
             className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
           />
@@ -113,6 +139,29 @@ export default function SkillsPage() {
           {submitting ? "Adding…" : "Add skill"}
         </button>
       </form>
+      {lookalikes && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded border border-warm bg-warm-soft px-3 py-2 text-sm text-ink">
+          <span>
+            &ldquo;{name.trim()}&rdquo; looks like <strong>{lookalikes.join(", ")}</strong>.
+            {" "}If it&apos;s the same thing, add it as a nickname on that skill&apos;s page instead.
+          </span>
+          <button
+            type="button"
+            onClick={createSkill}
+            disabled={submitting}
+            className="rounded border border-line bg-surface px-3 py-1 text-ink disabled:opacity-50"
+          >
+            Add anyway
+          </button>
+          <button
+            type="button"
+            onClick={() => setLookalikes(null)}
+            className="rounded px-3 py-1 text-ink-soft hover:text-ink"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       {formError && <p className="mt-2 text-sm text-not-verified">{formError}</p>}
 
       <div className="mt-8">

@@ -58,6 +58,15 @@ class SkillNameCollisionError(DomainError):
         )
 
 
+class SkillInUseError(DomainError):
+    """A skill can't be deleted because other records depend on it."""
+
+    def __init__(self, skill_name: str, reasons: list[str]) -> None:
+        super().__init__(
+            f'"{skill_name}" can\'t be deleted because it is {", ".join(reasons)}.'
+        )
+
+
 class AliasNotFoundError(DomainError):
     """The skill has no alias matching this text."""
 

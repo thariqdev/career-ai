@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.core.exceptions import SkillNameCollisionError
-from app.db.models import Skill, SkillAlias
+from app.db.models import CVSkillPresence, JobDescription, JobRequirement, Skill, SkillAlias, User
 from app.dependencies import get_db
 from app.main import app
 from database import Base
@@ -229,6 +229,124 @@ def test_remove_alias_without_the_alias_param_is_422(client: TestClient) -> None
     skill = _create(client, "PostgreSQL")
 
     assert client.delete(f"/skills/{skill['id']}/aliases").status_code == 422
+
+
+# --- GET /skills/similar ------------------------------------------------------
+
+
+def _similar(client: TestClient, name: str) -> list[str]:
+    response = client.get("/skills/similar", params={"name": name})
+    assert response.status_code == 200
+    return [skill["name"] for skill in response.json()]
+
+
+@pytest.mark.parametrize("typed", ["pytho n", "Py-thon", "PYTHON", "  py.thon  "])
+def test_similar_flags_spacing_punctuation_and_case_lookalikes(client: TestClient, typed: str) -> None:
+    _create(client, "Python")
+    _create(client, "Docker")
+
+    assert _similar(client, typed) == ["Python"]
+
+
+def test_similar_matches_through_an_alias(client: TestClient) -> None:
+    skill = _create(client, "PostgreSQL")
+    _add_alias(client, skill["id"], "Postgres")
+
+    assert _similar(client, "post-gres") == ["PostgreSQL"]
+
+
+def test_similar_keeps_c_cplusplus_and_csharp_apart(client: TestClient) -> None:
+    for name in ["C", "C++", "C#"]:
+        _create(client, name)
+
+    assert _similar(client, "c") == ["C"]
+    assert _similar(client, "c ++") == ["C++"]
+    assert _similar(client, "C #") == ["C#"]
+
+
+@pytest.mark.parametrize("typed", ["Rust", "---", "   "])
+def test_similar_returns_nothing_for_new_or_empty_names(client: TestClient, typed: str) -> None:
+    _create(client, "Python")
+
+    assert _similar(client, typed) == []
+
+
+# --- DELETE /skills/{id} ------------------------------------------------------
+
+
+def test_delete_unused_skill_removes_it_and_its_aliases(client: TestClient, engine: Engine) -> None:
+    keep = _create(client, "Python")
+    typo = _create(client, "pytho n")
+    _add_alias(client, typo["id"], "pyth on")
+
+    response = client.delete(f"/skills/{typo['id']}")
+
+    assert response.status_code == 204
+    assert [s["id"] for s in client.get("/skills").json()] == [keep["id"]]
+    assert _counts(engine) == (1, 0)
+
+
+def test_delete_also_removes_a_not_on_cv_row(client: TestClient, engine: Engine) -> None:
+    skill = _create(client, "Python")
+    client.patch(f"/skills/{skill['id']}/cv-presence", json={"present": False})
+
+    assert client.delete(f"/skills/{skill['id']}").status_code == 204
+    with Session(engine) as db:
+        assert db.scalar(select(func.count()).select_from(CVSkillPresence)) == 0
+
+
+def _claim(client, engine, skill_id):
+    client.post("/user-skills", json={"skill_id": skill_id})
+
+
+def _job_requirement(client, engine, skill_id):
+    with Session(engine) as db:
+        job = JobDescription(user=User(email="someone@example.com"), raw_text="Need Python.")
+        db.add(JobRequirement(job_description=job, skill=db.get(Skill, skill_id), requirement_text="Python"))
+        db.commit()
+
+
+def _on_cv(client, engine, skill_id):
+    client.patch(f"/skills/{skill_id}/cv-presence", json={"present": True})
+
+
+def _saved_link(client, engine, skill_id):
+    client.post(
+        f"/skills/{skill_id}/learning-resources",
+        json={"mode": "theory_interview", "title": "Docs", "url": "https://docs.python.org/"},
+    )
+
+
+def _progress(client, engine, skill_id):
+    client.put(f"/skills/{skill_id}/learning-progress", json={"status": "studying"})
+
+
+@pytest.mark.parametrize(
+    ("use", "reason"),
+    [
+        (_claim, "claimed"),
+        (_job_requirement, "used in 1 job requirement"),
+        (_on_cv, "marked as on your CV"),
+        (_saved_link, "holding 1 saved learning link"),
+        (_progress, "being tracked in learning progress"),
+    ],
+)
+def test_delete_a_skill_in_use_is_409_with_the_reason_and_deletes_nothing(
+    client: TestClient, engine: Engine, use, reason: str
+) -> None:
+    skill = _create(client, "Python")
+    _add_alias(client, skill["id"], "Py")
+    use(client, engine, skill["id"])
+
+    response = client.delete(f"/skills/{skill['id']}")
+
+    assert response.status_code == 409
+    assert reason in response.json()["detail"]
+    assert _counts(engine) == (1, 1)
+
+
+def test_delete_unknown_skill_is_404(client: TestClient) -> None:
+    assert client.delete("/skills/999").status_code == 404
 
 
 # --- GET /skills/resolve -----------------------------------------------------

@@ -19,16 +19,25 @@ HTTP knowledge, flush but never commit, and flush before reading because
 SessionLocal uses autoflush=False.
 """
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
     AliasNotFoundError,
     AmbiguousSkillMatchError,
     EmptySkillTextError,
+    SkillInUseError,
     SkillNameCollisionError,
 )
-from app.db.models import Skill, SkillAlias
+from app.db.models import (
+    CVSkillPresence,
+    JobRequirement,
+    LearningProgress,
+    LearningResource,
+    Skill,
+    SkillAlias,
+    UserSkill,
+)
 
 
 def normalize_text(text: str) -> str:
@@ -71,6 +80,27 @@ def resolve_skill(db: Session, text: str) -> Skill | None:
     if len(matches) > 1:
         raise AmbiguousSkillMatchError(text, [skill.name for skill in matches])
     return matches[0]
+
+
+def squash(text: str) -> str:
+    """Casefold and keep only letters, digits, "+" and "#": a looser key than normalize_text.
+
+    Used ONLY to warn about look-alikes ("pytho n", "Py-thon" -> "python"), never to
+    match or merge anything. "+" and "#" are kept so C, C++ and C# stay distinct.
+    """
+    return "".join(ch for ch in text.casefold() if ch.isalnum() or ch in "+#")
+
+
+def similar_skills(db: Session, name: str) -> list[Skill]:
+    """Skills whose name or an alias squashes to the same text as `name`. Read-only."""
+    target = squash(name)
+    if not target:
+        return []
+    return [
+        skill
+        for skill in list_skills(db)
+        if squash(skill.name) == target or any(squash(a.alias) == target for a in skill.aliases)
+    ]
 
 
 def list_skills(db: Session) -> list[Skill]:
@@ -125,6 +155,49 @@ def add_alias(db: Session, skill: Skill, alias: str) -> SkillAlias:
     db.add(skill_alias)
     db.flush()
     return skill_alias
+
+
+def _usage(db: Session, skill: Skill) -> list[str]:
+    """Why this skill can't be deleted, as readable reasons; empty means it's unused."""
+
+    def count(model: type, *conditions) -> int:
+        return db.scalar(
+            select(func.count()).select_from(model).where(model.skill_id == skill.id, *conditions)
+        )
+
+    reasons = []
+    if count(UserSkill):
+        reasons.append("claimed")
+    if (n := count(JobRequirement)):
+        reasons.append(f"used in {n} job requirement{'s' if n != 1 else ''}")
+    if count(CVSkillPresence, CVSkillPresence.present.is_(True)):
+        reasons.append("marked as on your CV")
+    if (n := count(LearningResource)):
+        reasons.append(f"holding {n} saved learning link{'s' if n != 1 else ''}")
+    if count(LearningProgress):
+        reasons.append("being tracked in learning progress")
+    return reasons
+
+
+def delete_skill(db: Session, skill: Skill) -> None:
+    """Delete a skill nothing depends on, with its aliases. Raises SkillInUseError otherwise.
+
+    Refusing (rather than cascading) protects user data and history: a claim, an old job
+    comparison or a saved link never silently loses its skill. A CV row saying
+    present=False is removed along with the skill, since cv_service already treats it
+    exactly like having no row.
+    """
+    db.flush()
+    reasons = _usage(db, skill)
+    if reasons:
+        raise SkillInUseError(skill.name, reasons)
+    # Deleted through the ORM (not bulk SQL) so the session's loaded collections stay
+    # consistent when the skill itself is deleted. _usage guarantees any remaining CV
+    # rows here have present=False.
+    for row in [*skill.cv_skill_presences, *skill.aliases]:
+        db.delete(row)
+    db.delete(skill)
+    db.flush()
 
 
 def remove_alias(db: Session, skill: Skill, alias: str) -> None:

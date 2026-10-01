@@ -1034,6 +1034,45 @@ Added 2026-10-01. This is step 2 of the CV work, and it also closes the long-sta
   - switching the Skills page's per-skill `cv-status` requests to `/cv/status`
   - CV tags on the Dashboard's "Skills to learn"
 
+### Look-alike warning and deleting unused skills
+
+Added 2026-10-01, prompted by the user accidentally adding "pytho n" (which `normalize_text` rightly treats as different from "python", since it only strips the ends and collapses whitespace).
+
+- **`skill_service.squash(text)`** casefolds and keeps only letters, digits, `+` and `#`. It's a deliberately looser key than `normalize_text`, used **only to warn, never to match, resolve or merge**, so the exact-match taxonomy rule (§7) is untouched. Keeping `+`/`#` means C, C++ and C# stay distinct. "Node.js" vs "NodeJS" is flagged, which is useful: they're the same and belong together as an alias.
+- **`skill_service.similar_skills(db, name)`** returns skills whose name or any alias squashes equal; a blank or punctuation-only name gives `[]`. Exposed as **`GET /skills/similar?name=`**, declared before the `"/{skill_id}"` routes.
+- **`skill_service.delete_skill(db, skill)`:**
+  - `_usage` collects reasons: a `UserSkill`, `JobRequirement` rows, a `CVSkillPresence` with `present=True`, `LearningResource` rows, a `LearningProgress` row. Any reason raises `SkillInUseError` (**409**, e.g. `"QuokkaDB" can't be deleted because it is claimed.`).
+  - **Refusing rather than cascading is the point:** a claim, an old job comparison or a saved link never silently loses its skill.
+  - A `present=False` CV row is removed along with the skill, because `cv_service` already documents it as identical to having no row.
+  - Aliases and those CV rows are deleted **through the ORM** before the skill, so the session's loaded collections stay consistent. (A bulk `DELETE` followed by `db.delete(skill)` could make SQLAlchemy try to null out already-deleted children.)
+  - Exposed as **`DELETE /skills/{id}`**: 204, 409, or 404.
+- **Frontend:**
+  - **`/skills`:** "Add skill" first calls `/skills/similar`. Any match shows a warm-colored banner, *"… looks like **Python**. If it's the same thing, add it as a nickname…"*, with **Add anyway** / **Cancel**. Editing the name clears it. If the check itself fails, adding isn't blocked, since the backend still refuses exact duplicates.
+  - **`/skills/{id}`:** a "Delete this skill" section at the bottom. It shows a `window.confirm`, then `DELETE`, then `router.push("/skills")`; the backend's 409 reason is shown inline.
+- **Verified:**
+  - **Tests:** 17 new in `test_skills_api.py`:
+    - "pytho n", "Py-thon", "PYTHON" and "  py.thon  " all match Python
+    - a match through an alias
+    - C / C++ / C# kept apart
+    - "Rust", "---" and blank give nothing
+    - an unused skill is deleted together with its alias
+    - a `present=False` CV row is removed
+    - **5 kinds of use** each give 409 with their reason and nothing deleted
+    - an unknown skill returns 404
+
+    Suite: **275 passed**.
+  - **Mutation check:** replacing `_usage(...)` with `[]` made all 5 in-use tests fail. The file was restored byte-identical.
+  - **Live check against real Postgres**, which enforces foreign keys where the SQLite tests don't (temporary :8011; user's server and data untouched):
+    - `similar("pytho n")` returned the user's own `["pytho n", "Python"]`, read-only.
+    - A test skill with an alias and a `present=False` CV row was deleted with 204 and no FK errors; the skill, alias and CV row were confirmed gone.
+    - A claimed test skill returned 409 "claimed", and a second delete returned 404.
+    - Only the test rows were cleaned up, and counts matched the snapshot. "pytho n" was left for the user to delete through the new button.
+- **Not done:**
+  - real misspellings ("Pyhton"), since edit-distance matching would also flag unrelated pairs like Java/Lava
+  - the look-alike check when adding an alias
+  - renaming or merging skills
+  - deleting skills that are in use
+
 ---
 
 ## 8. What Is Already Working
