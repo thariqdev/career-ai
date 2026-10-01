@@ -3,12 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiGet, ApiError } from "@/lib/api";
-import StatusBadge from "@/components/StatusBadge";
+import GapList from "@/components/GapList";
+import LearnLinks from "@/components/LearnLinks";
+import { useLearningResources } from "@/lib/learning";
 import type { CVStatusResponse, Gap, JobDescription, Skill, UserSkill } from "@/lib/types";
 
 // The maximum number of CV recommendations shown at once, so a large skill
 // list doesn't turn this section into a second full page of its own.
 const MAX_RECOMMENDATIONS = 5;
+const MAX_SKILLS_TO_LEARN = 8;
+
+type SkillToLearn = { skillId: number; name: string; jobs: number };
 
 type Loaded = {
   status: "loaded";
@@ -16,8 +21,52 @@ type Loaded = {
   totalGaps: number;
   jobDescriptions: JobDescription[];
   mostRecentGaps: Gap[];
+  skillsToLearn: SkillToLearn[];
   recommendations: string[];
 };
+
+// Each skill counted once per job description it's a gap in, so "needed by N
+// jobs" means N different postings, not N requirement lines. Gaps not mapped to
+// a skill are left out: there's no skill to learn or search for.
+function rankSkillsToLearn(gapsPerJob: Gap[][]): SkillToLearn[] {
+  const bySkill = new Map<number, SkillToLearn>();
+  for (const gaps of gapsPerJob) {
+    const seenInThisJob = new Set<number>();
+    for (const gap of gaps) {
+      const { skill_id: skillId, skill_name: name } = gap.requirement;
+      if (skillId === null || name === null || seenInThisJob.has(skillId)) continue;
+      seenInThisJob.add(skillId);
+      const jobs = (bySkill.get(skillId)?.jobs ?? 0) + 1;
+      bySkill.set(skillId, { skillId, name, jobs });
+    }
+  }
+  return [...bySkill.values()]
+    .sort((a, b) => b.jobs - a.jobs || a.name.localeCompare(b.name))
+    .slice(0, MAX_SKILLS_TO_LEARN);
+}
+
+function SkillsToLearn({ items }: { items: SkillToLearn[] }) {
+  const learning = useLearningResources(items.map((item) => item.skillId));
+
+  if (items.length === 0) {
+    return <p className="mt-2 text-ink-soft">No open gaps right now.</p>;
+  }
+  return (
+    <ul className="mt-3 flex flex-col gap-3">
+      {items.map((item) => (
+        <li key={item.skillId} className="flex flex-col gap-1 text-sm text-ink">
+          <span>
+            {item.name}{" "}
+            <span className="text-ink-soft">
+              — needed by {item.jobs} {item.jobs === 1 ? "job" : "jobs"}
+            </span>
+          </span>
+          {learning[item.skillId] && <LearnLinks learning={learning[item.skillId]} />}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 type State = { status: "loading" } | { status: "error"; message: string } | Loaded;
 
@@ -43,6 +92,7 @@ export default function DashboardPage() {
         );
         const totalGaps = gapsPerJob.reduce((sum, gaps) => sum + gaps.length, 0);
         const mostRecentGaps = gapsPerJob[0] ?? [];
+        const skillsToLearn = rankSkillsToLearn(gapsPerJob);
 
         const skills = await apiGet<Skill[]>("/skills");
         const cvStatuses = await Promise.all(
@@ -59,6 +109,7 @@ export default function DashboardPage() {
           totalGaps,
           jobDescriptions,
           mostRecentGaps,
+          skillsToLearn,
           recommendations,
         });
       } catch (error) {
@@ -109,6 +160,11 @@ export default function DashboardPage() {
       </div>
 
       <section className="mt-8">
+        <h2 className="font-display text-lg text-ink">Skills to learn</h2>
+        <SkillsToLearn items={state.skillsToLearn} />
+      </section>
+
+      <section className="mt-8">
         <h2 className="font-display text-lg text-ink">Recent comparison</h2>
         {mostRecent === null ? (
           <p className="mt-2 text-ink-soft">
@@ -124,24 +180,7 @@ export default function DashboardPage() {
               {mostRecent.title ?? "Untitled"}
               {mostRecent.company ? ` — ${mostRecent.company}` : ""}
             </p>
-            {state.mostRecentGaps.length === 0 ? (
-              <p className="mt-2 text-ink-soft">No gaps — every requirement is verified.</p>
-            ) : (
-              <ul className="mt-3 flex flex-col gap-2">
-                {state.mostRecentGaps.map((gap) => (
-                  <li
-                    key={gap.requirement.id}
-                    className="flex items-center gap-3 text-sm text-ink"
-                  >
-                    <span>{gap.requirement.requirement_text}</span>
-                    <StatusBadge status={gap.result.knowledge_status} />
-                    <span className="text-ink-soft">
-                      {gap.requirement.skill_name ?? "not mapped to a skill"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
+            <GapList gaps={state.mostRecentGaps} />
           </div>
         )}
       </section>

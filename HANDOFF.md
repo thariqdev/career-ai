@@ -831,6 +831,29 @@ Added 2026-10-01. Design and the sources deliberately not used are in `ARCHITECT
   - stored video titles and view counts (that would need the YouTube Data API key)
   - learning plans and progress
 
+### Learning links next to gaps (Dashboard + Job Descriptions)
+
+Added 2026-10-01. Frontend only; no backend change (suite still 217 passed).
+
+- **`lib/learning.ts`:**
+  - `MODE_LABEL`, moved here from the Skill Detail page so there's one copy.
+  - `useLearningResources(skillIds)`, which fetches `GET /skills/{id}/learning-resources` once per distinct id. A failed request just leaves that skill out, so its buttons are hidden instead of the page failing. The effect is keyed on the sorted, de-duplicated id list, so re-renders don't refetch. Search-query wording stays in the backend only; the frontend never builds a YouTube URL itself.
+- **`components/LearnLinks.tsx`:** one skill's two YouTube search buttons (`title` shows the full query), plus a link to `/skills/{id}` that shows "(N saved)" when the user has saved links.
+- **`components/GapList.tsx`:** the gap list the Dashboard and Job Descriptions page each used to draw themselves (requirement, `StatusBadge`, skill name, and the shared "No gaps" message), now shared, with `LearnLinks` under each mapped gap. Unmapped gaps (`skill_id` null) get no links.
+- **Dashboard (`app/page.tsx`):** a new "Skills to learn" section. `rankSkillsToLearn` takes the per-job gaps the page already fetches:
+  - it counts each skill once per job description, so "needed by N jobs" means N postings, not N requirement lines
+  - it skips unmapped gaps
+  - it sorts by N descending, then name, and caps at `MAX_SKILLS_TO_LEARN = 8`
+- **Request cost:** "Skills to learn" and the recent-comparison `GapList` each call the hook, so a skill appearing in both is fetched twice. That's accepted at this scale, the same per-item trade-off as elsewhere.
+- **Verified:**
+  - `npm run build` is clean; ESLint is clean for every new or changed file.
+  - **Live replay**, on a temporary `uvicorn` on :8011:
+    - Setup: skills Python, Docker, PostgreSQL (alias Postgres); one saved Docker link; postings "Need Python and Docker." and "Need Docker and Postgres."; extract and compare on both.
+    - Replaying the Dashboard's calls with the same ranking logic gave: 4 open gaps; Skills to learn = Docker (2 jobs, 1 saved), then PostgreSQL (1), then Python (1); correct search URLs for every skill and mode; every recent-comparison gap row mapped to a skill.
+    - Cleaned up back to baseline.
+  - Not checked in a real browser (no browser tooling here).
+- **Pre-existing lint finding, not fixed (out of scope):** `react-hooks/set-state-in-effect` flags `loadAll()` called inside `useEffect` in `app/skills/page.tsx` and `app/skills/[id]/page.tsx`. It was confirmed present in the last committed version too. It's a newer React lint rule about extra re-renders, not a bug; noted in the backlog.
+
 ---
 
 ## 8. What Is Already Working

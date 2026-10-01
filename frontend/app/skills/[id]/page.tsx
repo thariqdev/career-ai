@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
+import { MODE_LABEL } from "@/lib/learning";
 import type {
   CVStatus,
   CVStatusResponse,
@@ -40,11 +41,6 @@ function cvBadgeClasses(status: CVStatus): string {
 function cvBadgeLabel(status: CVStatus): string {
   return status.replace(/_/g, " ");
 }
-
-const MODE_LABEL: Record<LearningModeResources["mode"], string> = {
-  theory_interview: "Theory / Interview",
-  technical_practical: "Technical / Practical",
-};
 
 // One learning mode's column. Holds its own add-link form state, so the two
 // columns' forms never interfere with each other.

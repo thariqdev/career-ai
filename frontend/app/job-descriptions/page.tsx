@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
+import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
 import type {
   ComparisonResult,
@@ -174,24 +175,7 @@ export default function JobDescriptionsPage() {
               </ul>
 
               <h2 className="mt-6 font-display text-lg text-ink">Gaps</h2>
-              {state.gaps.length === 0 ? (
-                <p className="mt-2 text-ink-soft">No gaps — every requirement is verified.</p>
-              ) : (
-                <ul className="mt-3 flex flex-col gap-2">
-                  {state.gaps.map((gap) => (
-                    <li
-                      key={gap.requirement.id}
-                      className="flex items-center gap-3 text-sm text-ink"
-                    >
-                      <span>{gap.requirement.requirement_text}</span>
-                      <StatusBadge status={gap.result.knowledge_status} />
-                      <span className="text-ink-soft">
-                        {gap.requirement.skill_name ?? "not mapped to a skill"}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <GapList gaps={state.gaps} />
             </>
           )}
 
