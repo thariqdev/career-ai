@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
@@ -12,11 +12,54 @@ import type {
   JobDescription,
 } from "@/lib/types";
 
-// There is no GET-all-job-descriptions endpoint on the backend yet, so this page
-// is single-shot: paste one job description, see its results, then "analyze
-// another" throws the results away and shows a fresh form. A real list/history
-// page is a gap for later, not something to add here.
+// Paste one job description and see its results here; "analyze another" resets the
+// form. Every analyzed job is also listed below the form, and each has its own page
+// (/job-descriptions/{id}) where it can be revisited and compared again.
 type Stage = "creating" | "extracting" | "comparing" | "loading-gaps";
+
+// The user's job descriptions, newest first (GET /job-descriptions already orders
+// them). Refetched whenever reloadKey changes, i.e. after each new analysis.
+function PastJobs({ reloadKey }: { reloadKey: number }) {
+  const [jobs, setJobs] = useState<JobDescription[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    apiGet<JobDescription[]>("/job-descriptions")
+      .then((list) => active && setJobs(list))
+      .catch(() => active && setFailed(true));
+    return () => {
+      active = false;
+    };
+  }, [reloadKey]);
+
+  return (
+    <section className="mt-10">
+      <h2 className="font-display text-lg text-ink">Past job descriptions</h2>
+      {failed && <p className="mt-2 text-sm text-not-verified">Could not load past job descriptions.</p>}
+      {!failed && jobs === null && <p className="mt-2 text-sm text-ink-soft">Loading…</p>}
+      {jobs !== null && jobs.length === 0 && (
+        <p className="mt-2 text-sm text-ink-soft">None yet. Analyze one above.</p>
+      )}
+      {jobs !== null && jobs.length > 0 && (
+        <ul className="mt-3 flex flex-col gap-2">
+          {jobs.map((job) => (
+            <li key={job.id} className="text-sm">
+              <Link href={`/job-descriptions/${job.id}`} className="text-ink underline">
+                {job.title ?? "Untitled job"}
+              </Link>
+              <span className="text-ink-soft">
+                {job.company ? ` · ${job.company}` : ""} · {new Date(job.created_at).toLocaleDateString()}
+                {" · "}
+                {job.requirements.length} requirement{job.requirements.length === 1 ? "" : "s"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 const STAGE_LABEL: Record<Stage, string> = {
   creating: "Creating…",
@@ -43,6 +86,7 @@ export default function JobDescriptionsPage() {
   const [title, setTitle] = useState("");
   const [company, setCompany] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
+  const [pastReloadKey, setPastReloadKey] = useState(0);
 
   function resetForm() {
     setRawText("");
@@ -79,6 +123,7 @@ export default function JobDescriptionsPage() {
       const gaps = await apiGet<Gap[]>(`/job-descriptions/${jobDescription.id}/gaps`);
 
       setState({ status: "done", jobDescription, extraction, comparisons, gaps });
+      setPastReloadKey((key) => key + 1);
     } catch (error) {
       setState({
         status: "error",
@@ -179,15 +224,22 @@ export default function JobDescriptionsPage() {
             </>
           )}
 
-          <button
-            type="button"
-            onClick={resetForm}
-            className="mt-6 rounded border border-line px-4 py-1.5 text-sm text-ink"
-          >
-            Analyze another job description
-          </button>
+          <div className="mt-6 flex flex-wrap items-center gap-4">
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded border border-line px-4 py-1.5 text-sm text-ink"
+            >
+              Analyze another job description
+            </button>
+            <Link href={`/job-descriptions/${state.jobDescription.id}`} className="text-sm underline">
+              Open this job&apos;s page
+            </Link>
+          </div>
         </div>
       )}
+
+      <PastJobs reloadKey={pastReloadKey} />
     </main>
   );
 }

@@ -323,6 +323,92 @@ def test_compare_on_a_nonexistent_or_not_owned_id_is_404(client: TestClient, eng
     assert client.post(f"/job-descriptions/{other_job_id}/compare").status_code == 404
 
 
+# --- latest results -----------------------------------------------------------------
+
+
+def _claim_python(engine: Engine, job_id: int, verified: bool) -> None:
+    """Give the job's owner a Python claim, VERIFIED (with evidence) or left PROVISIONAL."""
+    with _session(engine) as db:
+        python = skill_service.resolve_skill(db, "Python") or skill_service.create_skill(db, "Python")
+        job = db.get(JobDescription, job_id)
+        user_skill = db.scalar(select(UserSkill)) or UserSkill(user=job.user, skill=python)
+        db.add(user_skill)
+        db.flush()
+        if verified:
+            evidence = Evidence(user=job.user, evidence_type=EvidenceType.PROJECT, title="repo")
+            db.add(evidence)
+            db.flush()
+            verification_service.link_evidence(db, user_skill, evidence)
+            verification_service.set_status(db, user_skill, VerificationStatus.VERIFIED)
+        db.commit()
+
+
+def test_results_are_empty_before_any_comparison(client: TestClient) -> None:
+    body = _create_job(client, "Need Python experience.")
+    _with_extractor(client, FakeExtractor(_proposal("Python experience")))
+    client.post(f"/job-descriptions/{body['id']}/extract")
+
+    response = client.get(f"/job-descriptions/{body['id']}/results")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_results_include_verified_requirements_that_gaps_leave_out(
+    client: TestClient, engine: Engine
+) -> None:
+    body = _create_job(client, "Need Python experience and some obscure tooling.")
+    _claim_python(engine, body["id"], verified=True)
+    _with_extractor(
+        client,
+        FakeExtractor(_proposal("Python experience", mention="Python"), _proposal("some obscure tooling")),
+    )
+    requirement_ids = [r["id"] for r in client.post(f"/job-descriptions/{body['id']}/extract").json()["accepted"]]
+    client.post(f"/job-descriptions/{body['id']}/compare")
+
+    results = client.get(f"/job-descriptions/{body['id']}/results").json()
+    gaps = client.get(f"/job-descriptions/{body['id']}/gaps").json()
+
+    assert [(r["job_requirement_id"], r["knowledge_status"]) for r in results] == [
+        (requirement_ids[0], "verified"),
+        (requirement_ids[1], "not_verified"),
+    ]
+    assert [g["requirement"]["id"] for g in gaps] == [requirement_ids[1]]
+
+
+def test_comparing_again_makes_the_newer_result_win_and_keeps_the_older_one(
+    client: TestClient, engine: Engine
+) -> None:
+    body = _create_job(client, "Need Python experience.")
+    _claim_python(engine, body["id"], verified=False)
+    _with_extractor(client, FakeExtractor(_proposal("Python experience", mention="Python")))
+    client.post(f"/job-descriptions/{body['id']}/extract")
+    first = client.post(f"/job-descriptions/{body['id']}/compare").json()
+    assert [r["knowledge_status"] for r in first] == ["provisional"]
+
+    _claim_python(engine, body["id"], verified=True)  # the user proves the skill
+    second = client.post(f"/job-descriptions/{body['id']}/compare").json()
+    results = client.get(f"/job-descriptions/{body['id']}/results").json()
+
+    assert [(r["id"], r["knowledge_status"]) for r in results] == [(second[0]["id"], "verified")]
+    assert second[0]["id"] != first[0]["id"]
+    assert client.get(f"/job-descriptions/{body['id']}/gaps").json() == []
+    with _session(engine) as db:
+        assert db.scalar(select(func.count()).select_from(ComparisonResult)) == 2
+
+
+def test_results_on_a_nonexistent_or_not_owned_id_is_404(client: TestClient, engine: Engine) -> None:
+    assert client.get("/job-descriptions/999/results").status_code == 404
+
+    with _session(engine) as db:
+        other_user = User(email="other@example.com")
+        other_job = JobDescription(user=other_user, raw_text="Not yours.")
+        db.add_all([other_user, other_job])
+        db.commit()
+        other_job_id = other_job.id
+    assert client.get(f"/job-descriptions/{other_job_id}/results").status_code == 404
+
+
 # --- gaps -------------------------------------------------------------------------
 
 

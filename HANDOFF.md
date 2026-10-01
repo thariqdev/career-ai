@@ -1073,6 +1073,48 @@ Added 2026-10-01, prompted by the user accidentally adding "pytho n" (which `nor
   - renaming or merging skills
   - deleting skills that are in use
 
+### Job-description history and "Compare again"
+
+Added 2026-10-01. This closes the "job-descriptions list/detail page" backlog item and the stale-gap confusion found in manual testing: a gap still showing "not verified" after the user verified the skill, because comparisons are append-only snapshots.
+
+- **`GET /job-descriptions/{id}/results`** (`job_descriptions.py`) exposes `comparison_service.latest_results`: the newest (highest-id) `ComparisonResult` per requirement, **including VERIFIED ones**, which `/gaps` leaves out.
+  - It uses the same `_get_owned_job_description` 404-not-403 check as the other job routes.
+  - Never-compared requirements are simply absent.
+  - No new logic: the function existed and was tested since task 12.
+- **Frontend:**
+  - **`app/job-descriptions/page.tsx`:**
+    - A `PastJobs` list under the form, from `GET /job-descriptions`: newest first, with title, company, date and requirement count, each linking to its page. It's refetched via a `reloadKey` bump after each analysis.
+    - "Open this job's page" after an analysis.
+    - The stale "no GET-all endpoint yet" comment was replaced.
+  - **New `app/job-descriptions/[id]/page.tsx`:**
+    - Loads the job, `/results` and `/gaps` in parallel.
+    - Shows each requirement with its latest `StatusBadge`, or "not compared yet", and a link to its skill; then `GapList`; then the original text in a collapsed `<details>`.
+    - **Compare again** calls `POST /compare`, then reloads all three. A "Last compared …" line shows the newest result's time.
+    - **`source_url` is free text** (`JobDescriptionCreate` doesn't validate it), so it's only rendered as `<a href>` when it matches `^https?://`; anything else, e.g. `javascript:…`, is plain text.
+  - **Dashboard:** the "Recent comparison" title links to the job page.
+  - **Lint-friendly loading:** both new pieces fetch first and call `setState` only in promise callbacks, never synchronously at the top of a `useEffect`. So they don't add `react-hooks/set-state-in-effect` findings, and this is the pattern to use when fixing the two older pages.
+- **Verified:**
+  - **Tests:** 4 new in `test_job_descriptions_api.py`:
+    - empty before any compare
+    - a verified requirement appears in `/results` but not `/gaps`
+    - **after verifying and comparing again, the newer result wins** (new id, `verified`), gaps empties, and 2 `ComparisonResult` rows remain stored
+    - missing or another user's job returns 404
+
+    Suite: **279 passed**.
+  - **Mutation check:** `func.max` → `func.min` in `latest_results` made the newer-wins test and the existing `test_gaps_reflect_non_verified_requirements_then_disappear_once_verified` fail. The file was restored byte-identical.
+  - `npm run build` is clean with the new dynamic route, and ESLint is fully clean on all three changed files.
+  - **Live check** (temporary :8011; the user's server and data untouched):
+    - Setup: test skills Zebralang and QuokkaDB, and a test job with `source_url` `javascript:alert(1)` to exercise the plain-text path in code.
+    - The job appeared in the list, and `/results` was `[]` before comparing.
+    - First compare: 2 × `not_verified`, 2 gaps.
+    - Zebralang was claimed, linked to evidence and verified. `/results` and `/gaps` were unchanged until **compare again**, which then gave Zebralang `verified` (new id), and QuokkaDB alone remained as a gap.
+    - A missing id returned 404.
+    - Cleanup deleted only the recorded ids, names and titles asserted, in foreign-key order, including the `comparison_result_evidence` link the verified result created. Counts matched the snapshot.
+- **Not done:**
+  - **re-extracting an existing posting** to pick up skills saved since (still refused by design; paste the posting again)
+  - deleting or editing job descriptions
+  - pagination
+
 ---
 
 ## 8. What Is Already Working

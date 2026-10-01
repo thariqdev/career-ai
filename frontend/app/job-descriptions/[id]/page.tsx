@@ -1,0 +1,194 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { apiGet, apiPost, ApiError } from "@/lib/api";
+import GapList from "@/components/GapList";
+import StatusBadge from "@/components/StatusBadge";
+import type { ComparisonResult, Gap, JobDescription } from "@/lib/types";
+
+type Loaded = {
+  status: "loaded";
+  job: JobDescription;
+  results: ComparisonResult[];
+  gaps: Gap[];
+};
+
+type PageState = { status: "loading" } | { status: "error"; message: string } | Loaded;
+
+async function fetchJob(id: number): Promise<Loaded> {
+  const [job, results, gaps] = await Promise.all([
+    apiGet<JobDescription>(`/job-descriptions/${id}`),
+    apiGet<ComparisonResult[]>(`/job-descriptions/${id}/results`),
+    apiGet<Gap[]>(`/job-descriptions/${id}/gaps`),
+  ]);
+  return { status: "loaded", job, results, gaps };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Could not reach the backend.";
+}
+
+// source_url is free text the user typed, so only a real http(s) link is rendered
+// as a link; anything else (e.g. "javascript:...") is shown as plain text.
+function isWebLink(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
+}
+
+export default function JobDescriptionPage() {
+  const params = useParams<{ id: string }>();
+  const jobId = Number(params.id);
+  const [state, setState] = useState<PageState>({ status: "loading" });
+  const [comparing, setComparing] = useState(false);
+  const [compareError, setCompareError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetchJob(jobId)
+      .then((loaded) => active && setState(loaded))
+      .catch((error) => active && setState({ status: "error", message: errorMessage(error) }));
+    return () => {
+      active = false;
+    };
+  }, [jobId]);
+
+  // Re-checks every requirement against what the user can prove NOW. Older results
+  // stay stored; the page then shows the newest one per requirement.
+  async function handleCompareAgain() {
+    setCompareError(null);
+    setComparing(true);
+    try {
+      await apiPost(`/job-descriptions/${jobId}/compare`, {});
+      setState(await fetchJob(jobId));
+    } catch (error) {
+      setCompareError(errorMessage(error));
+    } finally {
+      setComparing(false);
+    }
+  }
+
+  if (state.status === "loading") {
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-8">
+        <p className="text-ink-soft">Loading…</p>
+      </main>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-8">
+        <p className="text-not-verified">Error: {state.message}</p>
+        <Link href="/job-descriptions" className="mt-2 inline-block text-sm underline">
+          Back to job descriptions
+        </Link>
+      </main>
+    );
+  }
+
+  const { job, results, gaps } = state;
+  const resultByRequirement = new Map(results.map((r) => [r.job_requirement_id, r] as const));
+  const lastCompared = results.reduce<string | null>(
+    (latest, r) => (latest === null || r.created_at > latest ? r.created_at : latest),
+    null,
+  );
+
+  return (
+    <main className="mx-auto max-w-3xl px-6 py-8">
+      <Link href="/job-descriptions" className="text-sm text-ink-soft underline">
+        ← All job descriptions
+      </Link>
+      <h1 className="mt-2 font-display text-2xl text-ink">{job.title ?? "Untitled job"}</h1>
+      <p className="mt-1 text-sm text-ink-soft">
+        {job.company ?? "No company"} · added {new Date(job.created_at).toLocaleDateString()}
+        {job.source_url &&
+          (isWebLink(job.source_url) ? (
+            <>
+              {" · "}
+              <a
+                href={job.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                original posting
+              </a>
+            </>
+          ) : (
+            ` · ${job.source_url}`
+          ))}
+      </p>
+
+      <section className="mt-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-lg text-ink">Requirements</h2>
+          {job.requirements.length > 0 && (
+            <button
+              type="button"
+              onClick={handleCompareAgain}
+              disabled={comparing}
+              className="rounded bg-accent px-3 py-1.5 text-sm text-surface disabled:opacity-50"
+            >
+              {comparing ? "Comparing…" : "Compare again"}
+            </button>
+          )}
+        </div>
+        <p className="mt-1 text-sm text-ink-soft">
+          {lastCompared
+            ? `Last compared ${new Date(lastCompared).toLocaleString()}. Proved a skill since? Compare again to update.`
+            : "Not compared yet."}
+        </p>
+        {compareError && <p className="mt-2 text-sm text-not-verified">{compareError}</p>}
+
+        {job.requirements.length === 0 ? (
+          <p className="mt-3 text-sm text-ink-soft">
+            No requirements were found in this posting. Requirements come from skills you&apos;d
+            saved when it was analyzed; to pick up newly saved skills, paste it again on the{" "}
+            <Link href="/job-descriptions" className="underline">
+              Job Descriptions
+            </Link>{" "}
+            page.
+          </p>
+        ) : (
+          <ul className="mt-3 flex flex-col gap-2">
+            {job.requirements.map((requirement) => {
+              const result = resultByRequirement.get(requirement.id);
+              return (
+                <li key={requirement.id} className="flex flex-wrap items-center gap-3 text-sm text-ink">
+                  <span>{requirement.requirement_text}</span>
+                  {result ? (
+                    <StatusBadge status={result.knowledge_status} />
+                  ) : (
+                    <span className="text-xs text-ink-soft">not compared yet</span>
+                  )}
+                  {requirement.skill_id !== null ? (
+                    <Link href={`/skills/${requirement.skill_id}`} className="text-ink-soft underline">
+                      {requirement.skill_name}
+                    </Link>
+                  ) : (
+                    <span className="text-ink-soft">not mapped to a skill</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {job.requirements.length > 0 && (
+        <section className="mt-8">
+          <h2 className="font-display text-lg text-ink">Gaps</h2>
+          <GapList gaps={gaps} />
+        </section>
+      )}
+
+      <details className="mt-8">
+        <summary className="cursor-pointer text-sm text-ink-soft">Original posting text</summary>
+        <p className="mt-2 whitespace-pre-wrap rounded border border-line bg-surface p-3 text-sm text-ink">
+          {job.raw_text}
+        </p>
+      </details>
+    </main>
+  );
+}

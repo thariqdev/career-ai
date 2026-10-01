@@ -202,7 +202,9 @@ export default function DashboardPage() {
         ) : (
           <div className="mt-2">
             <p className="text-ink">
-              {mostRecent.title ?? "Untitled"}
+              <Link href={`/job-descriptions/${mostRecent.id}`} className="underline">
+                {mostRecent.title ?? "Untitled"}
+              </Link>
               {mostRecent.company ? ` — ${mostRecent.company}` : ""}
             </p>
             <GapList gaps={state.mostRecentGaps} />

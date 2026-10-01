@@ -122,6 +122,19 @@ def compare_job_description(
     return results
 
 
+@router.get("/{job_description_id}/results", response_model=list[ComparisonResultResponse])
+def read_latest_results(
+    job_description_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list:
+    # Read-only: the latest result per requirement, INCLUDING verified ones (gaps leaves
+    # those out). A requirement never compared has no result and is simply absent.
+    # Older results stay stored; comparisons append, they never overwrite.
+    job_description = _get_owned_job_description(db, job_description_id, user)
+    return comparison_service.latest_results(db, job_description)
+
+
 @router.get("/{job_description_id}/gaps", response_model=list[GapResponse])
 def read_skill_gaps(
     job_description_id: int,
