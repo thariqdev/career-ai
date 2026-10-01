@@ -27,6 +27,8 @@ from app.core.exceptions import (
     AmbiguousSkillMatchError,
     EmptySkillTextError,
     SkillInUseError,
+    SkillMergeConflictError,
+    SkillMergeIntoItselfError,
     SkillNameCollisionError,
 )
 from app.db.models import (
@@ -38,6 +40,7 @@ from app.db.models import (
     SkillAlias,
     UserSkill,
 )
+from app.db.models.enums import LearningStatus
 
 
 def normalize_text(text: str) -> str:
@@ -228,6 +231,70 @@ def delete_skill(db: Session, skill: Skill) -> None:
         db.delete(row)
     db.delete(skill)
     db.flush()
+
+
+def merge_skills(db: Session, source: Skill, target: Skill) -> Skill:
+    """Fold `source` (a duplicate) into `target`, then delete `source`. Returns `target`.
+
+    Everything that pointed at the duplicate moves to the target, so nothing is lost:
+    job requirements, aliases, claims (with their evidence and comparison history, which
+    reference the claim, not the skill) and saved links. The duplicate's name becomes a
+    target alias, so later postings using that spelling still resolve.
+
+    Where both skills hold a per-user row, the rule is fixed and invents nothing:
+    - learning progress: keep the further-along one (finished beats studying);
+    - CV mark: present if either was present (the CV did mention one of the names);
+    - saved links: an exact duplicate (same mode and URL) is dropped;
+    - claims: refused with SkillMergeConflictError. Choosing which status and proof
+      survive is the user's judgment (PROJECT_RULES.md: nothing is inferred).
+    Merging covers every user's rows, since skills are a shared taxonomy.
+    """
+    db.flush()
+    if source.id == target.id:
+        raise SkillMergeIntoItselfError(source.name)
+    target_claimants = {claim.user_id for claim in target.user_skills}
+    if any(claim.user_id in target_claimants for claim in source.user_skills):
+        raise SkillMergeConflictError(source.name, target.name)
+
+    for row in [*source.user_skills, *source.job_requirements, *source.aliases]:
+        row.skill = target
+
+    saved = {(resource.mode, resource.url) for resource in target.learning_resources}
+    for resource in list(source.learning_resources):
+        if (resource.mode, resource.url) in saved:
+            db.delete(resource)
+        else:
+            resource.skill = target
+            saved.add((resource.mode, resource.url))
+
+    progress_by_user = {row.user_id: row for row in target.learning_progress}
+    for row in list(source.learning_progress):
+        kept = progress_by_user.get(row.user_id)
+        if kept is None:
+            row.skill = target
+            continue
+        if row.status == LearningStatus.FINISHED:
+            kept.status = LearningStatus.FINISHED
+        db.delete(row)
+
+    presence_by_user = {row.user_id: row for row in target.cv_skill_presences}
+    for row in list(source.cv_skill_presences):
+        kept = presence_by_user.get(row.user_id)
+        if kept is None:
+            row.skill = target
+            continue
+        kept.present = kept.present or row.present
+        db.delete(row)
+
+    # Move and drop rows first, so deleting the now-empty source touches nothing else.
+    db.flush()
+    source_name = source.name
+    db.expire(source)
+    db.delete(source)
+    db.flush()
+    add_alias(db, target, source_name)  # the name is free now that the source is gone
+    db.expire(target)  # reload its collections from the database
+    return target
 
 
 def remove_alias(db: Session, skill: Skill, alias: str) -> None:

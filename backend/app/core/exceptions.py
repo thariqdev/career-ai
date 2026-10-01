@@ -126,6 +126,24 @@ class SkillInUseError(DomainError):
         )
 
 
+class SkillMergeIntoItselfError(DomainError):
+    """A skill can't be merged into itself."""
+
+    def __init__(self, skill_name: str) -> None:
+        super().__init__(f'"{skill_name}" can\'t be merged into itself; pick a different skill.')
+
+
+class SkillMergeConflictError(DomainError):
+    """Both skills hold a claim, and combining two claims is the user's call, not the app's."""
+
+    def __init__(self, source_name: str, target_name: str) -> None:
+        super().__init__(
+            f'Both "{source_name}" and "{target_name}" are claimed, so they can\'t be merged: '
+            "combining two claims (their status and evidence) would mean the app deciding "
+            "which proof and status win, and that's your decision, not the app's."
+        )
+
+
 class AliasNotFoundError(DomainError):
     """The skill has no alias matching this text."""
 

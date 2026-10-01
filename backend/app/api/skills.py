@@ -76,6 +76,20 @@ def delete_skill(skill_id: int, db: Session = Depends(get_db)) -> Response:
     return Response(status_code=204)
 
 
+@router.post("/{source_id}/merge-into/{target_id}", response_model=SkillResponse)
+def merge_skills(source_id: int, target_id: int, db: Session = Depends(get_db)) -> Skill:
+    """Fold a duplicate skill into another. 422 for itself, 409 when both are claimed."""
+    source = skill_service.get_skill(db, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail=f"Skill {source_id} not found.")
+    target = skill_service.get_skill(db, target_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail=f"Skill {target_id} not found.")
+    skill_service.merge_skills(db, source, target)
+    db.commit()
+    return target
+
+
 # Declared before any future "/{skill_id}" GET route so "resolve" is never captured as an id.
 @router.get("/resolve", response_model=SkillResponse)
 def resolve_skill(text: str, db: Session = Depends(get_db)) -> Skill:

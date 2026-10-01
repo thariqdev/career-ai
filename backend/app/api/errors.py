@@ -29,6 +29,8 @@ from app.core.exceptions import (
     ProfileRecordInUseError,
     RequirementsAlreadyExistError,
     SkillInUseError,
+    SkillMergeConflictError,
+    SkillMergeIntoItselfError,
     SkillNameCollisionError,
     TooManyEvidenceSourcesError,
 )
@@ -40,6 +42,8 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     DuplicateLearningResourceError: 409,
     AliasNotFoundError: 404,
     SkillInUseError: 409,
+    SkillMergeIntoItselfError: 422,
+    SkillMergeConflictError: 409,
     EmptyProfileFieldError: 422,
     InvalidDateRangeError: 422,
     ProfileRecordInUseError: 409,

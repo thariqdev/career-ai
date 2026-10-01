@@ -7,6 +7,7 @@ import AliasEditor from "@/components/AliasEditor";
 import EvidenceForm, { type EvidenceBody } from "@/components/EvidenceForm";
 import LearningPathChecklist from "@/components/LearningPathChecklist";
 import LearningProgressControl from "@/components/LearningProgressControl";
+import MergeSkillControl from "@/components/MergeSkillControl";
 import SkillNameEditor from "@/components/SkillNameEditor";
 import StatusBadge from "@/components/StatusBadge";
 import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
@@ -139,6 +140,7 @@ function LearningColumn({
 type Loaded = {
   status: "loaded";
   skill: Skill;
+  skills: Skill[];
   cvStatus: CVStatusResponse;
   userSkill: UserSkill | null;
   evidence: Evidence[];
@@ -193,6 +195,7 @@ async function fetchSkillPage(skillId: number): Promise<PageState> {
     return {
       status: "loaded",
       skill,
+      skills,
       cvStatus,
       userSkill: userSkills.find((us) => us.skill_id === skillId) ?? null,
       evidence,
@@ -629,6 +632,13 @@ export default function SkillDetailPage() {
           ))}
         </div>
       </section>
+
+      <MergeSkillControl
+        skill={skill}
+        skills={state.skills}
+        busy={busy}
+        onMerged={(target) => router.push(`/skills/${target.id}`)}
+      />
 
       <section className="mt-12 border-t border-line pt-6">
         <h2 className="font-display text-lg text-ink">Delete this skill</h2>

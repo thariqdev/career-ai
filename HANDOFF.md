@@ -156,7 +156,7 @@ career-ai/
     │   │   ├── services/
     │   │   │   ├── __init__.py
     │   │   │   ├── verification_service.py  ← link_evidence(), set_status()
-    │   │   │   ├── skill_service.py         ← resolve_skill(), create_skill(), add_alias(), list_skills(), get_skill(), normalize_text()
+    │   │   │   ├── skill_service.py         ← resolve_skill(), create_skill(), add_alias(), list_skills(), get_skill(), normalize_text(), merge_skills()
     │   │   │   ├── comparison_service.py    ← compare_job_description(), latest_results(), skill_gaps(), RequirementGap
     │   │   │   ├── requirement_service.py   ← extract_requirements() (validates an extractor's proposals)
     │   │   │   ├── user_service.py          ← get_or_create_default_user() (single-hardcoded-user bootstrap)
@@ -227,7 +227,8 @@ career-ai/
         ├── test_evidence_removal_api.py
         ├── test_interview_prep_api.py
         ├── test_editing_api.py
-        └── test_learning_path_api.py
+        ├── test_learning_path_api.py
+        └── test_skill_merge_api.py
 ```
 
 ---
@@ -1486,6 +1487,59 @@ Added 2026-10-02. It ties the existing learning pieces into one guided checklist
   - AI-written explanations, questions or exercises
   - custom or reordered steps
   - reminders
+
+### Merging a duplicate skill into another
+
+Added 2026-10-02. `skill_service.merge_skills(db, source, target)` folds a duplicate into the real skill in one transaction, then deletes the duplicate. Delete still refuses an in-use skill; merge is the way to clear a duplicate that's already in use.
+
+- **What moves to the target:**
+  - job requirements (`skill_id` repointed; comparison results reference the claim, not the skill, so history stays intact)
+  - aliases
+  - claims, keeping the same `UserSkill` id, status, evidence links and comparison results
+  - saved links
+- **The duplicate's name** is added as a target alias **after** the source is deleted, since names and aliases share one namespace. Postings using the old spelling still resolve.
+- **Where both skills hold a row for the same user, fixed rules apply** (nothing is inferred):
+  - **learning progress:** the further-along one is kept (FINISHED beats STUDYING) and the source row is deleted
+  - **CV mark:** `present = target.present or source.present`, because the CV did mention one of the names
+  - **saved links:** an exact duplicate (same mode and URL) is dropped, and the target's own copy is kept
+  - **claims:** `SkillMergeConflictError` (409). Choosing which status and proof win is the user's judgment. There's no claim delete yet, so such a pair currently can't be merged; the message says why rather than suggesting an action that doesn't exist.
+- **Other refusals:** merging into itself raises `SkillMergeIntoItselfError` (422); an unknown source or target returns 404 from the route.
+- **Covers every user's rows**, because skills are a shared taxonomy. The claim conflict is checked per user, so two different users' claims are not a conflict. The `uq_user_skill` constraint backs the claim rule in the database too.
+- **Order matters:** moves and drops are flushed, then the source is expired and deleted, so deleting the now-empty skill touches no child row. Then `add_alias`, then the target is expired so its collections reload.
+- **API:** `POST /skills/{source_id}/merge-into/{target_id}` (no body) returns the target `SkillResponse`.
+- **Frontend:** new `components/MergeSkillControl.tsx`, placed above "Delete skill" on the Skill page.
+  - It offers a dropdown of the other skills and **preselects a look-alike** (`GET /skills/similar`, excluding itself) with a "This looks like …" hint.
+  - Merging asks `window.confirm` first and shows the backend's message on refusal; on success it navigates to the target's page.
+  - The look-alike fetch is keyed on the skill's id and name, so page reloads don't refetch.
+  - The page's `Loaded` now keeps the full `skills` list.
+  - **No merge shortcut was added to the Skills page's "looks like" warning:** that warning appears before the new skill exists, so there's nothing to merge yet.
+- **Verified:**
+  - **Tests:** 16 new in `test_skill_merge_api.py`:
+    - aliases move and the old name becomes an alias that resolves
+    - requirements and gaps are repointed
+    - a claim moves with its status, evidence and results
+    - saved links move and exact duplicates are dropped
+    - progress, parametrized ×3 plus the source-only case
+    - CV mark, ×4
+    - both claimed returns 409 and nothing changes
+    - different users' claims merge
+    - merging into itself returns 422
+    - unknown ids return 404
+
+    Suite: **392 passed**.
+  - **Mutation check:** removing the conflict check made `test_both_claimed_is_refused_and_nothing_changes` fail (the DB's unique constraint fired). The file was restored byte-identical.
+  - Build is clean, and eslint reports 0.
+  - **Live check** on :8011 against Postgres:
+    - "ZZ Quokka-lang" was merged into "ZZ Quokkalang" and its claim, alias, progress (finished over studying), CV mark and saved link all moved; the old name resolved; the path showed "Prove it".
+    - Merging into itself returned 422, and an unknown target returned 404.
+    - Two claimed ZZ skills got a 409 and both remained.
+    - Only the test ids were deleted, sequences were reset, and counts matched the snapshot.
+- **Not done:**
+  - undo
+  - merging more than two skills
+  - automatic duplicate detection
+  - merging two claims
+  - deleting a single job requirement
 
 ---
 
