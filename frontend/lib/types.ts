@@ -49,6 +49,22 @@ export type JobDescription = {
   requirements: JobRequirement[];
 };
 
+// Matches backend LearningPathResponse.
+export type PathStep = {
+  key: "start" | "finish" | "prove" | "verify";
+  title: string;
+  detail: string;
+  state: "done" | "current" | "todo";
+  links: { label: string; url: string }[];
+};
+
+export type LearningPath = {
+  skill_id: number;
+  skill_name: string;
+  next_step: string | null;
+  steps: PathStep[];
+};
+
 // Matches backend InterviewPrepResponse.
 export type InterviewPrepStatus =
   | "verified"

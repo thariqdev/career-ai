@@ -508,6 +508,45 @@ class SkillLearningResourcesResponse(BaseModel):
     modes: list[LearningModeResources]
 
 
+class PathLinkResponse(BaseModel):
+    label: str
+    url: str
+
+
+class PathStepResponse(BaseModel):
+    key: str  # start | finish | prove | verify
+    title: str
+    detail: str
+    state: str  # done | current | todo
+    links: list[PathLinkResponse]
+
+
+class LearningPathResponse(BaseModel):
+    skill_id: int
+    skill_name: str
+    next_step: str | None  # None when every step is done
+    steps: list[PathStepResponse]
+
+    @classmethod
+    def from_path(cls, path: Any) -> "LearningPathResponse":
+        # learning_path_service.LearningPath is a plain dataclass, built field-by-field.
+        return cls(
+            skill_id=path.skill.id,
+            skill_name=path.skill.name,
+            next_step=path.next_step,
+            steps=[
+                PathStepResponse(
+                    key=s.key,
+                    title=s.title,
+                    detail=s.detail,
+                    state=s.state,
+                    links=[PathLinkResponse(label=l.label, url=l.url) for l in s.links],
+                )
+                for s in path.steps
+            ],
+        )
+
+
 class CVSkillRef(BaseModel):
     skill_id: int
     skill_name: str

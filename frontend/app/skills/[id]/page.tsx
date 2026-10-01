@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import AliasEditor from "@/components/AliasEditor";
 import EvidenceForm, { type EvidenceBody } from "@/components/EvidenceForm";
+import LearningPathChecklist from "@/components/LearningPathChecklist";
 import LearningProgressControl from "@/components/LearningProgressControl";
 import SkillNameEditor from "@/components/SkillNameEditor";
 import StatusBadge from "@/components/StatusBadge";
@@ -16,6 +17,7 @@ import type {
   Education,
   Evidence,
   LearningModeResources,
+  LearningPath,
   LearningProgress,
   LearningProgressStatus,
   Project,
@@ -145,6 +147,7 @@ type Loaded = {
   projects: Project[];
   works: WorkExperience[];
   educations: Education[];
+  path: LearningPath;
 };
 
 type PageState = { status: "loading" } | { status: "error"; message: string } | Loaded;
@@ -172,7 +175,7 @@ function evidenceSource(item: Evidence, page: Loaded): string | null {
 // so the one skill is found by scanning the full list.
 async function fetchSkillPage(skillId: number): Promise<PageState> {
   try {
-    const [skills, cvStatus, userSkills, evidence, learning, allProgress, projects, works, educations] =
+    const [skills, cvStatus, userSkills, evidence, learning, allProgress, projects, works, educations, path] =
       await Promise.all([
         apiGet<Skill[]>("/skills"),
         apiGet<CVStatusResponse>(`/skills/${skillId}/cv-status`),
@@ -183,6 +186,7 @@ async function fetchSkillPage(skillId: number): Promise<PageState> {
         apiGet<Project[]>("/projects"),
         apiGet<WorkExperience[]>("/work-experiences"),
         apiGet<Education[]>("/educations"),
+        apiGet<LearningPath>(`/skills/${skillId}/learning-path`),
       ]);
     const skill = skills.find((s) => s.id === skillId);
     if (!skill) return { status: "error", message: `Skill ${skillId} not found.` };
@@ -197,6 +201,7 @@ async function fetchSkillPage(skillId: number): Promise<PageState> {
       projects,
       works,
       educations,
+      path,
     };
   } catch (error) {
     return {
@@ -442,6 +447,8 @@ export default function SkillDetailPage() {
         </button>
       </div>
 
+      <LearningPathChecklist path={state.path} />
+
       <AliasEditor
         skill={skill}
         onChange={(updated) =>
@@ -449,13 +456,12 @@ export default function SkillDetailPage() {
         }
       />
 
+      {/* Reload after a progress change so "Your path" ticks its steps too. */}
       <LearningProgressControl
         skillId={skill.id}
         status={state.progress}
         verified={cvStatus.knowledge_status === "verified"}
-        onChange={(progress) =>
-          setState((prev) => (prev.status === "loaded" ? { ...prev, progress } : prev))
-        }
+        onChange={() => loadAll()}
       />
 
       {userSkill === null ? (

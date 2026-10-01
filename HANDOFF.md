@@ -168,6 +168,7 @@ career-ai/
     │   │   │   ├── evidence_service.py      ← delete_evidence() (refuses while linked or in comparison history)
     │   │   │   ├── interview_prep_service.py ← interview_prep() (read-only, fixed templates, current proof)
     │   │   │   ├── job_description_service.py ← delete_job_description() (the job + its own history only)
+    │   │   │   ├── learning_path_service.py ← learning_paths() (4 steps, done/current/todo, read-only)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
     │   ├── db/
@@ -225,7 +226,8 @@ career-ai/
         ├── test_profile_api.py
         ├── test_evidence_removal_api.py
         ├── test_interview_prep_api.py
-        └── test_editing_api.py
+        ├── test_editing_api.py
+        └── test_learning_path_api.py
 ```
 
 ---
@@ -1440,6 +1442,50 @@ Added 2026-10-02.
   - deleting in-use skills
   - deleting single requirements
   - undo or trash
+
+### Learning path per skill
+
+Added 2026-10-02. It ties the existing learning pieces into one guided checklist; PROJECT_RULES.md §14 is still the rule (studying never proves anything).
+
+- **`learning_path_service.learning_paths(db, user, skills)`** is read-only and deterministic, with fixed wording. Four steps, each **done** only from a recorded fact:
+  1. `start`: `LearningProgress` is STUDYING or FINISHED
+  2. `finish`: FINISHED
+  3. `prove`: the claim has ≥1 linked `Evidence`
+  4. `verify`: the claim is **VERIFIED**. PARTIAL counts toward `prove` (it requires evidence), not `verify`.
+
+  Each step's state is `done`, otherwise `current` for the first not-done step, otherwise `todo`. **Steps can be done out of order:** the user's real PostgreSQL claim has evidence but no progress, giving `[current, todo, done, todo]`, and "current" is still the first open step.
+  - `next_step` is the current step's title, or `None` when all are done.
+  - **Links:** `start` has both YouTube search links plus the skill's saved `LearningResource`s; `verify` has the interview-questions search. The frontend adds the internal My Profile link to `prove`.
+  - **Batch-safe:** a fixed number of queries for any number of skills (progress, claims, evidence counts grouped by claim, saved resources), so the Dashboard makes one request in total.
+- **API** (`app/api/learning_path.py`, user-scoped, read-only):
+  - `GET /skills/{id}/learning-path` (404 for an unknown skill)
+  - `GET /learning-paths?skill_ids=…&skill_ids=…` keeps the requested order, collapses duplicates, and skips unknown ids (a convenience read for lists, not a lookup that should fail as a whole)
+- **Frontend:**
+  - **New `components/LearningPathChecklist.tsx`** ("Your path", near the top of the Skill page) shows ✓ / → / ○ marks with the current step highlighted. Details and links appear only for steps not yet done.
+  - The Skill page loads the path inside its parallel `fetchSkillPage`. **`LearningProgressControl`'s `onChange` now calls `loadAll()`** instead of patching local state, so the checklist ticks immediately; evidence and status actions already reloaded.
+  - **Dashboard:** `fetchDashboard` makes one `/learning-paths` call for the ranked "Skills to learn", and each item shows "Next step: …" (or "Learning path complete"), linking to the skill.
+- **Verified:**
+  - **Tests:** 11 new in `test_learning_path_api.py`:
+    - each stage: nothing, studying, finished, evidence linked, partial, verified
+    - **finished studying never ticks `prove`; evidence alone never ticks `verify`; partial ≠ verified**
+    - out-of-order steps
+    - saved links appear in `start`
+    - unknown skill returns 404
+    - batch order, duplicates and unknown ids
+    - another user's progress doesn't count
+
+    Suite: **376 passed**.
+  - **Mutation checks:**
+    - "finished counts as proof" made `test_finished_studying_moves_to_prove_but_never_ticks_it` fail
+    - "partial counts as verified" made `test_partial_is_proof_but_not_verification` fail
+
+    Each file was restored byte-identical.
+  - `npm run build` is clean, and `npx eslint .` reports zero problems.
+  - **Live check** (temporary :8011, since the user's server wasn't running): the user's real skills were read via the batch endpoint, read-only. A test skill was walked through every stage, giving the exact expected states. Only the test ids were removed, and counts matched the snapshot.
+- **Not done:**
+  - AI-written explanations, questions or exercises
+  - custom or reordered steps
+  - reminders
 
 ---
 

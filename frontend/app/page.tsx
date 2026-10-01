@@ -10,6 +10,7 @@ import type {
   CVStatusResponse,
   Gap,
   JobDescription,
+  LearningPath,
   LearningProgress,
   LearningProgressStatus,
   UserSkill,
@@ -30,6 +31,7 @@ type Loaded = {
   mostRecentGaps: Gap[];
   skillsToLearn: SkillToLearn[];
   progressBySkill: Record<number, LearningProgressStatus>;
+  nextStepBySkill: Record<number, string | null>;
   recommendations: string[];
 };
 
@@ -72,14 +74,26 @@ async function fetchDashboard(): Promise<Loaded> {
   const progressBySkill: Record<number, LearningProgressStatus> = {};
   for (const p of allProgress) progressBySkill[p.skill_id] = p.status;
 
+  // One request for every listed skill's learning path (not one per skill).
+  const skillsToLearn = rankSkillsToLearn(gapsPerJob);
+  const paths =
+    skillsToLearn.length === 0
+      ? []
+      : await apiGet<LearningPath[]>(
+          `/learning-paths?${skillsToLearn.map((s) => `skill_ids=${s.skillId}`).join("&")}`,
+        );
+  const nextStepBySkill: Record<number, string | null> = {};
+  for (const path of paths) nextStepBySkill[path.skill_id] = path.next_step;
+
   return {
     status: "loaded",
     verifiedCount: userSkills.filter((us) => us.status === "verified").length,
     totalGaps: gapsPerJob.reduce((sum, gaps) => sum + gaps.length, 0),
     jobDescriptions,
     mostRecentGaps: gapsPerJob[0] ?? [],
-    skillsToLearn: rankSkillsToLearn(gapsPerJob),
+    skillsToLearn,
     progressBySkill,
+    nextStepBySkill,
     // Skills missing from /cv/status have no recommendation anyway (no claim, no CV mark).
     recommendations: cvStatuses
       .map((c) => c.recommendation)
@@ -91,9 +105,11 @@ async function fetchDashboard(): Promise<Loaded> {
 function SkillsToLearn({
   items,
   progressBySkill,
+  nextStepBySkill,
 }: {
   items: SkillToLearn[];
   progressBySkill: Record<number, LearningProgressStatus>;
+  nextStepBySkill: Record<number, string | null>;
 }) {
   const learning = useLearningResources(items.map((item) => item.skillId));
 
@@ -115,6 +131,13 @@ function SkillsToLearn({
               </span>
             )}
           </span>
+          {item.skillId in nextStepBySkill && (
+            <Link href={`/skills/${item.skillId}`} className="text-xs text-ink-soft underline">
+              {nextStepBySkill[item.skillId]
+                ? `Next step: ${nextStepBySkill[item.skillId]}`
+                : "Learning path complete"}
+            </Link>
+          )}
           {learning[item.skillId] && <LearnLinks learning={learning[item.skillId]} />}
         </li>
       ))}
@@ -185,7 +208,11 @@ export default function DashboardPage() {
 
       <section className="mt-8">
         <h2 className="font-display text-lg text-ink">Skills to learn</h2>
-        <SkillsToLearn items={state.skillsToLearn} progressBySkill={state.progressBySkill} />
+        <SkillsToLearn
+          items={state.skillsToLearn}
+          progressBySkill={state.progressBySkill}
+          nextStepBySkill={state.nextStepBySkill}
+        />
       </section>
 
       <section className="mt-8">
