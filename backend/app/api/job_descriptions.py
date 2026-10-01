@@ -39,7 +39,7 @@ from app.core.services import (
     job_description_service,
     requirement_service,
 )
-from app.db.models import JobDescription, User
+from app.db.models import JobDescription, JobRequirement, User
 from app.dependencies import (
     active_extractor_is_paid,
     get_current_user,
@@ -125,6 +125,24 @@ def delete_job_description(
     # (skills, claims, evidence, CV marks) is touched. See job_description_service.
     job_description = _get_owned_job_description(db, job_description_id, user)
     job_description_service.delete_job_description(db, job_description)
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.delete("/{job_description_id}/requirements/{requirement_id}", status_code=204)
+def delete_requirement(
+    job_description_id: int,
+    requirement_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    # Removes one requirement with its own comparison results; the job's other
+    # requirements, and everything outside the job, are untouched.
+    job_description = _get_owned_job_description(db, job_description_id, user)
+    requirement = db.get(JobRequirement, requirement_id)
+    if requirement is None or requirement.job_description_id != job_description.id:
+        raise HTTPException(status_code=404, detail=f"Requirement {requirement_id} not found.")
+    job_description_service.delete_requirement(db, requirement)
     db.commit()
     return Response(status_code=204)
 

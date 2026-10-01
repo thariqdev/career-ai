@@ -127,6 +127,30 @@ export default function JobDescriptionPage() {
     }
   }
 
+  // Removes one requirement with its own comparison results; the rest of the job,
+  // and everything outside it, stays. A re-read of the posting may find it again.
+  async function handleRemoveRequirement(requirementId: number, label: string) {
+    if (
+      !window.confirm(
+        `Remove the requirement "${label}" from this job? Its comparison results go with it. ` +
+          "If the posting still mentions it, \"Look for new skills\" may add it back.",
+      )
+    ) {
+      return;
+    }
+    setCompareError(null);
+    setLookMessage(null);
+    setComparing(true);
+    try {
+      await apiDelete(`/job-descriptions/${jobId}/requirements/${requirementId}`);
+      setState(await fetchJob(jobId));
+    } catch (error) {
+      setCompareError(errorMessage(error));
+    } finally {
+      setComparing(false);
+    }
+  }
+
   if (state.status === "loading") {
     return (
       <main className="mx-auto max-w-3xl px-6 py-8">
@@ -247,6 +271,19 @@ export default function JobDescriptionPage() {
                   ) : (
                     <span className="text-ink-soft">not mapped to a skill</span>
                   )}
+                  <button
+                    type="button"
+                    disabled={comparing}
+                    onClick={() =>
+                      handleRemoveRequirement(
+                        requirement.id,
+                        requirement.skill_name ?? requirement.requirement_text,
+                      )
+                    }
+                    className="ml-auto rounded border border-line px-2 py-0.5 text-xs text-ink-soft disabled:opacity-50"
+                  >
+                    Remove
+                  </button>
                 </li>
               );
             })}

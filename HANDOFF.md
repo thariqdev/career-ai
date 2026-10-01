@@ -167,7 +167,7 @@ career-ai/
     │   │   │   ├── profile_service.py       ← create_project/work_experience/education, list_records, delete_record
     │   │   │   ├── evidence_service.py      ← delete_evidence() (refuses while linked or in comparison history)
     │   │   │   ├── interview_prep_service.py ← interview_prep() (read-only, fixed templates, current proof)
-    │   │   │   ├── job_description_service.py ← delete_job_description() (the job + its own history only)
+    │   │   │   ├── job_description_service.py ← delete_job_description(), delete_requirement() (each with its own history only)
     │   │   │   ├── learning_path_service.py ← learning_paths() (4 steps, done/current/todo, read-only)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
@@ -229,7 +229,8 @@ career-ai/
         ├── test_editing_api.py
         ├── test_learning_path_api.py
         ├── test_skill_merge_api.py
-        └── test_claim_delete_api.py
+        ├── test_claim_delete_api.py
+        └── test_requirement_delete_api.py
 ```
 
 ---
@@ -1576,7 +1577,42 @@ Added 2026-10-02. `verification_service.delete_claim(db, user_skill)` removes a 
 - **Not done:**
   - undo
   - cascading into job history
-  - deleting a single job requirement
+
+### Removing a single job requirement
+
+Added 2026-10-02. `job_description_service.delete_requirement(db, requirement)` removes one `JobRequirement` with **its own** history, child-first with bulk DELETEs, the same pattern as `delete_job_description`:
+
+1. the `ComparisonResultEvidence` rows of its results
+2. its `ComparisonResult`s
+3. the requirement itself
+
+The job's other requirements and their results, other jobs, and everything outside the job (skills, claims, evidence, CV marks) are untouched. Like deleting a whole job, this is the job's own history, so it goes with it rather than being refused.
+
+- **API:** `DELETE /job-descriptions/{job_id}/requirements/{requirement_id}` returns 204. Job ownership goes through `_get_owned_job_description`. A requirement that doesn't exist **or belongs to a different job** returns 404, so a URL can't reach across jobs.
+- **Known limitation, which is tested and documented:** `extract-new` ("Look for new skills") re-reads the posting, so if the text still mentions the skill, the requirement comes back. Remembering dismissed requirements would need a new column; it's left for later. The confirm dialog says so.
+- **Frontend:** a small **Remove** button on each requirement row of `/job-descriptions/[id]`, with a confirm step. It shares the page's `comparing` busy flag and `compareError` line, and reloads requirements, results and gaps afterwards.
+- **Verified:**
+  - **Tests:** 7 new in `test_requirement_delete_api.py`:
+    - only that requirement's results and evidence links go (4→3 results, 2→1 links), and the other job keeps both
+    - the claim, evidence and skill are kept
+    - a removed gap leaves gaps and interview prep
+    - another job's requirement: 404
+    - unknown ids: 404
+    - another user's job: 404
+    - "Look for new skills" can add it back
+
+    Suite: **407 passed**.
+  - **Mutation check:** deleting the whole job's results instead of just the requirement's made `test_removing_a_requirement_takes_only_its_own_results` fail. The file was restored byte-identical.
+  - Build is clean, and eslint reports 0.
+  - **Live check** on :8011:
+    - On a ZZ test job, trying to remove its requirement through the user's real job 1 URL returned 404.
+    - Removing it for real gave 204: one requirement, one result and one gap were left.
+    - The real job 1's requirements [1, 2, 3] were unchanged.
+    - The test job and skills were then deleted, sequences reset, and counts matched the snapshot.
+- **Not done:**
+  - editing a requirement
+  - remembering dismissed requirements
+  - undo
 
 ---
 
