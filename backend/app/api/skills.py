@@ -9,13 +9,10 @@ Skills themselves are a shared taxonomy, not per-user data, so most routes here 
 user-scoped. The cv-presence/cv-status routes are the exception: a skill's presence on
 *your* CV is per-user, so those two use Depends(get_current_user).
 
-Setting CV presence is an UPSERT, not check-then-409 (contrast with user_skills.py's
-claim_skill): restating a fact about your own CV isn't a conflict the way a duplicate
-skill claim is, and CVSkillPresence already guarantees at most one row per (user, skill).
+Setting CV presence is an UPSERT (see cv_presence_service, shared with the CV upload).
 """
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.models import (
@@ -26,7 +23,7 @@ from app.core.models import (
     SkillCreate,
     SkillResponse,
 )
-from app.core.services import cv_service, skill_service
+from app.core.services import cv_presence_service, cv_service, skill_service
 from app.db.models import CVSkillPresence, Skill, User
 from app.dependencies import get_current_user, get_db
 
@@ -89,17 +86,7 @@ def set_cv_presence(
     skill = skill_service.get_skill(db, skill_id)
     if skill is None:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found.")
-
-    presence = db.scalar(
-        select(CVSkillPresence).where(
-            CVSkillPresence.user_id == user.id, CVSkillPresence.skill_id == skill_id
-        )
-    )
-    if presence is None:
-        presence = CVSkillPresence(user=user, skill=skill, present=payload.present)
-        db.add(presence)
-    else:
-        presence.present = payload.present
+    presence = cv_presence_service.set_cv_presence(db, user, skill, payload.present)
     db.commit()
     return presence
 

@@ -118,6 +118,24 @@ export type LearningProgress = {
   updated_at: string | null;
 };
 
+// Matches backend CVScanResponse / CVPresenceResponse.
+export type CVSkillRef = { skill_id: number; skill_name: string };
+
+export type CVFoundSkill = CVSkillRef & { matched_text: string; on_cv: boolean };
+
+export type CVScan = {
+  characters: number;
+  found: CVFoundSkill[];
+  on_cv_not_found: CVSkillRef[];
+};
+
+export type CVPresence = {
+  skill_id: number;
+  skill_name: string;
+  present: boolean;
+  updated_at: string;
+};
+
 // Matches backend EvidenceResponse.
 export type Evidence = {
   id: number;

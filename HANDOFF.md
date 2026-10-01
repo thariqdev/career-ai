@@ -142,6 +142,7 @@ career-ai/
     │   │   ├── skills.py       ← /skills endpoints (thin routes over skill_service)
     │   │   ├── user_skills.py  ← /user-skills endpoints (claim, list, link evidence, status)
     │   │   ├── evidence.py     ← /evidence endpoints (create, list)
+    │   │   ├── cv.py                 ← POST /cv/scan (preview) + PUT /cv/presence (confirmed save)
     │   │   ├── learning_progress.py  ← PUT /skills/{id}/learning-progress + GET /learning-progress
     │   │   ├── learning_resources.py ← /skills/{id}/learning-resources (list, add) + DELETE /learning-resources/{id}
     │   │   ├── me.py           ← GET /me (proof endpoint for the single-user bootstrap)
@@ -157,6 +158,8 @@ career-ai/
     │   │   │   ├── comparison_service.py    ← compare_job_description(), latest_results(), skill_gaps(), RequirementGap
     │   │   │   ├── requirement_service.py   ← extract_requirements() (validates an extractor's proposals)
     │   │   │   ├── user_service.py          ← get_or_create_default_user() (single-hardcoded-user bootstrap)
+    │   │   │   ├── cv_presence_service.py   ← set_cv_presence() (the only writer of CVSkillPresence)
+    │   │   │   ├── cv_import_service.py     ← extract_text() (PDF/.docx/.txt), scan_cv() (read-only)
     │   │   │   ├── cv_service.py            ← combined_status(), combined_status_for_all(), CVStatus, CombinedSkillStatus
     │   │   │   ├── learning_progress_service.py ← get/list/set_progress() (never touches UserSkill/Evidence)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
@@ -211,7 +214,8 @@ career-ai/
         ├── test_cv_service.py
         ├── test_skills_cv_api.py
         ├── test_learning_resources_api.py
-        └── test_learning_progress_api.py
+        ├── test_learning_progress_api.py
+        └── test_cv_api.py
 ```
 
 ---
@@ -943,6 +947,64 @@ Added 2026-10-01. PROJECT_RULES.md §14 ("The AI must not infer mastery from vie
     - Reset to `not_started` returned `updated_at null` and an empty list.
     - Cleaned up back to baseline.
 - **Not done:** a `LearningPlan` table (see `ARCHITECTURE.md` §4), percentages, per-resource "watched" tracking, reminders.
+
+### CV upload: scan a CV for saved skills, then confirm CV presence
+
+Added 2026-10-01. It's two steps on purpose: `CVSkillPresence` is a fact the *user* supplies, so a scan only suggests and nothing is written until the user confirms. A CV is a claim, not proof, so neither step touches `UserSkill`, `Evidence` or verification.
+
+- **New dependencies:** `pypdf` and `python-multipart` (FastAPI needs it for uploads), both added to `requirements.txt`. **Both were confirmed pure Python, with no `.pyd` files**, because Windows Smart App Control already blocked a compiled extension on this machine (`psycopg2`, §9). `.docx` is read with the stdlib (`zipfile` + `xml.etree`), so no extra package.
+- **`cv_presence_service.set_cv_presence(db, user, skill, present)`:** the upsert previously inlined in `PATCH /skills/{id}/cv-presence`, moved out so the badge toggle and the CV save share it. It's a separate module because `cv_service` is documented read-only. The behavior is unchanged: all 237 existing tests passed straight after the move.
+- **`cv_import_service`** (read-only):
+  - **`extract_text(filename, content)`:**
+    - Picks the reader by extension: `pdf` (`pypdf`, empty password tried for encrypted files), `docx`, or `txt` (UTF-8 with BOM, falling back to latin-1). Any other extension raises `UnsupportedCVFileError` (**415**).
+    - Over `MAX_CV_BYTES` (5 MB) raises `CVFileTooLargeError` (**413**). The route reads at most limit+1 bytes, so a huge upload is never fully read into memory.
+    - No text, such as a scanned image or blank file, raises `NoCVTextError` (**422**, "paste the text instead").
+    - **Defensive parsing of untrusted files:**
+      - any `pypdf` failure becomes a 415, not a 500
+      - a `.docx` whose `word/document.xml` decompresses beyond `MAX_DOCX_XML_BYTES` (20 MB) is refused, which guards against zip bombs
+      - XML containing `<!DOCTYPE` or `<!ENTITY` is refused, which guards against entity-expansion attacks; a real `.docx` never contains either
+  - **`scan_cv(db, user, text)`:**
+    - Runs the same `SkillListExtractor` over the CV and maps each match through `resolve_skill`. An ambiguous match is skipped, as in `requirement_service`.
+    - Returns `CVScan(characters, found=[FoundSkill(skill, matched_text, on_cv)], on_cv_not_found=[Skill])`.
+- **API** (`app/api/cv.py`, user-scoped):
+  - **`POST /cv/scan`:** multipart with exactly one of `file` or `text` (otherwise 422). It returns `CVScanResponse` and saves nothing.
+  - **`PUT /cv/presence`** takes `{present_skill_ids, absent_skill_ids}`:
+    - duplicates are ignored, and an id in both lists is a 422
+    - **every id is checked before anything is written**, so one unknown id returns 404 and saves nothing
+    - one commit at the end
+- **Frontend:**
+  - **`app/cv/page.tsx` ("My CV", added to `AppHeader`):** a file input or textarea, then Scan, then a review screen:
+    - found skills, **ticked by default**, showing "found as …" when matched via a nickname and "already marked"
+    - "marked on your CV but not found in this one", **unticked by default**, so a skill the reader missed (e.g. an unsaved nickname) is never removed by accident
+    - Save, then a summary
+  - `lib/api.ts` gains `apiPostForm`, which deliberately sets no `Content-Type` so the browser can set the multipart boundary.
+  - `AppHeader`'s stale "job-descriptions doesn't exist yet" comment was removed.
+- **Verified:**
+  - **Tests:** 18 new in `test_cv_api.py`. Sample files are built inside the tests: a hand-assembled minimal PDF, and a `.docx` zipped with the stdlib.
+    - `.txt`, `.pdf` (uppercase extension too) and `.docx` all find skills by name and alias, whole words only
+    - pasted text works
+    - scanning saves nothing and reports `on_cv` and `on_cv_not_found`
+    - 7 unusable inputs give clear errors: `.png`, no extension, fake PDF, non-zip `.docx`, `.docx` with a DOCTYPE/ENTITY, a blank `.txt`, a text-less PDF
+    - over the limit returns 413, and neither or both of file/text returns 422
+    - save marks present and absent and leaves unmentioned skills untouched
+    - an unknown id returns 404 with nothing saved, and an id in both lists returns 422
+    - **guard:** scanning and saving never changes a claim's status or creates claims
+
+    Suite: **255 passed**.
+  - **Mutation check:** making `set_cv_presence` auto-create a `UserSkill` for present skills made exactly the guard test fail. The file was restored byte-identical.
+  - `npm run build` is clean with the new `/cv` route, and ESLint is clean on the new and changed files.
+  - **Live check:**
+    - Run on a temporary :8011, with the user's own server running on :8000 and their test data (4 skills, 1 alias, 1 claim, 1 evidence, 1 job description) left in place.
+    - Two uniquely named test skills, "Zebralang" and "QuokkaDB" (alias "Quokka"). A real multipart upload of a generated PDF ("…Zebralang and Quokka…") found both, with QuokkaDB "found as Quokka".
+    - Save marked both present, and `cv-status` showed `present`. A `.png` returned 415.
+    - **Cleanup deleted only those two skills by id** (ids asserted, names asserted) and their rows; sequences were set to max(id)+1. The user's data was verified identical to the snapshot.
+    - The user's `--reload` server picked up `/cv/scan` and `/cv/presence` automatically.
+- **Not done:**
+  - showing CV status next to each gap (the next step)
+  - extracting job history or education
+  - OCR for scanned CVs
+  - storing the CV
+  - finding skills not yet in the taxonomy
 
 ---
 

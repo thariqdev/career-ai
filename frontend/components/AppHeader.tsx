@@ -3,11 +3,7 @@
 import Link from "next/link";
 import { useMe } from "@/lib/useMe";
 
-/**
- * The shared header, wired into app/layout.tsx so it appears on every page
- * automatically. /skills exists; /job-descriptions doesn't have a page yet
- * (a later task) — that link 404s for now, which is fine.
- */
+/** The shared header, wired into app/layout.tsx so it appears on every page. */
 export default function AppHeader() {
   const me = useMe();
 
@@ -25,6 +21,9 @@ export default function AppHeader() {
           </Link>
           <Link href="/job-descriptions" className="hover:text-ink">
             Job Descriptions
+          </Link>
+          <Link href="/cv" className="hover:text-ink">
+            My CV
           </Link>
         </nav>
 

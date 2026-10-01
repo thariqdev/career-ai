@@ -65,6 +65,30 @@ class AliasNotFoundError(DomainError):
         super().__init__(f'The skill "{skill_name}" has no alias "{alias.strip()}".')
 
 
+class UnsupportedCVFileError(DomainError):
+    """The CV file isn't a type we can read, or it's damaged."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+
+
+class CVFileTooLargeError(DomainError):
+    """The CV file or pasted text is over the size limit."""
+
+    def __init__(self, limit_mb: int) -> None:
+        super().__init__(f"The CV is too large. The limit is {limit_mb} MB.")
+
+
+class NoCVTextError(DomainError):
+    """No readable text could be found in the CV."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "No readable text was found in this CV. If it's a scanned image, "
+            "paste the text instead."
+        )
+
+
 class RequirementsAlreadyExistError(DomainError):
     """Extraction was refused because the job description already has requirements."""
 

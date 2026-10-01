@@ -6,7 +6,7 @@
  * needs to be readable in browser-side code, not just on the server — without
  * it, the value would only exist during the server build and be undefined here.
  *
- * This is deliberately minimal: five functions sharing one internal helper, no
+ * This is deliberately minimal: six functions sharing one internal helper, no
  * retries, no caching, no request library. They just call `fetch`, check the
  * status, and parse JSON.
  */
@@ -54,6 +54,12 @@ export function apiPost<T>(path: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+// For file uploads. No Content-Type header on purpose: the browser sets the
+// multipart boundary itself, and setting it by hand would break the upload.
+export function apiPostForm<T>(path: string, form: FormData): Promise<T> {
+  return request<T>(path, { method: "POST", body: form });
 }
 
 export function apiPut<T>(path: string, body: unknown): Promise<T> {

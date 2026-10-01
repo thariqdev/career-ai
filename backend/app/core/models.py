@@ -326,6 +326,51 @@ class SkillLearningResourcesResponse(BaseModel):
     modes: list[LearningModeResources]
 
 
+class CVSkillRef(BaseModel):
+    skill_id: int
+    skill_name: str
+
+
+class CVFoundSkill(CVSkillRef):
+    matched_text: str
+    on_cv: bool
+
+
+class CVScanResponse(BaseModel):
+    """A CV scan preview: nothing has been saved yet."""
+
+    characters: int
+    found: list[CVFoundSkill]
+    on_cv_not_found: list[CVSkillRef]
+
+    @classmethod
+    def from_scan(cls, scan: Any) -> "CVScanResponse":
+        # cv_import_service.CVScan is a plain dataclass, built field-by-field like
+        # GapResponse.from_gap.
+        return cls(
+            characters=scan.characters,
+            found=[
+                CVFoundSkill(
+                    skill_id=item.skill.id,
+                    skill_name=item.skill.name,
+                    matched_text=item.matched_text,
+                    on_cv=item.on_cv,
+                )
+                for item in scan.found
+            ],
+            on_cv_not_found=[
+                CVSkillRef(skill_id=skill.id, skill_name=skill.name) for skill in scan.on_cv_not_found
+            ],
+        )
+
+
+class CVPresenceBatch(BaseModel):
+    """The user's confirmed choices after reviewing a CV scan."""
+
+    present_skill_ids: list[int] = []
+    absent_skill_ids: list[int] = []
+
+
 class LearningProgressUpdate(BaseModel):
     # "not_started" is accepted here but never stored: it means "no row" (see
     # learning_progress_service). Any other value is a 422 from Pydantic itself.
