@@ -1,4 +1,4 @@
-"""CV endpoints: scan a CV for saved skills (preview), then save the user's confirmed choices.
+"""CV endpoints: scan a CV (preview), save confirmed choices, and list combined CV status.
 
 Two steps on purpose: CV presence is a fact the user supplies (CVSkillPresence), so a
 scan only SUGGESTS; nothing is written until the user confirms via PUT /cv/presence.
@@ -9,8 +9,8 @@ proof. Both routes are user-scoped via get_current_user.
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.core.models import CVPresenceBatch, CVPresenceResponse, CVScanResponse
-from app.core.services import cv_import_service, cv_presence_service, skill_service
+from app.core.models import CVPresenceBatch, CVPresenceResponse, CVScanResponse, CVStatusResponse
+from app.core.services import cv_import_service, cv_presence_service, cv_service, skill_service
 from app.db.models import CVSkillPresence, User
 from app.dependencies import get_current_user, get_db
 
@@ -34,6 +34,21 @@ def scan_cv(
     else:
         cv_text = cv_import_service.check_pasted_text(text)
     return CVScanResponse.from_scan(cv_import_service.scan_cv(db, user, cv_text))
+
+
+@router.get("/status", response_model=list[CVStatusResponse])
+def list_cv_status(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> list[CVStatusResponse]:
+    """Combined knowledge + CV status for every skill you've claimed or marked on your CV.
+
+    One request instead of one per skill. A skill with neither isn't listed: callers
+    treat it as "no claim, not on CV". Read-only, same as GET /skills/{id}/cv-status.
+    """
+    return [
+        CVStatusResponse.from_combined_status(combined)
+        for combined in cv_service.combined_status_for_all(db, user)
+    ]
 
 
 @router.put("/presence", response_model=list[CVPresenceResponse])

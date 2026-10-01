@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.core.services import cv_import_service, skill_service
-from app.db.models import CVSkillPresence, UserSkill
+from app.db.models import CVSkillPresence, Skill, User, UserSkill
 from app.dependencies import get_db
 from app.main import app
 from database import Base
@@ -293,3 +293,42 @@ def test_scanning_and_saving_a_cv_never_changes_verification(
     ]
     with Session(engine, autoflush=False) as db:
         assert db.scalar(select(func.count()).select_from(UserSkill)) == 1
+
+
+# --- GET /cv/status: combined status for every relevant skill --------------------
+
+
+def test_status_list_is_empty_before_any_claim_or_cv_mark(
+    client: TestClient, skills: dict[str, int]
+) -> None:
+    response = client.get("/cv/status")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_status_list_has_claimed_and_cv_marked_skills_only_and_matches_the_per_skill_view(
+    client: TestClient, skills: dict[str, int]
+) -> None:
+    client.post("/user-skills", json={"skill_id": skills["Python"]})  # claimed, not on CV
+    client.patch(f"/skills/{skills['Docker']}/cv-presence", json={"present": True})  # on CV only
+
+    listed = client.get("/cv/status").json()
+
+    assert [entry["skill_name"] for entry in listed] == ["Docker", "Python"]  # by name
+    for entry in listed:
+        assert entry == client.get(f"/skills/{entry['skill_id']}/cv-status").json()
+    docker = listed[0]
+    assert (docker["knowledge_status"], docker["cv_status"]) == (None, "present")
+    assert "without verified evidence" in docker["recommendation"]
+
+
+def test_status_list_shows_only_the_current_users_data(
+    client: TestClient, engine: Engine, skills: dict[str, int]
+) -> None:
+    with Session(engine, autoflush=False) as db:
+        other = User(email="other@example.com")
+        db.add(CVSkillPresence(user=other, skill=db.get(Skill, skills["Java"]), present=True))
+        db.commit()
+
+    assert client.get("/cv/status").json() == []

@@ -6,9 +6,9 @@ import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import AliasEditor from "@/components/AliasEditor";
 import LearningProgressControl from "@/components/LearningProgressControl";
 import StatusBadge from "@/components/StatusBadge";
+import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
 import { MODE_LABEL } from "@/lib/learning";
 import type {
-  CVStatus,
   CVStatusResponse,
   Evidence,
   LearningModeResources,
@@ -27,24 +27,6 @@ const EVIDENCE_TYPES = ["work_experience", "project", "certification", "artifact
 
 // The four real statuses a claim can be set to, in a fixed display order.
 const STATUS_OPTIONS = ["verified", "partial", "provisional", "not_verified"] as const;
-
-// Same reasoning as app/skills/page.tsx's own cvBadgeClasses/cvBadgeLabel — this is
-// the exact same toggle pattern, not reused via import, matching how that page
-// itself was written (a small page-local helper, not extracted into a component).
-function cvBadgeClasses(status: CVStatus): string {
-  switch (status) {
-    case "present":
-      return "bg-accent-soft text-accent";
-    case "missing_from_cv":
-      return "bg-warm-soft text-warm";
-    case "not_present":
-      return "bg-line text-ink-soft";
-  }
-}
-
-function cvBadgeLabel(status: CVStatus): string {
-  return status.replace(/_/g, " ");
-}
 
 // One learning mode's column. Holds its own add-link form state, so the two
 // columns' forms never interfere with each other.

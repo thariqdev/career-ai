@@ -4,7 +4,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
-import type { CVStatus, CVStatusResponse, Skill } from "@/lib/types";
+import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
+import type { CVStatusResponse, Skill } from "@/lib/types";
 
 // One row = one Skill plus its combined knowledge/CV status. Fetched separately
 // per skill (see the N+1 note in the component below) rather than in one request,
@@ -15,26 +16,6 @@ type ListState =
   | { status: "loading" }
   | { status: "loaded"; rows: Row[] }
   | { status: "error"; message: string };
-
-// No design token was given for the three cv_status values — this is my own
-// small choice, not specified by the task: accent (teal) for a skill actually
-// on the CV, warm (amber) for "missing from the CV" since that's the
-// actionable one, and neutral for "not present". (The knowledge-status badge
-// itself now lives in components/StatusBadge.tsx, shared with other pages.)
-function cvBadgeClasses(status: CVStatus): string {
-  switch (status) {
-    case "present":
-      return "bg-accent-soft text-accent";
-    case "missing_from_cv":
-      return "bg-warm-soft text-warm";
-    case "not_present":
-      return "bg-line text-ink-soft";
-  }
-}
-
-function cvBadgeLabel(status: CVStatus): string {
-  return status.replace(/_/g, " ");
-}
 
 async function fetchRow(skill: Skill): Promise<Row> {
   const cvStatus = await apiGet<CVStatusResponse>(`/skills/${skill.id}/cv-status`);

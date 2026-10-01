@@ -142,7 +142,7 @@ career-ai/
     │   │   ├── skills.py       ← /skills endpoints (thin routes over skill_service)
     │   │   ├── user_skills.py  ← /user-skills endpoints (claim, list, link evidence, status)
     │   │   ├── evidence.py     ← /evidence endpoints (create, list)
-    │   │   ├── cv.py                 ← POST /cv/scan (preview) + PUT /cv/presence (confirmed save)
+    │   │   ├── cv.py                 ← POST /cv/scan (preview), PUT /cv/presence (confirmed save), GET /cv/status
     │   │   ├── learning_progress.py  ← PUT /skills/{id}/learning-progress + GET /learning-progress
     │   │   ├── learning_resources.py ← /skills/{id}/learning-resources (list, add) + DELETE /learning-resources/{id}
     │   │   ├── me.py           ← GET /me (proof endpoint for the single-user bootstrap)
@@ -1005,6 +1005,34 @@ Added 2026-10-01. It's two steps on purpose: `CVSkillPresence` is a fact the *us
   - OCR for scanned CVs
   - storing the CV
   - finding skills not yet in the taxonomy
+
+### CV status next to every gap, and `GET /cv/status`
+
+Added 2026-10-01. This is step 2 of the CV work, and it also closes the long-standing "list-all-my-cv-statuses endpoint" backlog item.
+
+- **`GET /cv/status`** (`app/api/cv.py`, user-scoped, read-only) returns `[CVStatusResponse.from_combined_status(c) for c in cv_service.combined_status_for_all(db, user)]`: every skill with a `UserSkill` or `CVSkillPresence` row for this user, ordered by name, in one request. `combined_status_for_all` already existed and was tested since task 22; it had just never had a route. Skills with neither row aren't listed, and the frontend treats them as `not_present`.
+- **`lib/cv.ts`:**
+  - `cvBadgeClasses` / `cvBadgeLabel`, moved from the two copies in `app/skills/page.tsx` and `app/skills/[id]/page.tsx` (this would have been the third). Both pages now import them, with no visual change.
+  - `useCvStatuses()`, which fetches `/cv/status` once. A failure yields `{}`, so a page shows no CV info rather than failing.
+- **`components/GapList.tsx`:** each mapped gap gets a `CV: <status>` badge, plus `cv.recommendation` (warm text) when there is one.
+  - **Two time frames are deliberately shown side by side:** the knowledge badge is the snapshot from the job's last comparison, while the CV badge and advice are *current*. This is noted in the component's docstring.
+  - Unmapped gaps get no CV badge.
+- **Verified:**
+  - **Tests:** 3 new in `test_cv_api.py`:
+    - empty before any claim or CV mark
+    - only claimed and CV-marked skills appear, by name, and **each entry equals the per-skill `GET /skills/{id}/cv-status` response**; a CV-only skill gives `(None, "present")` plus the "without verified evidence" advice
+    - another user's CV row isn't listed
+
+    Suite: **258 passed**.
+  - `npm run build` is clean. ESLint is clean on `GapList.tsx` and `lib/cv.ts`; the two pages still show only the known pre-existing `set-state-in-effect` finding.
+  - **Live check** (temporary :8011; the user's server and data untouched):
+    - Setup: test skills Zebralang (claimed, marked on the CV) and QuokkaDB (untouched); posting "Need Zebralang and QuokkaDB experience."; extract and compare.
+    - Replaying the gap list's requests gave the rows `Zebralang | provisional | CV: present` plus the advice, and `QuokkaDB | not_verified | CV: not present` with no advice.
+    - `/cv/status` also correctly included the user's own claimed skill.
+    - Cleanup deleted only the recorded ids (names and titles asserted first) in foreign-key order. Row counts were compared against a pre-check snapshot and matched exactly.
+- **Not done:**
+  - switching the Skills page's per-skill `cv-status` requests to `/cv/status`
+  - CV tags on the Dashboard's "Skills to learn"
 
 ---
 
