@@ -82,6 +82,36 @@ def resolve_skill(db: Session, text: str) -> Skill | None:
     return matches[0]
 
 
+def update_skill(db: Session, skill: Skill, changes: dict) -> Skill:
+    """Rename and/or re-categorize (PATCH: only keys present in `changes` apply).
+
+    A new name follows the same one-namespace rule as create_skill, except that the
+    skill itself isn't a collision: "python" -> "Python" is allowed. Renaming it to one
+    of its OWN aliases is still refused (it would duplicate that alias); remove the alias
+    first. Claims, evidence, CV marks, links and progress reference the skill by id, so
+    they all follow the rename; old JobRequirement text keeps the posting's own words.
+    """
+    if "name" in changes:
+        name = changes["name"] or ""
+        display = name.strip()
+        normalized = normalize_text(name)
+        if not normalized:
+            raise EmptySkillTextError()
+        others = [s for s in _matching_skills(db, normalized) if s.id != skill.id]
+        if others:
+            raise SkillNameCollisionError(display, others[0].name)
+        if normalized != normalize_text(skill.name) and any(
+            normalize_text(a.alias) == normalized for a in skill.aliases
+        ):
+            raise SkillNameCollisionError(display, skill.name)
+        skill.name = display
+    if "category" in changes:
+        category = changes["category"]
+        skill.category = category.strip() if category and category.strip() else None
+    db.flush()
+    return skill
+
+
 def squash(text: str) -> str:
     """Casefold and keep only letters, digits, "+" and "#": a looser key than normalize_text.
 

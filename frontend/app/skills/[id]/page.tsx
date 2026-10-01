@@ -6,6 +6,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import AliasEditor from "@/components/AliasEditor";
 import EvidenceForm, { type EvidenceBody } from "@/components/EvidenceForm";
 import LearningProgressControl from "@/components/LearningProgressControl";
+import SkillNameEditor from "@/components/SkillNameEditor";
 import StatusBadge from "@/components/StatusBadge";
 import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
 import { MODE_LABEL } from "@/lib/learning";
@@ -426,8 +427,7 @@ export default function SkillDetailPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="font-display text-2xl text-ink">{skill.name}</h1>
-      <p className="mt-1 text-sm text-ink-soft">{skill.category ?? "No category"}</p>
+      <SkillNameEditor skill={skill} onSaved={loadAll} />
 
       <div className="mt-3 flex items-center gap-3">
         <StatusBadge status={cvStatus.knowledge_status} />

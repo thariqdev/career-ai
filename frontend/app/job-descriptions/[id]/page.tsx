@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { apiGet, apiPost, ApiError } from "@/lib/api";
+import { useParams, useRouter } from "next/navigation";
+import { apiDelete, apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
 import { isWebLink } from "@/lib/links";
@@ -45,6 +45,26 @@ export default function JobDescriptionPage() {
   const [comparing, setComparing] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
   const [lookMessage, setLookMessage] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const router = useRouter();
+
+  async function handleDelete() {
+    if (
+      !window.confirm(
+        "Delete this job? Its requirements and comparison history go with it. " +
+          "Your skills, claims and evidence are not affected.",
+      )
+    ) {
+      return;
+    }
+    setDeleteError(null);
+    try {
+      await apiDelete(`/job-descriptions/${jobId}`);
+      router.push("/job-descriptions");
+    } catch (error) {
+      setDeleteError(errorMessage(error));
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -247,6 +267,22 @@ export default function JobDescriptionPage() {
           {job.raw_text}
         </p>
       </details>
+
+      <section className="mt-12 border-t border-line pt-6 print:hidden">
+        <h2 className="font-display text-lg text-ink">Delete this job</h2>
+        <p className="mt-1 text-sm text-ink-soft">
+          Removes the job with its requirements and comparison history. Your skills, claims,
+          evidence and CV marks stay exactly as they are.
+        </p>
+        <button
+          type="button"
+          onClick={handleDelete}
+          className="mt-3 rounded border border-not-verified px-3 py-1.5 text-sm text-not-verified"
+        >
+          Delete job
+        </button>
+        {deleteError && <p className="mt-2 text-sm text-not-verified">{deleteError}</p>}
+      </section>
     </main>
   );
 }

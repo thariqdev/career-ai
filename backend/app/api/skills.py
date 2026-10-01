@@ -22,6 +22,7 @@ from app.core.models import (
     CVStatusResponse,
     SkillCreate,
     SkillResponse,
+    SkillUpdate,
 )
 from app.core.services import cv_presence_service, cv_service, skill_service
 from app.db.models import CVSkillPresence, Skill, User
@@ -52,6 +53,17 @@ def similar_skills(name: str, db: Session = Depends(get_db)) -> list[Skill]:
     Never blocks or changes anything; creating a skill is still governed by create_skill.
     """
     return skill_service.similar_skills(db, name)
+
+
+@router.patch("/{skill_id}", response_model=SkillResponse)
+def update_skill(skill_id: int, payload: SkillUpdate, db: Session = Depends(get_db)) -> Skill:
+    """Rename and/or re-categorize. 422 for a blank name, 409 for a name already in use."""
+    skill = skill_service.get_skill(db, skill_id)
+    if skill is None:
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found.")
+    skill_service.update_skill(db, skill, payload.model_dump(exclude_unset=True))
+    db.commit()
+    return skill
 
 
 @router.delete("/{skill_id}", status_code=204)

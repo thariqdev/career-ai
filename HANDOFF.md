@@ -167,6 +167,7 @@ career-ai/
     │   │   │   ├── profile_service.py       ← create_project/work_experience/education, list_records, delete_record
     │   │   │   ├── evidence_service.py      ← delete_evidence() (refuses while linked or in comparison history)
     │   │   │   ├── interview_prep_service.py ← interview_prep() (read-only, fixed templates, current proof)
+    │   │   │   ├── job_description_service.py ← delete_job_description() (the job + its own history only)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
     │   ├── db/
@@ -223,7 +224,8 @@ career-ai/
         ├── test_cv_api.py
         ├── test_profile_api.py
         ├── test_evidence_removal_api.py
-        └── test_interview_prep_api.py
+        ├── test_interview_prep_api.py
+        └── test_editing_api.py
 ```
 
 ---
@@ -1384,8 +1386,60 @@ Added 2026-10-01. The first partial-update endpoints in the API.
   - `npm run build` is clean, and `npx eslint .` reports zero problems.
   - **Live check against Postgres** (temporary :8011): a name typo fix kept role and dates; a start after the end returned 422; a null role cleared; a `javascript:` link on create returned 422; a second source without clearing returned 422; a switch plus rename worked; and the verified claim was unchanged. Cleanup removed only the test ids, and counts matched the snapshot.
 - **Not done:**
-  - editing skills, job descriptions or requirements
+  - editing skills (✅ rename/category added in the next section), job descriptions or requirements
   - edit history or an audit log
+
+### Deleting a job description; renaming / re-categorizing a skill
+
+Added 2026-10-02.
+
+- **`job_description_service.delete_job_description(db, job)`** (new module) deletes child-first with bulk `DELETE` statements:
+  1. `ComparisonResultEvidence` rows of the job's results
+  2. `ComparisonResult` rows of the job's requirements
+  3. `JobRequirement` rows
+  4. the `JobDescription`
+
+  The requirement and result ids are subqueries scoped to this job. **Nothing outside the job is touched:** `Evidence` rows are never deleted, only the links that cited them for this job's results, and skills, claims and CV marks stay.
+  - **`DELETE /job-descriptions/{id}`** returns 204, with the ownership 404.
+  - **Live, on FK-enforcing Postgres:** deleting a job whose verified result cited evidence worked, and the claim stayed `verified` with the same evidence.
+- **`skill_service.update_skill(db, skill, changes)`** (PATCH semantics via `exclude_unset`):
+  - **name:** `normalize_text`; blank raises `EmptySkillTextError` (422); then `_matching_skills` **excluding this skill itself**, where any other match raises `SkillNameCollisionError` (409), so a case-only change like "python" → "Python" is allowed.
+  - **Renaming to one of the skill's *own* aliases is also refused (409),** since it would duplicate that alias; remove the alias first.
+  - **category:** trimmed, and blank becomes NULL.
+  - Claims, evidence, CV marks, learning links and progress reference the skill by id, so they follow a rename. Old `JobRequirement.requirement_text` keeps the posting's own words.
+  - Exposed as **`PATCH /skills/{id}`** with `SkillUpdate`.
+  - **Why the service rule matters:** the DB's `skills.name` unique constraint is case-sensitive and knows nothing about aliases. In the mutation check, with the rule disabled, only the exact-name case hit `IntegrityError`; "docker" and an alias would have slipped through.
+- **Frontend:**
+  - **Job page:** a "Delete this job" section (hidden in print) with a confirm saying exactly what goes, then `router.push("/job-descriptions")`.
+  - **Skill page:** a new **`components/SkillNameEditor.tsx`** replaces the plain heading, with "Edit name / category". It shows the backend's 409/422 messages verbatim and, after saving, reloads the page, since e.g. YouTube search links are built from the name.
+- **Verified:**
+  - **Tests:** 14 new.
+    - In `test_job_descriptions_api.py`:
+      - delete removes the job, requirements, results and result-evidence links, while evidence, claims and skills are unchanged
+      - deleting one of two jobs leaves the other's requirements and results
+      - a missing or another user's job returns 404
+    - In `test_skills_api.py`:
+      - a rename keeps the claim, nicknames and resolve behavior, and the old name stops resolving
+      - a case-only rename is allowed
+      - another skill's name, a different case of it, or its alias returns 409
+      - the skill's own alias returns 409
+      - blank, whitespace or null returns 422
+      - category-only changes, and blank clears
+      - an unknown skill returns 404
+
+    Suite: **365 passed**.
+  - **Mutation checks:**
+    - widening the requirement subquery to every job made `test_delete_only_touches_that_job` fail
+    - `others = []` made all 3 collision cases fail
+
+    Each file was restored byte-identical.
+  - `npm run build` is clean, and `npx eslint .` reports zero problems.
+  - **Live check** (temporary :8011): the collision cases returned 409 (including the user's own "Python"); the typo fix kept the category; the claim followed the rename; and the job delete is described above. Cleanup removed only the test ids, and counts matched the snapshot.
+- **Not done:**
+  - merging two skills
+  - deleting in-use skills
+  - deleting single requirements
+  - undo or trash
 
 ---
 

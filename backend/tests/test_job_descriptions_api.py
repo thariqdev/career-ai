@@ -16,7 +16,16 @@ from sqlalchemy.pool import StaticPool
 
 from app.ai.schemas import ExtractedRequirement, ExtractionResult
 from app.core.services import skill_service, verification_service
-from app.db.models import ComparisonResult, Evidence, JobDescription, JobRequirement, User, UserSkill
+from app.db.models import (
+    ComparisonResult,
+    ComparisonResultEvidence,
+    Evidence,
+    JobDescription,
+    JobRequirement,
+    Skill,
+    User,
+    UserSkill,
+)
 from app.db.models.enums import EvidenceType, VerificationStatus
 from app.dependencies import get_db, get_requirement_extractor
 from app.main import app
@@ -432,6 +441,73 @@ def test_extractor_info_says_whether_extraction_would_be_paid(client: TestClient
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")  # never used to call anything
     assert client.get("/job-descriptions/extractor").json() == {"name": "claude", "paid": True}
+
+
+# --- delete -------------------------------------------------------------------------
+
+
+def _counts(engine: Engine) -> dict[str, int]:
+    with _session(engine) as db:
+        return {
+            model.__tablename__: db.scalar(select(func.count()).select_from(model))
+            for model in [JobDescription, JobRequirement, ComparisonResult, ComparisonResultEvidence, Evidence, UserSkill, Skill]
+        }
+
+
+def test_delete_removes_the_job_with_its_own_history_and_nothing_else(
+    client: TestClient, engine: Engine
+) -> None:
+    body = _create_job(client, "Need Python experience.")
+    _claim_python(engine, body["id"], verified=True)
+    _with_extractor(client, FakeExtractor(_proposal("Python experience", mention="Python")))
+    client.post(f"/job-descriptions/{body['id']}/extract")
+    client.post(f"/job-descriptions/{body['id']}/compare")
+    before = _counts(engine)
+    assert before["comparison_result_evidence"] == 1  # the verified result cites its evidence
+
+    response = client.delete(f"/job-descriptions/{body['id']}")
+
+    assert response.status_code == 204
+    assert client.get(f"/job-descriptions/{body['id']}").status_code == 404
+    after = _counts(engine)
+    assert {k: after[k] for k in ["job_descriptions", "job_requirements", "comparison_results", "comparison_result_evidence"]} == {
+        "job_descriptions": 0,
+        "job_requirements": 0,
+        "comparison_results": 0,
+        "comparison_result_evidence": 0,
+    }
+    # Skills, claims and evidence belong to the user, not the job: untouched.
+    assert {k: after[k] for k in ["evidence", "user_skills", "skills"]} == {
+        k: before[k] for k in ["evidence", "user_skills", "skills"]
+    }
+
+
+def test_delete_only_touches_that_job(client: TestClient) -> None:
+    keep = _create_job(client, "Need Python experience.")
+    drop = _create_job(client, "Need Python experience too.")
+    _with_extractor(client, FakeExtractor(_proposal("Python experience")))
+    for job in (keep, drop):
+        client.post(f"/job-descriptions/{job['id']}/extract")
+        client.post(f"/job-descriptions/{job['id']}/compare")
+
+    assert client.delete(f"/job-descriptions/{drop['id']}").status_code == 204
+
+    assert [j["id"] for j in client.get("/job-descriptions").json()] == [keep["id"]]
+    kept = client.get(f"/job-descriptions/{keep['id']}").json()
+    assert [r["requirement_text"] for r in kept["requirements"]] == ["Python experience"]
+    assert len(client.get(f"/job-descriptions/{keep['id']}/results").json()) == 1
+
+
+def test_delete_a_missing_or_another_users_job_is_404(client: TestClient, engine: Engine) -> None:
+    assert client.delete("/job-descriptions/999").status_code == 404
+    with _session(engine) as db:
+        other = JobDescription(user=User(email="other@example.com"), raw_text="Not yours.")
+        db.add(other)
+        db.commit()
+        other_id = other.id
+
+    assert client.delete(f"/job-descriptions/{other_id}").status_code == 404
+    assert _counts(engine)["job_descriptions"] == 1
 
 
 # --- latest results -----------------------------------------------------------------

@@ -231,6 +231,73 @@ def test_remove_alias_without_the_alias_param_is_422(client: TestClient) -> None
     assert client.delete(f"/skills/{skill['id']}/aliases").status_code == 422
 
 
+# --- PATCH /skills/{id}: rename / re-categorize --------------------------------
+
+
+def test_rename_keeps_claims_and_nicknames_attached(client: TestClient) -> None:
+    skill = _create(client, "Postgress", "Databse")
+    _add_alias(client, skill["id"], "PG")
+    client.post("/user-skills", json={"skill_id": skill["id"]})
+
+    response = client.patch(f"/skills/{skill['id']}", json={"name": "  PostgreSQL "})
+
+    assert response.status_code == 200
+    assert response.json() == {**skill, "name": "PostgreSQL", "aliases": ["PG"]}  # category kept
+    assert [c["skill_name"] for c in client.get("/user-skills").json()] == ["PostgreSQL"]
+    assert client.get("/skills/resolve", params={"text": "pg"}).json()["id"] == skill["id"]
+    assert client.get("/skills/resolve", params={"text": "postgress"}).status_code == 404
+
+
+def test_rename_to_a_different_capitalisation_of_its_own_name_is_allowed(client: TestClient) -> None:
+    skill = _create(client, "python")
+
+    response = client.patch(f"/skills/{skill['id']}", json={"name": "Python"})
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Python"
+
+
+@pytest.mark.parametrize("taken", ["Docker", "docker", "Dock"])
+def test_rename_to_another_skills_name_or_nickname_is_409(client: TestClient, taken: str) -> None:
+    docker = _create(client, "Docker")
+    _add_alias(client, docker["id"], "Dock")
+    skill = _create(client, "Python")
+
+    response = client.patch(f"/skills/{skill['id']}", json={"name": taken})
+
+    assert response.status_code == 409
+    assert "Docker" in response.json()["detail"]
+    assert client.get("/skills/resolve", params={"text": "python"}).json()["name"] == "Python"
+
+
+def test_rename_to_its_own_nickname_is_409(client: TestClient) -> None:
+    skill = _create(client, "PostgreSQL")
+    _add_alias(client, skill["id"], "Postgres")
+
+    assert client.patch(f"/skills/{skill['id']}", json={"name": "postgres"}).status_code == 409
+
+
+@pytest.mark.parametrize("blank", ["", "   ", None])
+def test_rename_to_blank_is_422(client: TestClient, blank) -> None:
+    skill = _create(client, "Python")
+
+    assert client.patch(f"/skills/{skill['id']}", json={"name": blank}).status_code == 422
+
+
+def test_change_only_the_category_and_blank_clears_it(client: TestClient) -> None:
+    skill = _create(client, "Python", "Langauge")
+
+    fixed = client.patch(f"/skills/{skill['id']}", json={"category": " Language "}).json()
+    cleared = client.patch(f"/skills/{skill['id']}", json={"category": "  "}).json()
+
+    assert (fixed["name"], fixed["category"]) == ("Python", "Language")
+    assert (cleared["name"], cleared["category"]) == ("Python", None)
+
+
+def test_patch_unknown_skill_is_404(client: TestClient) -> None:
+    assert client.patch("/skills/999", json={"name": "X"}).status_code == 404
+
+
 # --- GET /skills/similar ------------------------------------------------------
 
 

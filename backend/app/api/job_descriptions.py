@@ -17,7 +17,7 @@ Every route resolves user: User = Depends(get_current_user); no route or schema 
 takes a user_id.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -33,7 +33,12 @@ from app.core.models import (
     JobDescriptionResponse,
     RejectedRequirementResponse,
 )
-from app.core.services import comparison_service, interview_prep_service, requirement_service
+from app.core.services import (
+    comparison_service,
+    interview_prep_service,
+    job_description_service,
+    requirement_service,
+)
 from app.db.models import JobDescription, User
 from app.dependencies import (
     active_extractor_is_paid,
@@ -108,6 +113,20 @@ def read_job_description(
     db: Session = Depends(get_db),
 ) -> JobDescription:
     return _get_owned_job_description(db, job_description_id, user)
+
+
+@router.delete("/{job_description_id}", status_code=204)
+def delete_job_description(
+    job_description_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    # Removes the job with its own requirements and comparison history; nothing else
+    # (skills, claims, evidence, CV marks) is touched. See job_description_service.
+    job_description = _get_owned_job_description(db, job_description_id, user)
+    job_description_service.delete_job_description(db, job_description)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/{job_description_id}/extract", response_model=ExtractionResponse)

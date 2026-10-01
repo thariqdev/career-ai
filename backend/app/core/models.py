@@ -19,6 +19,12 @@ class SkillCreate(BaseModel):
     category: str | None = None
 
 
+class SkillUpdate(BaseModel):
+    # PATCH: read with model_dump(exclude_unset=True), so an omitted field is kept.
+    name: str | None = None
+    category: str | None = None
+
+
 class AliasCreate(BaseModel):
     alias: str
 
