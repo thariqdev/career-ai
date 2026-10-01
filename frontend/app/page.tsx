@@ -12,7 +12,6 @@ import type {
   JobDescription,
   LearningProgress,
   LearningProgressStatus,
-  Skill,
   UserSkill,
 } from "@/lib/types";
 
@@ -54,6 +53,41 @@ function rankSkillsToLearn(gapsPerJob: Gap[][]): SkillToLearn[] {
     .slice(0, MAX_SKILLS_TO_LEARN);
 }
 
+async function fetchDashboard(): Promise<Loaded> {
+  // Independent requests, in parallel. GET /job-descriptions is already newest-first,
+  // and GET /cv/status is ordered by skill name.
+  const [userSkills, jobDescriptions, allProgress, cvStatuses] = await Promise.all([
+    apiGet<UserSkill[]>("/user-skills"),
+    apiGet<JobDescription[]>("/job-descriptions"),
+    apiGet<LearningProgress[]>("/learning-progress"),
+    apiGet<CVStatusResponse[]>("/cv/status"),
+  ]);
+
+  // One gaps request per job description (there's no all-jobs gaps endpoint). Read-only:
+  // this triggers no new comparisons, it reads whatever was last computed for each job.
+  const gapsPerJob = await Promise.all(
+    jobDescriptions.map((jd) => apiGet<Gap[]>(`/job-descriptions/${jd.id}/gaps`)),
+  );
+
+  const progressBySkill: Record<number, LearningProgressStatus> = {};
+  for (const p of allProgress) progressBySkill[p.skill_id] = p.status;
+
+  return {
+    status: "loaded",
+    verifiedCount: userSkills.filter((us) => us.status === "verified").length,
+    totalGaps: gapsPerJob.reduce((sum, gaps) => sum + gaps.length, 0),
+    jobDescriptions,
+    mostRecentGaps: gapsPerJob[0] ?? [],
+    skillsToLearn: rankSkillsToLearn(gapsPerJob),
+    progressBySkill,
+    // Skills missing from /cv/status have no recommendation anyway (no claim, no CV mark).
+    recommendations: cvStatuses
+      .map((c) => c.recommendation)
+      .filter((r): r is string => r !== null)
+      .slice(0, MAX_RECOMMENDATIONS),
+  };
+}
+
 function SkillsToLearn({
   items,
   progressBySkill,
@@ -93,58 +127,23 @@ type State = { status: "loading" } | { status: "error"; message: string } | Load
 export default function DashboardPage() {
   const [state, setState] = useState<State>({ status: "loading" });
 
+  // Fetch first, then set state only in the promise callbacks: no synchronous
+  // setState inside the effect (react-hooks/set-state-in-effect).
   useEffect(() => {
-    async function load() {
-      setState({ status: "loading" });
-      try {
-        const userSkills = await apiGet<UserSkill[]>("/user-skills");
-        const verifiedCount = userSkills.filter((us) => us.status === "verified").length;
-
-        // GET /job-descriptions already returns most-recent-first.
-        const jobDescriptions = await apiGet<JobDescription[]>("/job-descriptions");
-
-        // One gaps request per job description — the same accepted N+1 pattern
-        // already used on the Skills and Skill Detail pages, just applied to a
-        // different list. Read-only: this triggers no new comparisons, it only
-        // reads whatever was last computed for each job description.
-        const gapsPerJob = await Promise.all(
-          jobDescriptions.map((jd) => apiGet<Gap[]>(`/job-descriptions/${jd.id}/gaps`)),
-        );
-        const totalGaps = gapsPerJob.reduce((sum, gaps) => sum + gaps.length, 0);
-        const mostRecentGaps = gapsPerJob[0] ?? [];
-        const skillsToLearn = rankSkillsToLearn(gapsPerJob);
-
-        const allProgress = await apiGet<LearningProgress[]>("/learning-progress");
-        const progressBySkill: Record<number, LearningProgressStatus> = {};
-        for (const p of allProgress) progressBySkill[p.skill_id] = p.status;
-
-        const skills = await apiGet<Skill[]>("/skills");
-        const cvStatuses = await Promise.all(
-          skills.map((s) => apiGet<CVStatusResponse>(`/skills/${s.id}/cv-status`)),
-        );
-        const recommendations = cvStatuses
-          .map((c) => c.recommendation)
-          .filter((r): r is string => r !== null)
-          .slice(0, MAX_RECOMMENDATIONS);
-
-        setState({
-          status: "loaded",
-          verifiedCount,
-          totalGaps,
-          jobDescriptions,
-          mostRecentGaps,
-          skillsToLearn,
-          progressBySkill,
-          recommendations,
-        });
-      } catch (error) {
-        setState({
-          status: "error",
-          message: error instanceof ApiError ? error.message : "Could not reach the backend.",
-        });
-      }
-    }
-    load();
+    let active = true;
+    fetchDashboard()
+      .then((loaded) => active && setState(loaded))
+      .catch(
+        (error) =>
+          active &&
+          setState({
+            status: "error",
+            message: error instanceof ApiError ? error.message : "Could not reach the backend.",
+          }),
+      );
+    return () => {
+      active = false;
+    };
   }, []);
 
   if (state.status === "loading") {

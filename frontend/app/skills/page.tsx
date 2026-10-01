@@ -7,9 +7,7 @@ import StatusBadge from "@/components/StatusBadge";
 import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
 import type { CVStatusResponse, Skill } from "@/lib/types";
 
-// One row = one Skill plus its combined knowledge/CV status. Fetched separately
-// per skill (see the N+1 note in the component below) rather than in one request,
-// because GET /skills/{id}/cv-status doesn't have a "for all skills" version yet.
+// One row = one Skill plus its combined knowledge/CV status.
 type Row = { skill: Skill; cvStatus: CVStatusResponse };
 
 type ListState =
@@ -17,9 +15,39 @@ type ListState =
   | { status: "loaded"; rows: Row[] }
   | { status: "error"; message: string };
 
+// What GET /skills/{id}/cv-status reports for a skill with no claim and no CV mark.
+// GET /cv/status leaves such skills out, so they get this instead.
+function untouched(skill: Skill): CVStatusResponse {
+  return {
+    skill_id: skill.id,
+    skill_name: skill.name,
+    knowledge_status: null,
+    cv_status: "not_present",
+    recommendation: null,
+  };
+}
+
+// Two requests in parallel, however many skills there are (not one per skill).
+async function fetchRows(): Promise<Row[]> {
+  const [skills, statuses] = await Promise.all([
+    apiGet<Skill[]>("/skills"),
+    apiGet<CVStatusResponse[]>("/cv/status"),
+  ]);
+  const bySkillId = new Map(statuses.map((s) => [s.skill_id, s] as const));
+  return skills.map((skill) => ({ skill, cvStatus: bySkillId.get(skill.id) ?? untouched(skill) }));
+}
+
+// One skill's row, after its CV badge is toggled: still a single request.
 async function fetchRow(skill: Skill): Promise<Row> {
   const cvStatus = await apiGet<CVStatusResponse>(`/skills/${skill.id}/cv-status`);
   return { skill, cvStatus };
+}
+
+function errorState(error: unknown): ListState {
+  return {
+    status: "error",
+    message: error instanceof ApiError ? error.message : "Could not reach the backend.",
+  };
 }
 
 export default function SkillsPage() {
@@ -32,21 +60,26 @@ export default function SkillsPage() {
   // Non-null means we're waiting for the user to choose "Add anyway" or "Cancel".
   const [lookalikes, setLookalikes] = useState<string[] | null>(null);
 
-  async function loadAll() {
-    setState({ status: "loading" });
+  // Refresh after adding a skill. The current list stays on screen until the new
+  // one arrives, instead of flashing back to "Loading…".
+  async function reload() {
     try {
-      const skills = await apiGet<Skill[]>("/skills");
-      const rows = await Promise.all(skills.map(fetchRow));
-      setState({ status: "loaded", rows });
+      setState({ status: "loaded", rows: await fetchRows() });
     } catch (error) {
-      const message =
-        error instanceof ApiError ? error.message : "Could not reach the backend.";
-      setState({ status: "error", message });
+      setState(errorState(error));
     }
   }
 
+  // Fetch first, then set state only in the promise callbacks: no synchronous
+  // setState inside the effect (react-hooks/set-state-in-effect).
   useEffect(() => {
-    loadAll();
+    let active = true;
+    fetchRows()
+      .then((rows) => active && setState({ status: "loaded", rows }))
+      .catch((error) => active && setState(errorState(error)));
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function handleCreate(event: FormEvent) {
@@ -80,7 +113,7 @@ export default function SkillsPage() {
       });
       setName("");
       setCategory("");
-      await loadAll();
+      await reload();
     } catch (error) {
       // Show the backend's own message (e.g. its 409 duplicate-name or 422
       // blank-name text) rather than a generic one.
@@ -95,11 +128,13 @@ export default function SkillsPage() {
     try {
       await apiPatch(`/skills/${row.skill.id}/cv-presence`, { present: nextPresent });
       const updated = await fetchRow(row.skill);
-      if (state.status !== "loaded") return;
-      setState({
-        status: "loaded",
-        rows: state.rows.map((r) => (r.skill.id === row.skill.id ? updated : r)),
-      });
+      // Functional update: works from the latest rows, so two quick toggles on
+      // different skills can't overwrite each other with a stale copy.
+      setState((prev) =>
+        prev.status === "loaded"
+          ? { status: "loaded", rows: prev.rows.map((r) => (r.skill.id === row.skill.id ? updated : r)) }
+          : prev,
+      );
     } catch {
       // A failed toggle just leaves the row as it was; no separate error banner
       // for this small interaction, in keeping with this page's minimal scope.

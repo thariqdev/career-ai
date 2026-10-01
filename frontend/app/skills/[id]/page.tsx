@@ -146,6 +146,38 @@ type Loaded = {
 
 type PageState = { status: "loading" } | { status: "error"; message: string } | Loaded;
 
+// Everything this page shows, as a finished state (never throws). The requests
+// don't depend on each other, so they run in parallel. No GET /skills/{id} exists,
+// so the one skill is found by scanning the full list.
+async function fetchSkillPage(skillId: number): Promise<PageState> {
+  try {
+    const [skills, cvStatus, userSkills, evidence, learning, allProgress] = await Promise.all([
+      apiGet<Skill[]>("/skills"),
+      apiGet<CVStatusResponse>(`/skills/${skillId}/cv-status`),
+      apiGet<UserSkill[]>("/user-skills"),
+      apiGet<Evidence[]>("/evidence"),
+      apiGet<SkillLearningResources>(`/skills/${skillId}/learning-resources`),
+      apiGet<LearningProgress[]>("/learning-progress"),
+    ]);
+    const skill = skills.find((s) => s.id === skillId);
+    if (!skill) return { status: "error", message: `Skill ${skillId} not found.` };
+    return {
+      status: "loaded",
+      skill,
+      cvStatus,
+      userSkill: userSkills.find((us) => us.skill_id === skillId) ?? null,
+      evidence,
+      learning,
+      progress: allProgress.find((p) => p.skill_id === skillId)?.status ?? "not_started",
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: error instanceof ApiError ? error.message : "Could not reach the backend.",
+    };
+  }
+}
+
 export default function SkillDetailPage() {
   const params = useParams<{ id: string }>();
   const skillId = Number(params.id);
@@ -161,39 +193,20 @@ export default function SkillDetailPage() {
   const [evidenceDescription, setEvidenceDescription] = useState("");
   const [evidenceFormError, setEvidenceFormError] = useState<string | null>(null);
 
+  // Refresh after an action. The page stays on screen until the new data arrives,
+  // instead of flashing back to "Loading…".
   async function loadAll() {
-    setState({ status: "loading" });
-    try {
-      // No GET /skills/{id} endpoint exists, so the one skill is found by
-      // scanning the full list — the same kind of trade-off already called out
-      // as the N+1 pattern on the Skills page, just a different shape of it.
-      const skills = await apiGet<Skill[]>("/skills");
-      const skill = skills.find((s) => s.id === skillId);
-      if (!skill) {
-        setState({ status: "error", message: `Skill ${skillId} not found.` });
-        return;
-      }
-      const cvStatus = await apiGet<CVStatusResponse>(`/skills/${skillId}/cv-status`);
-      const userSkills = await apiGet<UserSkill[]>("/user-skills");
-      const userSkill = userSkills.find((us) => us.skill_id === skillId) ?? null;
-      const evidence = await apiGet<Evidence[]>("/evidence");
-      const learning = await apiGet<SkillLearningResources>(
-        `/skills/${skillId}/learning-resources`,
-      );
-      const allProgress = await apiGet<LearningProgress[]>("/learning-progress");
-      const progress = allProgress.find((p) => p.skill_id === skillId)?.status ?? "not_started";
-      setState({ status: "loaded", skill, cvStatus, userSkill, evidence, learning, progress });
-    } catch (error) {
-      setState({
-        status: "error",
-        message: error instanceof ApiError ? error.message : "Could not reach the backend.",
-      });
-    }
+    setState(await fetchSkillPage(skillId));
   }
 
+  // Fetch first, then set state only in the promise callback: no synchronous
+  // setState inside the effect (react-hooks/set-state-in-effect).
   useEffect(() => {
-    loadAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    let active = true;
+    fetchSkillPage(skillId).then((next) => active && setState(next));
+    return () => {
+      active = false;
+    };
   }, [skillId]);
 
   // Refetches only the learning-resources part, so saving or removing a link

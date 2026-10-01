@@ -1157,6 +1157,31 @@ Added 2026-10-01. A posting was read once. `extract_requirements` refuses a seco
   - removing or editing requirements
   - re-running Claude on old postings (it would work technically, behind the paid confirm, but has never been tried: no key)
 
+### Frontend tidy-up: zero lint findings, and one CV-status request instead of one per skill
+
+Added 2026-10-01. Frontend only, with no visual or behavioral change intended.
+
+- **`react-hooks/set-state-in-effect` fixed** in `app/skills/page.tsx` and `app/skills/[id]/page.tsx`, the two findings carried since task 32. Both pages now use the pattern the newer pages already follow:
+  - a module-level async function builds the page state: `fetchRows`, and `fetchSkillPage`, which never throws and returns a ready `PageState`
+  - the `useEffect` sets state only in promise callbacks, guarded by an `active` flag
+  - the old `eslint-disable-next-line react-hooks/exhaustive-deps` was removed, since it's no longer needed
+
+  **`npx eslint .` now reports zero problems across the whole frontend.**
+- **One request instead of one per skill:**
+  - **`/skills`** loads `GET /skills` and `GET /cv/status` in parallel (2 requests total). Skills absent from `/cv/status` get the same value the per-skill endpoint returns for them (`knowledge_status: null`, `cv_status: "not_present"`, no recommendation), built by `untouched(skill)`.
+  - **The Dashboard** takes its CV advice from one `/cv/status` instead of `/skills` plus one `cv-status` per skill. The order is unchanged, since both are by skill name. Its independent requests now run in parallel. Per-job `/gaps` stays one per job: there's no all-jobs gaps endpoint.
+- **Small behavior improvements that came with it:**
+  - **The Skill Detail page's 6 independent requests run in parallel** instead of one after another.
+  - **Refreshing after an action keeps the page on screen** instead of flashing "Loading…" on both Skills pages.
+  - **The Skills page's CV toggle uses a functional `setState`** (`prev => …`), so two quick toggles on different skills can't overwrite each other with a stale copy.
+  - **Not found:** for a missing skill id, the parallel requests surface the backend's own 404 "Skill N not found." message, the same wording as before.
+- **Verified:**
+  - `npm run build` is clean, and `npx eslint .` exits 0 with no findings.
+  - Backend suite unchanged: **285 passed**.
+  - **Read-only check against the user's own running server:** for every real skill (Docker, PostgreSQL, pytho n, Python), the per-skill `GET /skills/{id}/cv-status` and the new `/cv/status`-based value were identical, with 0 mismatches. That's 5 requests the old way and 2 the new way.
+  - No database writes, so nothing to clean up.
+  - Not checked in a real browser (no browser tooling here); the user was asked to glance at Skills and the Dashboard.
+
 ---
 
 ## 8. What Is Already Working
