@@ -25,4 +25,7 @@ class Skill(Base):
     learning_resources: Mapped[list["LearningResource"]] = relationship(
         "LearningResource", back_populates="skill"
     )
+    learning_progress: Mapped[list["LearningProgress"]] = relationship(
+        "LearningProgress", back_populates="skill"
+    )
 

@@ -107,6 +107,17 @@ export type SkillLearningResources = {
   modes: LearningModeResources[];
 };
 
+// Matches backend LearningProgressResponse. "not_started" is never stored by the
+// backend; it's what a skill with no progress row reports.
+export type LearningProgressStatus = "not_started" | "studying" | "finished";
+
+export type LearningProgress = {
+  skill_id: number;
+  skill_name: string;
+  status: LearningProgressStatus;
+  updated_at: string | null;
+};
+
 // Matches backend EvidenceResponse.
 export type Evidence = {
   id: number;

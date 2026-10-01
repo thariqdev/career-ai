@@ -1,7 +1,16 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import evidence, health, job_descriptions, learning_resources, me, skills, user_skills
+from app.api import (
+    evidence,
+    health,
+    job_descriptions,
+    learning_progress,
+    learning_resources,
+    me,
+    skills,
+    user_skills,
+)
 from app.api.errors import domain_error_handler
 from app.core.exceptions import DomainError
 
@@ -26,3 +35,4 @@ app.include_router(job_descriptions.router)
 app.include_router(user_skills.router)
 app.include_router(evidence.router)
 app.include_router(learning_resources.router)
+app.include_router(learning_progress.router)

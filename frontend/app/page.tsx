@@ -5,8 +5,16 @@ import Link from "next/link";
 import { apiGet, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import LearnLinks from "@/components/LearnLinks";
-import { useLearningResources } from "@/lib/learning";
-import type { CVStatusResponse, Gap, JobDescription, Skill, UserSkill } from "@/lib/types";
+import { PROGRESS_LABEL, useLearningResources } from "@/lib/learning";
+import type {
+  CVStatusResponse,
+  Gap,
+  JobDescription,
+  LearningProgress,
+  LearningProgressStatus,
+  Skill,
+  UserSkill,
+} from "@/lib/types";
 
 // The maximum number of CV recommendations shown at once, so a large skill
 // list doesn't turn this section into a second full page of its own.
@@ -22,6 +30,7 @@ type Loaded = {
   jobDescriptions: JobDescription[];
   mostRecentGaps: Gap[];
   skillsToLearn: SkillToLearn[];
+  progressBySkill: Record<number, LearningProgressStatus>;
   recommendations: string[];
 };
 
@@ -45,7 +54,13 @@ function rankSkillsToLearn(gapsPerJob: Gap[][]): SkillToLearn[] {
     .slice(0, MAX_SKILLS_TO_LEARN);
 }
 
-function SkillsToLearn({ items }: { items: SkillToLearn[] }) {
+function SkillsToLearn({
+  items,
+  progressBySkill,
+}: {
+  items: SkillToLearn[];
+  progressBySkill: Record<number, LearningProgressStatus>;
+}) {
   const learning = useLearningResources(items.map((item) => item.skillId));
 
   if (items.length === 0) {
@@ -60,6 +75,11 @@ function SkillsToLearn({ items }: { items: SkillToLearn[] }) {
             <span className="text-ink-soft">
               — needed by {item.jobs} {item.jobs === 1 ? "job" : "jobs"}
             </span>
+            {progressBySkill[item.skillId] && (
+              <span className="ml-2 rounded bg-accent-soft px-2 py-0.5 font-mono text-xs text-accent">
+                {PROGRESS_LABEL[progressBySkill[item.skillId]].toLowerCase()}
+              </span>
+            )}
           </span>
           {learning[item.skillId] && <LearnLinks learning={learning[item.skillId]} />}
         </li>
@@ -94,6 +114,10 @@ export default function DashboardPage() {
         const mostRecentGaps = gapsPerJob[0] ?? [];
         const skillsToLearn = rankSkillsToLearn(gapsPerJob);
 
+        const allProgress = await apiGet<LearningProgress[]>("/learning-progress");
+        const progressBySkill: Record<number, LearningProgressStatus> = {};
+        for (const p of allProgress) progressBySkill[p.skill_id] = p.status;
+
         const skills = await apiGet<Skill[]>("/skills");
         const cvStatuses = await Promise.all(
           skills.map((s) => apiGet<CVStatusResponse>(`/skills/${s.id}/cv-status`)),
@@ -110,6 +134,7 @@ export default function DashboardPage() {
           jobDescriptions,
           mostRecentGaps,
           skillsToLearn,
+          progressBySkill,
           recommendations,
         });
       } catch (error) {
@@ -161,7 +186,7 @@ export default function DashboardPage() {
 
       <section className="mt-8">
         <h2 className="font-display text-lg text-ink">Skills to learn</h2>
-        <SkillsToLearn items={state.skillsToLearn} />
+        <SkillsToLearn items={state.skillsToLearn} progressBySkill={state.progressBySkill} />
       </section>
 
       <section className="mt-8">

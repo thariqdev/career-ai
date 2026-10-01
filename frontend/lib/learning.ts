@@ -2,11 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { apiGet } from "@/lib/api";
-import type { LearningMode, SkillLearningResources } from "@/lib/types";
+import type { LearningMode, LearningProgressStatus, SkillLearningResources } from "@/lib/types";
 
 export const MODE_LABEL: Record<LearningMode, string> = {
   theory_interview: "Theory / Interview",
   technical_practical: "Technical / Practical",
+};
+
+export const PROGRESS_LABEL: Record<LearningProgressStatus, string> = {
+  not_started: "Not started",
+  studying: "Studying",
+  finished: "Finished studying",
 };
 
 /**

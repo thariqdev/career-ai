@@ -31,3 +31,6 @@ class User(Base):
     cv_skill_presences: Mapped[list["CVSkillPresence"]] = relationship(
         "CVSkillPresence", back_populates="user"
     )
+    learning_progress: Mapped[list["LearningProgress"]] = relationship(
+        "LearningProgress", back_populates="user"
+    )

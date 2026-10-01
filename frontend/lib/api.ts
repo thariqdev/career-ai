@@ -6,7 +6,7 @@
  * needs to be readable in browser-side code, not just on the server — without
  * it, the value would only exist during the server build and be undefined here.
  *
- * This is deliberately minimal: four functions sharing one internal helper, no
+ * This is deliberately minimal: five functions sharing one internal helper, no
  * retries, no caching, no request library. They just call `fetch`, check the
  * status, and parse JSON.
  */
@@ -51,6 +51,14 @@ export function apiGet<T>(path: string): Promise<T> {
 export function apiPost<T>(path: string, body: unknown): Promise<T> {
   return request<T>(path, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export function apiPut<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

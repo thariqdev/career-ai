@@ -130,7 +130,8 @@ career-ai/
     │       ├── ed7c26469959_create_job_requirements_table.py
     │       ├── 845323acae55_create_comparison_results_and_.py
     │       ├── 8b7d8f0de9ae_create_cv_skill_presences_table.py
-    │       └── 9bd5ef6ad2a1_create_learning_resources_table.py
+    │       ├── 9bd5ef6ad2a1_create_learning_resources_table.py
+    │       └── e034a498adb5_create_learning_progress_table.py
     ├── app/
     │   ├── __init__.py
     │   ├── main.py             ← FastAPI app; registers the DomainError handler + health/skills/me/job-descriptions/user-skills/evidence routers
@@ -141,6 +142,7 @@ career-ai/
     │   │   ├── skills.py       ← /skills endpoints (thin routes over skill_service)
     │   │   ├── user_skills.py  ← /user-skills endpoints (claim, list, link evidence, status)
     │   │   ├── evidence.py     ← /evidence endpoints (create, list)
+    │   │   ├── learning_progress.py  ← PUT /skills/{id}/learning-progress + GET /learning-progress
     │   │   ├── learning_resources.py ← /skills/{id}/learning-resources (list, add) + DELETE /learning-resources/{id}
     │   │   ├── me.py           ← GET /me (proof endpoint for the single-user bootstrap)
     │   │   ├── job_descriptions.py  ← /job-descriptions endpoints (create, read, extract, compare, gaps)
@@ -156,6 +158,7 @@ career-ai/
     │   │   │   ├── requirement_service.py   ← extract_requirements() (validates an extractor's proposals)
     │   │   │   ├── user_service.py          ← get_or_create_default_user() (single-hardcoded-user bootstrap)
     │   │   │   ├── cv_service.py            ← combined_status(), combined_status_for_all(), CVStatus, CombinedSkillStatus
+    │   │   │   ├── learning_progress_service.py ← get/list/set_progress() (never touches UserSkill/Evidence)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
     │   ├── db/
@@ -175,7 +178,8 @@ career-ai/
     │   │       ├── comparison_result.py    ← ComparisonResult + ComparisonResultEvidence
     │   │       ├── cv_skill_presence.py    ← CVSkillPresence
     │   │       ├── learning_resource.py    ← LearningResource
-    │   │       └── enums.py        ← EvidenceType, VerificationStatus, LearningMode
+    │   │       ├── learning_progress.py    ← LearningProgress
+    │   │       └── enums.py        ← EvidenceType, VerificationStatus, LearningMode, LearningStatus
     │   └── ai/                 ← extractor interface, schemas, and two implementations
     │       ├── __init__.py
     │       ├── client.py       ← RequirementExtractor (typing.Protocol)
@@ -206,7 +210,8 @@ career-ai/
         ├── test_cv_skill_presence.py
         ├── test_cv_service.py
         ├── test_skills_cv_api.py
-        └── test_learning_resources_api.py
+        ├── test_learning_resources_api.py
+        └── test_learning_progress_api.py
 ```
 
 ---
@@ -891,6 +896,54 @@ Added 2026-10-01. Aliases are how the skill-list matcher finds more requirements
     6. Cleaned up back to baseline.
 - **Not done:** renaming or deleting skills, merging skills.
 
+### Learning progress: the user's own "studying / finished" per skill
+
+Added 2026-10-01. PROJECT_RULES.md §14 ("The AI must not infer mastery from viewing a tutorial") and §16 ("Progress is stored explicitly").
+
+- **`LearningStatus` enum** (`STUDYING`, `FINISHED`). "Not started" is deliberately not a member: it's represented by **no row**, so there's one way to say it, like `CVSkillPresence`'s "never stated".
+- **`LearningProgress` model** (`learning_progress.py`, migration `e034a498adb5`):
+  - Columns: `user_id`, `skill_id`, `status`, `updated_at` (`onupdate`).
+  - `UniqueConstraint("user_id", "skill_id", name="uq_learning_progress")`.
+  - **No FK to `UserSkill`/`Evidence`**, by design.
+  - Downgrade hand-fixed to also drop the `learning_status` enum type, the same as `learning_mode`. A downgrade → upgrade cycle was confirmed on live Postgres (no table and no enum left after the downgrade), and `alembic check` is clean.
+- **`learning_progress_service`:**
+  - `get_progress`
+  - `list_progress`, ordered by skill name
+  - `set_progress(db, user, skill, status | None)`: `None` deletes the row if present; otherwise it upserts.
+
+  It reads and writes `LearningProgress` **only**. It never touches `UserSkill`, `Evidence` or verification.
+- **API** (`app/api/learning_progress.py`, user-scoped via `get_current_user`):
+  - `PUT /skills/{id}/learning-progress` takes `{"status": "not_started" | "studying" | "finished"}`. It's a Pydantic `Literal`, so anything else, including `"verified"`, is a 422.
+  - `GET /learning-progress` lists only the current user's rows.
+  - `LearningProgressResponse.for_skill(skill, progress)` builds the response without an ORM row in the "not started" case: `status "not_started"`, `updated_at null`.
+  - `PUT` is used because the request states the whole value (an idempotent set). It's the first `PUT` in the API, which is why `lib/api.ts` gains `apiPut`.
+- **Frontend:**
+  - `components/LearningProgressControl.tsx`: three buttons with `aria-pressed`. When the status is `finished` and `knowledge_status !== "verified"`, it shows "Finished studying isn't proof yet… add evidence … and link it to your claim".
+  - It's placed on the Skill Detail page under Nicknames. The page loads `GET /learning-progress` and picks its skill.
+  - Dashboard "Skills to learn" items show a "studying" / "finished studying" tag.
+  - `PROGRESS_LABEL` lives in `lib/learning.ts`.
+- **Verified:**
+  - **Tests:** 13 new in `test_learning_progress_api.py`:
+    - empty list
+    - studying, then finished, updates one row
+    - `not_started` deletes the row, and is fine when there's nothing to delete
+    - unknown skill returns 404
+    - `verified` / `mastered` / `""` / `STUDYING` return 422
+    - the list is ordered by name and scoped to the user
+    - **guard:** "finished" leaves an existing claim `provisional` with no evidence
+    - **guard:** "finished" on an unclaimed skill creates no `UserSkill`
+
+    Suite: **237 passed**.
+  - **Mutation check:** injecting an auto-verify into `set_progress` (on `FINISHED`, create or upgrade the claim to `VERIFIED`) made exactly the two guard tests fail. The file was restored byte-identical.
+  - `npm run build` is clean, and ESLint is clean on the new and changed files apart from the known pre-existing `set-state-in-effect` finding.
+  - **Live check** (temporary :8011):
+    - Claimed Docker (`provisional`), then set studying and finished; `updated_at` advanced.
+    - The list showed `finished`, while the claim was still `provisional` with `[]` evidence and `cv-status` `knowledge_status` was `provisional`.
+    - `"verified"` returned 422.
+    - Reset to `not_started` returned `updated_at null` and an empty list.
+    - Cleaned up back to baseline.
+- **Not done:** a `LearningPlan` table (see `ARCHITECTURE.md` §4), percentages, per-resource "watched" tracking, reminders.
+
 ---
 
 ## 8. What Is Already Working
@@ -954,8 +1007,8 @@ Continue building the backend incrementally. Each step should be small, tested, 
    - ~~`ComparisonResult`~~ ✅ done 2026-09-25 (`app/db/models/comparison_result.py` + `ComparisonResultEvidence` join table; append-only snapshots (no unique constraint on `job_requirement_id`), nullable `user_skill_id` (null = no claim exists), `knowledge_status` has no default so the future service must decide it explicitly, evidence cited via join table; `cv_status` intentionally deferred until `CVSkillPresence` exists)
    - ~~`SkillGap`~~ ✅ done 2026-09-26 **as a derived query, not a model/table** — `comparison_service.skill_gaps` (latest `ComparisonResult` per requirement with status ≠ `VERIFIED`), see §7 and `ARCHITECTURE.md` §4. No `SkillGap` model or migration exists or is planned; a table could be added later only for gap-specific state (priority/dismissed/notes).
    - ~~`LearningResource`~~ ✅ done 2026-10-01 — user-curated links per skill and mode, plus derived YouTube search links (see "Learning resources" in §7). Still pending: showing them for gap skills on the Dashboard / Job Descriptions pages.
-   - `LearningPlan` — not started
-   - `LearningProgress` — not started
+   - `LearningPlan` — **deliberately not a table** (2026-10-01): the Dashboard's derived "Skills to learn" ranking serves as the plan; see `ARCHITECTURE.md` §4.
+   - ~~`LearningProgress`~~ ✅ done 2026-10-01 — see "Learning progress" in §7.
    - ~~`CVSkillPresence`~~ ✅ done 2026-09-29 (`app/db/models/cv_skill_presence.py`; `(user_id, skill_id)` unique constraint, one evolving row like `UserSkill` rather than an append-only history like `ComparisonResult`; `present: Boolean` has no default — the caller must always state it explicitly; **deliberately independent** of `UserSkill`/`Evidence`/`ComparisonResult` — no FK to any of them, so a skill can be `VERIFIED` and not on the CV, or `NOT_VERIFIED` and on the CV, with no conflict — verified with real coexisting rows in `tests/test_cv_skill_presence.py`). The combined "knowledge + CV" view is now ✅ done too, at the service level — see `cv_service.py` in §7. CV presence can now be **set and read over HTTP** too (`PATCH`/`GET /skills/{id}/cv-presence`/`cv-status`, see §7). Still pending: a list-all-my-cv-statuses endpoint (only a single-skill read exists so far), and `DELETE` if ever needed.
 
    Reference these concepts from `ARCHITECTURE.md` and `PROJECT_RULES.md`. Suggested next sub-batch: `UserSkill` alone (it's the piece that finally connects `Skill` to `User`/`Evidence` and lets verification-status rules become testable), since everything from `JobRequirement` onward depends on it existing.

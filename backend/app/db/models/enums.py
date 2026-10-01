@@ -24,6 +24,17 @@ class LearningMode(str, enum.Enum):
     TECHNICAL_PRACTICAL = "technical_practical"
 
 
+class LearningStatus(str, enum.Enum):
+    """How far the user says they are in studying a skill (PROJECT_RULES.md section 16).
+
+    "Not started" is deliberately not a member: it is represented by having no
+    LearningProgress row at all, so there is only one way to say it.
+    """
+
+    STUDYING = "studying"
+    FINISHED = "finished"
+
+
 class VerificationStatus(str, enum.Enum):
     """The four statuses PROJECT_RULES.md section 3 defines for a UserSkill claim.
 

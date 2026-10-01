@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -324,3 +324,29 @@ class SkillLearningResourcesResponse(BaseModel):
     skill_id: int
     skill_name: str
     modes: list[LearningModeResources]
+
+
+class LearningProgressUpdate(BaseModel):
+    # "not_started" is accepted here but never stored: it means "no row" (see
+    # learning_progress_service). Any other value is a 422 from Pydantic itself.
+    status: Literal["not_started", "studying", "finished"]
+
+
+class LearningProgressResponse(BaseModel):
+    """The user's progress on one skill; updated_at is None when not started."""
+
+    skill_id: int
+    skill_name: str
+    status: str
+    updated_at: datetime | None
+
+    @classmethod
+    def for_skill(cls, skill: Any, progress: Any | None) -> "LearningProgressResponse":
+        # Built field-by-field (like CVStatusResponse.from_combined_status): "not
+        # started" has no row, so there may be no ORM object to read from at all.
+        return cls(
+            skill_id=skill.id,
+            skill_name=skill.name,
+            status=progress.status.value if progress is not None else "not_started",
+            updated_at=progress.updated_at if progress is not None else None,
+        )

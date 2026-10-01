@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import AliasEditor from "@/components/AliasEditor";
+import LearningProgressControl from "@/components/LearningProgressControl";
 import StatusBadge from "@/components/StatusBadge";
 import { MODE_LABEL } from "@/lib/learning";
 import type {
@@ -11,6 +12,8 @@ import type {
   CVStatusResponse,
   Evidence,
   LearningModeResources,
+  LearningProgress,
+  LearningProgressStatus,
   Skill,
   SkillLearningResources,
   UserSkill,
@@ -156,6 +159,7 @@ type Loaded = {
   userSkill: UserSkill | null;
   evidence: Evidence[];
   learning: SkillLearningResources;
+  progress: LearningProgressStatus;
 };
 
 type PageState = { status: "loading" } | { status: "error"; message: string } | Loaded;
@@ -192,7 +196,9 @@ export default function SkillDetailPage() {
       const learning = await apiGet<SkillLearningResources>(
         `/skills/${skillId}/learning-resources`,
       );
-      setState({ status: "loaded", skill, cvStatus, userSkill, evidence, learning });
+      const allProgress = await apiGet<LearningProgress[]>("/learning-progress");
+      const progress = allProgress.find((p) => p.skill_id === skillId)?.status ?? "not_started";
+      setState({ status: "loaded", skill, cvStatus, userSkill, evidence, learning, progress });
     } catch (error) {
       setState({
         status: "error",
@@ -371,6 +377,15 @@ export default function SkillDetailPage() {
         skill={skill}
         onChange={(updated) =>
           setState((prev) => (prev.status === "loaded" ? { ...prev, skill: updated } : prev))
+        }
+      />
+
+      <LearningProgressControl
+        skillId={skill.id}
+        status={state.progress}
+        verified={cvStatus.knowledge_status === "verified"}
+        onChange={(progress) =>
+          setState((prev) => (prev.status === "loaded" ? { ...prev, progress } : prev))
         }
       />
 
