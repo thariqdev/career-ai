@@ -13,6 +13,7 @@ import type {
   ExtractorInfo,
   Gap,
   JobDescription,
+  Skill,
 } from "@/lib/types";
 
 type Loaded = {
@@ -20,17 +21,19 @@ type Loaded = {
   job: JobDescription;
   results: ComparisonResult[];
   gaps: Gap[];
+  dismissed: Skill[];
 };
 
 type PageState = { status: "loading" } | { status: "error"; message: string } | Loaded;
 
 async function fetchJob(id: number): Promise<Loaded> {
-  const [job, results, gaps] = await Promise.all([
+  const [job, results, gaps, dismissed] = await Promise.all([
     apiGet<JobDescription>(`/job-descriptions/${id}`),
     apiGet<ComparisonResult[]>(`/job-descriptions/${id}/results`),
     apiGet<Gap[]>(`/job-descriptions/${id}/gaps`),
+    apiGet<Skill[]>(`/job-descriptions/${id}/dismissed`),
   ]);
-  return { status: "loaded", job, results, gaps };
+  return { status: "loaded", job, results, gaps, dismissed };
 }
 
 function errorMessage(error: unknown): string {
@@ -128,12 +131,13 @@ export default function JobDescriptionPage() {
   }
 
   // Removes one requirement with its own comparison results; the rest of the job,
-  // and everything outside it, stays. A re-read of the posting may find it again.
+  // and everything outside it, stays. Its skill is remembered as "not for this job",
+  // so re-reading the posting skips it until "Allow again".
   async function handleRemoveRequirement(requirementId: number, label: string) {
     if (
       !window.confirm(
-        `Remove the requirement "${label}" from this job? Its comparison results go with it. ` +
-          "If the posting still mentions it, \"Look for new skills\" may add it back.",
+        `Remove the requirement "${label}" from this job? Its comparison results go with it, ` +
+          "and \"Look for new skills\" won't add it back unless you allow it again.",
       )
     ) {
       return;
@@ -144,6 +148,22 @@ export default function JobDescriptionPage() {
     try {
       await apiDelete(`/job-descriptions/${jobId}/requirements/${requirementId}`);
       setState(await fetchJob(jobId));
+    } catch (error) {
+      setCompareError(errorMessage(error));
+    } finally {
+      setComparing(false);
+    }
+  }
+
+  // Deletes only the "not for this job" note; the next "Look for new skills" may find it.
+  async function handleAllowAgain(skill: Skill) {
+    setCompareError(null);
+    setLookMessage(null);
+    setComparing(true);
+    try {
+      await apiDelete(`/job-descriptions/${jobId}/dismissed/${skill.id}`);
+      setState(await fetchJob(jobId));
+      setLookMessage(`${skill.name} is allowed again. Click "Look for new skills" to add it back.`);
     } catch (error) {
       setCompareError(errorMessage(error));
     } finally {
@@ -170,7 +190,7 @@ export default function JobDescriptionPage() {
     );
   }
 
-  const { job, results, gaps } = state;
+  const { job, results, gaps, dismissed } = state;
   const resultByRequirement = new Map(results.map((r) => [r.job_requirement_id, r] as const));
   const lastCompared = results.reduce<string | null>(
     (latest, r) => (latest === null || r.created_at > latest ? r.created_at : latest),
@@ -288,6 +308,25 @@ export default function JobDescriptionPage() {
               );
             })}
           </ul>
+        )}
+
+        {dismissed.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-ink-soft">
+            <span>Removed from this job:</span>
+            {dismissed.map((skill) => (
+              <span key={skill.id} className="flex items-center gap-1 rounded border border-line px-2 py-0.5">
+                {skill.name}
+                <button
+                  type="button"
+                  disabled={comparing}
+                  onClick={() => handleAllowAgain(skill)}
+                  className="text-xs text-ink underline disabled:opacity-50"
+                >
+                  Allow again
+                </button>
+              </span>
+            ))}
+          </div>
         )}
       </section>
 

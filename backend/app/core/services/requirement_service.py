@@ -27,6 +27,9 @@ proposal is rejected as REJECTED_EXISTING if its text, or the skill it maps to, 
 already among this job's requirements. It only ever ADDS rows; existing requirements
 and their comparison results are never changed or deleted.
 
+Both entry points also skip any skill the user removed from this job earlier (a
+DismissedRequirement note), rejecting it as REJECTED_DISMISSED, so a correction sticks.
+
 Callers pass any object implementing RequirementExtractor. Same conventions as the other services: plain functions taking a Session, no HTTP
 knowledge, flush but never commit, and flush before reading (autoflush=False).
 """
@@ -40,12 +43,13 @@ from app.ai.client import RequirementExtractor
 from app.ai.schemas import ExtractedRequirement
 from app.core.exceptions import AmbiguousSkillMatchError, RequirementsAlreadyExistError
 from app.core.services import skill_service
-from app.db.models import JobDescription, JobRequirement, Skill
+from app.db.models import DismissedRequirement, JobDescription, JobRequirement, Skill
 
 REJECTED_BLANK = "blank requirement text"
 REJECTED_NOT_GROUNDED = "not found in job description text"
 REJECTED_DUPLICATE = "duplicate requirement text"
 REJECTED_EXISTING = "already a requirement"
+REJECTED_DISMISSED = "removed by you for this job"
 
 
 @dataclass(frozen=True)
@@ -74,6 +78,16 @@ def _map_skill(db: Session, mention: str | None) -> Skill | None:
         return None
 
 
+def _dismissed_skill_ids(db: Session, job_description: JobDescription) -> set[int]:
+    return set(
+        db.scalars(
+            select(DismissedRequirement.skill_id).where(
+                DismissedRequirement.job_description_id == job_description.id
+            )
+        )
+    )
+
+
 def extract_requirements(
     db: Session, job_description: JobDescription, extractor: RequirementExtractor
 ) -> ExtractionOutcome:
@@ -89,7 +103,8 @@ def extract_requirements(
         raise RequirementsAlreadyExistError(job_description.id)  # extractor is NOT called
 
     proposal = extractor.extract_requirements(job_description.raw_text)
-    return _validate_and_store(db, job_description, proposal.requirements, set(), set())
+    dismissed = _dismissed_skill_ids(db, job_description)
+    return _validate_and_store(db, job_description, proposal.requirements, set(), set(), dismissed)
 
 
 def extract_new_requirements(
@@ -112,7 +127,12 @@ def extract_new_requirements(
 
     proposal = extractor.extract_requirements(job_description.raw_text)
     return _validate_and_store(
-        db, job_description, proposal.requirements, existing_texts, existing_skill_ids
+        db,
+        job_description,
+        proposal.requirements,
+        existing_texts,
+        existing_skill_ids,
+        _dismissed_skill_ids(db, job_description),
     )
 
 
@@ -122,6 +142,7 @@ def _validate_and_store(
     proposals: list[ExtractedRequirement],
     existing_texts: set[str],
     existing_skill_ids: set[int],
+    dismissed_skill_ids: set[int],
 ) -> ExtractionOutcome:
     """The rules both entry points share. With empty existing_* sets (first-time
     extraction) the REJECTED_EXISTING checks can never fire, so that path is unchanged."""
@@ -144,6 +165,9 @@ def _validate_and_store(
             skill = _map_skill(db, item.skill_mention)
             if skill is not None and skill.id in existing_skill_ids:
                 rejected.append(RejectedRequirement(item, REJECTED_EXISTING))
+                continue
+            if skill is not None and skill.id in dismissed_skill_ids:
+                rejected.append(RejectedRequirement(item, REJECTED_DISMISSED))
                 continue
             seen.add(normalized)
             requirement = JobRequirement(

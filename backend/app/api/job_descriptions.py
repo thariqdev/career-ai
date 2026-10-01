@@ -32,6 +32,7 @@ from app.core.models import (
     JobDescriptionCreate,
     JobDescriptionResponse,
     RejectedRequirementResponse,
+    SkillResponse,
 )
 from app.core.services import (
     comparison_service,
@@ -39,7 +40,7 @@ from app.core.services import (
     job_description_service,
     requirement_service,
 )
-from app.db.models import JobDescription, JobRequirement, User
+from app.db.models import JobDescription, JobRequirement, Skill, User
 from app.dependencies import (
     active_extractor_is_paid,
     get_current_user,
@@ -136,13 +137,40 @@ def delete_requirement(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    # Removes one requirement with its own comparison results; the job's other
-    # requirements, and everything outside the job, are untouched.
+    # Removes one requirement with its own comparison results, and notes its skill as
+    # "not for this job"; the job's other requirements, and everything outside the job,
+    # are untouched.
     job_description = _get_owned_job_description(db, job_description_id, user)
     requirement = db.get(JobRequirement, requirement_id)
     if requirement is None or requirement.job_description_id != job_description.id:
         raise HTTPException(status_code=404, detail=f"Requirement {requirement_id} not found.")
     job_description_service.delete_requirement(db, requirement)
+    db.commit()
+    return Response(status_code=204)
+
+
+@router.get("/{job_description_id}/dismissed", response_model=list[SkillResponse])
+def list_dismissed(
+    job_description_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[Skill]:
+    """Skills removed from this job; re-reading the posting skips them. Read-only."""
+    job_description = _get_owned_job_description(db, job_description_id, user)
+    return job_description_service.dismissed_skills(db, job_description)
+
+
+@router.delete("/{job_description_id}/dismissed/{skill_id}", status_code=204)
+def allow_again(
+    job_description_id: int,
+    skill_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    # Deletes only the note (404 if there's none); a later "Look for new skills" may then
+    # find the skill again. Nothing is re-added here.
+    job_description = _get_owned_job_description(db, job_description_id, user)
+    job_description_service.allow_again(db, job_description, skill_id)
     db.commit()
     return Response(status_code=204)
 

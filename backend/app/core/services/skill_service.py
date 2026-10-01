@@ -19,7 +19,7 @@ HTTP knowledge, flush but never commit, and flush before reading because
 SessionLocal uses autoflush=False.
 """
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
@@ -33,6 +33,7 @@ from app.core.exceptions import (
 )
 from app.db.models import (
     CVSkillPresence,
+    DismissedRequirement,
     JobRequirement,
     LearningProgress,
     LearningResource,
@@ -224,6 +225,8 @@ def delete_skill(db: Session, skill: Skill) -> None:
     reasons = _usage(db, skill)
     if reasons:
         raise SkillInUseError(skill.name, reasons)
+    # "Not for this job" notes are job-side bookkeeping, not a use of the skill: they go.
+    db.execute(delete(DismissedRequirement).where(DismissedRequirement.skill_id == skill.id))
     # Deleted through the ORM (not bulk SQL) so the session's loaded collections stay
     # consistent when the skill itself is deleted. _usage guarantees any remaining CV
     # rows here have present=False.
@@ -285,6 +288,23 @@ def merge_skills(db: Session, source: Skill, target: Skill) -> Skill:
             continue
         kept.present = kept.present or row.present
         db.delete(row)
+
+    # "Not for this job" notes follow the skill; a job already noting the target keeps
+    # just that one note.
+    jobs_noting_target = select(DismissedRequirement.job_description_id).where(
+        DismissedRequirement.skill_id == target.id
+    )
+    db.execute(
+        delete(DismissedRequirement).where(
+            DismissedRequirement.skill_id == source.id,
+            DismissedRequirement.job_description_id.in_(jobs_noting_target),
+        )
+    )
+    db.execute(
+        update(DismissedRequirement)
+        .where(DismissedRequirement.skill_id == source.id)
+        .values(skill_id=target.id)
+    )
 
     # Move and drop rows first, so deleting the now-empty source touches nothing else.
     db.flush()

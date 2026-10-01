@@ -12,6 +12,7 @@ from app.db.models.comparison_result import ComparisonResult, ComparisonResultEv
 from app.db.models.cv_skill_presence import CVSkillPresence
 from app.db.models.learning_resource import LearningResource
 from app.db.models.learning_progress import LearningProgress
+from app.db.models.dismissed_requirement import DismissedRequirement
 
 __all__ = [
     "Skill",
@@ -30,4 +31,5 @@ __all__ = [
     "CVSkillPresence",
     "LearningResource",
     "LearningProgress",
+    "DismissedRequirement",
 ]

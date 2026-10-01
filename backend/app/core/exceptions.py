@@ -159,6 +159,13 @@ class SkillMergeConflictError(DomainError):
         )
 
 
+class DismissalNotFoundError(DomainError):
+    """This job has no "not for this job" note for that skill."""
+
+    def __init__(self, skill_id: int) -> None:
+        super().__init__(f"Skill {skill_id} isn't removed from this job.")
+
+
 class AliasNotFoundError(DomainError):
     """The skill has no alias matching this text."""
 

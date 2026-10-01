@@ -1,4 +1,5 @@
-"""HTTP tests for removing one requirement: only its own history goes with it.
+"""HTTP tests for removing one requirement: only its own history goes with it, and it
+stays removed ("not for this job" notes) until the user allows it again.
 
 Same TestClient + dependency_overrides[get_db] + StaticPool in-memory SQLite pattern as
 the other API tests.
@@ -13,7 +14,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.core.services import skill_service
-from app.db.models import ComparisonResult, ComparisonResultEvidence, JobDescription, User
+from app.db.models import (
+    ComparisonResult,
+    ComparisonResultEvidence,
+    DismissedRequirement,
+    JobDescription,
+    JobRequirement,
+    User,
+)
 from app.dependencies import get_db
 from app.main import app
 from database import Base
@@ -170,11 +178,145 @@ def test_another_users_job_is_404(client: TestClient, engine: Engine, setup: dic
     assert _skill_names(client, backend) == ["Docker", "Python"]
 
 
-def test_look_for_new_skills_can_add_it_back(client: TestClient, setup: dict) -> None:
-    """Documented limitation: the posting still mentions it, so a re-read finds it again."""
+# --- "not for this job" notes ------------------------------------------------------------
+
+
+def _remove(client: TestClient, job_id: int, skill_name: str) -> None:
+    requirement_id = _requirement_id(client, job_id, skill_name)
+    assert client.delete(f"/job-descriptions/{job_id}/requirements/{requirement_id}").status_code == 204
+
+
+def _dismissed(client: TestClient, job_id: int) -> list[str]:
+    response = client.get(f"/job-descriptions/{job_id}/dismissed")
+    assert response.status_code == 200
+    return [s["name"] for s in response.json()]
+
+
+def _note_count(engine: Engine) -> int:
+    with Session(engine) as db:
+        return db.scalar(select(func.count()).select_from(DismissedRequirement))
+
+
+def test_a_removed_requirement_is_not_added_back(client: TestClient, setup: dict) -> None:
     backend = setup["jobs"][0]
-    client.delete(f"/job-descriptions/{backend}/requirements/{_requirement_id(client, backend, 'Docker')}")
+    _remove(client, backend, "Docker")
+
+    found = client.post(f"/job-descriptions/{backend}/extract-new").json()
+
+    assert found["accepted"] == []
+    assert {"text": "Docker", "reason": "removed by you for this job"} in found["rejected"]
+    assert _skill_names(client, backend) == ["Python"]
+    assert _dismissed(client, backend) == ["Docker"]
+
+
+def test_allow_again_lets_a_re_read_find_it(client: TestClient, setup: dict) -> None:
+    backend = setup["jobs"][0]
+    _remove(client, backend, "Docker")
+    docker_id = next(s["id"] for s in client.get("/skills").json() if s["name"] == "Docker")
+
+    assert client.delete(f"/job-descriptions/{backend}/dismissed/{docker_id}").status_code == 204
+    assert _dismissed(client, backend) == []
+    assert _skill_names(client, backend) == ["Python"]  # allowing re-adds nothing by itself
 
     client.post(f"/job-descriptions/{backend}/extract-new")
-
     assert _skill_names(client, backend) == ["Docker", "Python"]
+
+
+def test_allow_again_without_a_note_is_404(client: TestClient, setup: dict) -> None:
+    backend = setup["jobs"][0]
+    docker_id = next(s["id"] for s in client.get("/skills").json() if s["name"] == "Docker")
+
+    assert client.delete(f"/job-descriptions/{backend}/dismissed/{docker_id}").status_code == 404
+
+
+def test_first_extraction_of_an_emptied_job_respects_notes(client: TestClient, setup: dict) -> None:
+    backend = setup["jobs"][0]
+    _remove(client, backend, "Docker")
+    _remove(client, backend, "Python")
+
+    found = client.post(f"/job-descriptions/{backend}/extract").json()
+
+    assert found["accepted"] == []
+    assert _dismissed(client, backend) == ["Docker", "Python"]
+
+
+def test_notes_are_per_job(client: TestClient, setup: dict) -> None:
+    backend, platform = setup["jobs"]
+    _remove(client, backend, "Docker")
+    _remove(client, platform, "Docker")
+    docker_id = next(s["id"] for s in client.get("/skills").json() if s["name"] == "Docker")
+    client.delete(f"/job-descriptions/{platform}/dismissed/{docker_id}")
+
+    client.post(f"/job-descriptions/{backend}/extract-new")
+    client.post(f"/job-descriptions/{platform}/extract-new")
+
+    assert _skill_names(client, backend) == ["Python"]
+    assert _skill_names(client, platform) == ["Docker", "Python"]
+
+
+def test_a_requirement_without_a_skill_leaves_no_note(client: TestClient, engine: Engine, setup: dict) -> None:
+    backend = setup["jobs"][0]
+    with Session(engine, autoflush=False) as db:
+        requirement = JobRequirement(job_description_id=backend, requirement_text="Need")
+        db.add(requirement)
+        db.commit()
+        requirement_id = requirement.id
+
+    assert client.delete(f"/job-descriptions/{backend}/requirements/{requirement_id}").status_code == 204
+    assert _note_count(engine) == 0
+
+
+def test_deleting_the_job_deletes_its_notes(client: TestClient, engine: Engine, setup: dict) -> None:
+    backend, platform = setup["jobs"]
+    _remove(client, backend, "Docker")
+    _remove(client, platform, "Docker")
+
+    assert client.delete(f"/job-descriptions/{backend}").status_code == 204
+
+    assert _note_count(engine) == 1
+    assert _dismissed(client, platform) == ["Docker"]
+
+
+def test_deleting_a_skill_drops_its_notes(client: TestClient, engine: Engine, setup: dict) -> None:
+    """Notes are job-side bookkeeping: they don't count as the skill being in use."""
+    backend, platform = setup["jobs"]
+    _remove(client, backend, "Docker")
+    _remove(client, platform, "Docker")
+    docker_id = next(s["id"] for s in client.get("/skills").json() if s["name"] == "Docker")
+
+    assert client.delete(f"/skills/{docker_id}").status_code == 204
+
+    assert _note_count(engine) == 0
+    assert _dismissed(client, backend) == []
+
+
+def test_merging_moves_notes_and_drops_duplicates(client: TestClient, engine: Engine, setup: dict) -> None:
+    backend, platform = setup["jobs"]
+    _remove(client, backend, "Docker")
+    with Session(engine, autoflush=False) as db:
+        source_id = skill_service.create_skill(db, "Dockerr").id
+        db.add_all(
+            [
+                DismissedRequirement(job_description_id=backend, skill_id=source_id),
+                DismissedRequirement(job_description_id=platform, skill_id=source_id),
+            ]
+        )
+        db.commit()
+    docker_id = next(s["id"] for s in client.get("/skills").json() if s["name"] == "Docker")
+
+    assert client.post(f"/skills/{source_id}/merge-into/{docker_id}").status_code == 200
+
+    assert _dismissed(client, backend) == ["Docker"]
+    assert _dismissed(client, platform) == ["Docker"]
+    assert _note_count(engine) == 2
+
+
+def test_dismissed_list_of_another_users_job_is_404(client: TestClient, engine: Engine) -> None:
+    with Session(engine, autoflush=False) as db:
+        other_job = JobDescription(user=User(email="other@example.com"), raw_text="Need Python.")
+        db.add(other_job)
+        db.commit()
+        other_job_id = other_job.id
+
+    assert client.get(f"/job-descriptions/{other_job_id}/dismissed").status_code == 404
+    assert client.get("/job-descriptions/999/dismissed").status_code == 404
