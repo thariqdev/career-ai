@@ -20,11 +20,14 @@ Rules applied to each proposal, in order:
 Rejected proposals are RETURNED with a reason so the caller can see what the model
 proposed and why it was dropped; nothing is persisted for them.
 
-Re-running extraction on a job description that already has requirements is refused,
-before the extractor is called, so requirements are never silently duplicated.
+Re-running extract_requirements on a job description that already has requirements is
+refused, before the extractor is called, so requirements are never silently duplicated.
+extract_new_requirements is the explicit "look again" path instead: same rules, plus a
+proposal is rejected as REJECTED_EXISTING if its text, or the skill it maps to, is
+already among this job's requirements. It only ever ADDS rows; existing requirements
+and their comparison results are never changed or deleted.
 
-There is no real LLM yet: callers pass any object implementing RequirementExtractor.
-Same conventions as the other services: plain functions taking a Session, no HTTP
+Callers pass any object implementing RequirementExtractor. Same conventions as the other services: plain functions taking a Session, no HTTP
 knowledge, flush but never commit, and flush before reading (autoflush=False).
 """
 
@@ -42,6 +45,7 @@ from app.db.models import JobDescription, JobRequirement, Skill
 REJECTED_BLANK = "blank requirement text"
 REJECTED_NOT_GROUNDED = "not found in job description text"
 REJECTED_DUPLICATE = "duplicate requirement text"
+REJECTED_EXISTING = "already a requirement"
 
 
 @dataclass(frozen=True)
@@ -85,13 +89,48 @@ def extract_requirements(
         raise RequirementsAlreadyExistError(job_description.id)  # extractor is NOT called
 
     proposal = extractor.extract_requirements(job_description.raw_text)
+    return _validate_and_store(db, job_description, proposal.requirements, set(), set())
 
+
+def extract_new_requirements(
+    db: Session, job_description: JobDescription, extractor: RequirementExtractor
+) -> ExtractionOutcome:
+    """Look again: store only proposals that aren't already requirements of this job.
+
+    "Already" means the same normalized text, or mapping to a skill some existing
+    requirement already maps to (so "Postgres" isn't added next to "PostgreSQL").
+    Works on a job with no requirements too. Never touches existing rows.
+    """
+    db.flush()
+    existing = list(
+        db.scalars(
+            select(JobRequirement).where(JobRequirement.job_description_id == job_description.id)
+        )
+    )
+    existing_texts = {skill_service.normalize_text(r.requirement_text) for r in existing}
+    existing_skill_ids = {r.skill_id for r in existing if r.skill_id is not None}
+
+    proposal = extractor.extract_requirements(job_description.raw_text)
+    return _validate_and_store(
+        db, job_description, proposal.requirements, existing_texts, existing_skill_ids
+    )
+
+
+def _validate_and_store(
+    db: Session,
+    job_description: JobDescription,
+    proposals: list[ExtractedRequirement],
+    existing_texts: set[str],
+    existing_skill_ids: set[int],
+) -> ExtractionOutcome:
+    """The rules both entry points share. With empty existing_* sets (first-time
+    extraction) the REJECTED_EXISTING checks can never fire, so that path is unchanged."""
     normalized_job_text = skill_service.normalize_text(job_description.raw_text)
     seen: set[str] = set()
     accepted: list[JobRequirement] = []
     rejected: list[RejectedRequirement] = []
 
-    for item in proposal.requirements:
+    for item in proposals:
         normalized = skill_service.normalize_text(item.text)
         if not normalized:
             rejected.append(RejectedRequirement(item, REJECTED_BLANK))
@@ -99,11 +138,17 @@ def extract_requirements(
             rejected.append(RejectedRequirement(item, REJECTED_NOT_GROUNDED))
         elif normalized in seen:
             rejected.append(RejectedRequirement(item, REJECTED_DUPLICATE))
+        elif normalized in existing_texts:
+            rejected.append(RejectedRequirement(item, REJECTED_EXISTING))
         else:
+            skill = _map_skill(db, item.skill_mention)
+            if skill is not None and skill.id in existing_skill_ids:
+                rejected.append(RejectedRequirement(item, REJECTED_EXISTING))
+                continue
             seen.add(normalized)
             requirement = JobRequirement(
                 job_description=job_description,
-                skill=_map_skill(db, item.skill_mention),
+                skill=skill,
                 requirement_text=item.text.strip(),
                 is_required=item.is_required,
             )

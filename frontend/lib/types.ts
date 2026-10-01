@@ -49,6 +49,10 @@ export type JobDescription = {
   requirements: JobRequirement[];
 };
 
+// Matches backend ExtractorInfo: which requirement reader is active, and whether
+// using it costs money.
+export type ExtractorInfo = { name: "skill_list" | "claude"; paid: boolean };
+
 export type ExtractionResponse = {
   accepted: JobRequirement[];
   rejected: { text: string; reason: string }[];

@@ -1111,9 +1111,51 @@ Added 2026-10-01. This closes the "job-descriptions list/detail page" backlog it
     - A missing id returned 404.
     - Cleanup deleted only the recorded ids, names and titles asserted, in foreign-key order, including the `comparison_result_evidence` link the verified result created. Counts matched the snapshot.
 - **Not done:**
-  - **re-extracting an existing posting** to pick up skills saved since (still refused by design; paste the posting again)
+  - **re-extracting an existing posting** to pick up skills saved since. ✅ Done in the next section ("Look for new skills").
   - deleting or editing job descriptions
   - pagination
+
+### "Look for new skills": additive re-extraction
+
+Added 2026-10-01. A posting was read once. `extract_requirements` refuses a second run, which is deliberately unchanged, so skills saved later never reached old postings.
+
+- **`requirement_service` refactor:** the per-proposal rules moved into `_validate_and_store(db, job, proposals, existing_texts, existing_skill_ids)`, shared by both entry points.
+  - `extract_requirements` passes empty sets, so the new checks can't fire and **its behavior is unchanged**: all 279 prior tests passed right after the refactor.
+- **`extract_new_requirements(db, job, extractor)`** loads this job's existing requirements and rejects a proposal with **`REJECTED_EXISTING` ("already a requirement")** if either:
+  - its normalized text matches one, or
+  - it maps (via `resolve_skill`, as always) to a skill an existing requirement already maps to. This stops "Postgres" being added beside "PostgreSQL".
+
+  All other rules still apply: blank, grounding, and duplicate within the batch. It **only adds rows**; existing requirements and their `ComparisonResult` history are never touched. It works on a job with no requirements too.
+  - **Design note:** the skill-level check compares only against *pre-existing* requirements, not within the new batch, so first-time extraction behavior stays byte-identical.
+- **API** (`job_descriptions.py`):
+  - **`POST /job-descriptions/{id}/extract-new`** returns an `ExtractionResponse`, with the same ownership 404.
+  - **`GET /job-descriptions/extractor`** returns `{"name": "skill_list" | "claude", "paid": bool}`. It's declared before `/{job_description_id}`.
+  - `dependencies.active_extractor_is_paid()` is now the single decision point used by both `get_requirement_extractor` and this endpoint, so they can't disagree.
+- **Frontend** (`app/job-descriptions/[id]/page.tsx`):
+  - The **Look for new skills** button (shown even with zero requirements) runs: `GET /extractor`, then a **`window.confirm` if `paid`** (CLAUDE.md: don't spend money on the Claude API without asking), then `POST /extract-new`. If anything was accepted, it runs `POST /compare` and reloads, showing "Found N new requirement(s): …. Compared automatically."; otherwise it says to save the skill first.
+  - The zero-requirements hint now points to this button instead of "paste it again".
+- **Verified:**
+  - **Tests:** 6 new in `test_job_descriptions_api.py`:
+    - real default wiring (matcher): Docker is saved after analysis, then extract-new adds only Docker. Python is rejected as already a requirement, Python's row id is unchanged, the `ComparisonResult` count is unchanged, and `/results` still only covers Python.
+    - same text written differently, and the same skill under an alias, are both rejected; a new unmapped one is accepted; an invented one fails grounding
+    - nothing new gives `[]`
+    - a job with no requirements works
+    - a missing or not-owned job returns 404
+    - `/extractor` answers free without a key and paid with a fake key (never used to call anything)
+
+    Suite: **285 passed**.
+  - **Mutation checks**, each rule switched off separately: the text check made 2 tests fail, and the skill check made `test_extract_new_skips_the_same_text_and_the_same_skill_under_other_words` fail. The file was restored byte-identical.
+  - `npm run build` is clean, and ESLint is clean.
+  - **Live check** (temporary :8011; the user's server and data untouched):
+    1. `/extractor` gave `skill_list`, free.
+    2. With Zebralang saved, a test posting "Need Zebralang and QuokkaDB." was read: only Zebralang was found. Then compare.
+    3. After saving QuokkaDB, plain `/extract` still returned 409.
+    4. `/extract-new` added QuokkaDB and skipped Zebralang as "already a requirement".
+    5. Compare gave both a status, and running extract-new again added nothing.
+    6. Cleanup removed 3 comparison results, confirming Zebralang's original result was kept alongside the new one. Only the test ids were removed, and counts matched the snapshot.
+- **Not done:**
+  - removing or editing requirements
+  - re-running Claude on old postings (it would work technically, behind the paid confirm, but has never been tried: no key)
 
 ---
 

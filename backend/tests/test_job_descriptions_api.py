@@ -323,6 +323,117 @@ def test_compare_on_a_nonexistent_or_not_owned_id_is_404(client: TestClient, eng
     assert client.post(f"/job-descriptions/{other_job_id}/compare").status_code == 404
 
 
+# --- extract-new: look again for requirements this job doesn't have yet -------------
+
+
+def _texts(body: dict) -> list[str]:
+    return [r["requirement_text"] for r in body["accepted"]]
+
+
+def test_extract_new_adds_only_a_newly_saved_skill_and_leaves_existing_rows_alone(
+    client: TestClient, engine: Engine, monkeypatch
+) -> None:
+    """Real default wiring (the skill-list matcher), as the user would hit it."""
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    with _session(engine) as db:
+        skill_service.create_skill(db, "Python")
+        db.commit()
+    body = _create_job(client, "Need Python and Docker.")
+    first = client.post(f"/job-descriptions/{body['id']}/extract").json()
+    client.post(f"/job-descriptions/{body['id']}/compare")
+    with _session(engine) as db:
+        skill_service.create_skill(db, "Docker")  # saved AFTER the job was analyzed
+        db.commit()
+
+    response = client.post(f"/job-descriptions/{body['id']}/extract-new")
+
+    assert response.status_code == 200
+    assert _texts(response.json()) == ["Docker"]
+    assert [(r["text"], r["reason"]) for r in response.json()["rejected"]] == [
+        ("Python", "already a requirement")
+    ]
+    requirements = client.get(f"/job-descriptions/{body['id']}").json()["requirements"]
+    assert [(r["id"], r["requirement_text"]) for r in requirements][0] == (
+        first["accepted"][0]["id"],
+        "Python",
+    )
+    assert [r["requirement_text"] for r in requirements] == ["Python", "Docker"]
+    with _session(engine) as db:
+        assert db.scalar(select(func.count()).select_from(ComparisonResult)) == 1  # untouched
+    results = client.get(f"/job-descriptions/{body['id']}/results").json()
+    assert [r["job_requirement_id"] for r in results] == [first["accepted"][0]["id"]]
+
+
+def test_extract_new_skips_the_same_text_and_the_same_skill_under_other_words(
+    client: TestClient, engine: Engine
+) -> None:
+    with _session(engine) as db:
+        postgres = skill_service.create_skill(db, "PostgreSQL")
+        skill_service.add_alias(db, postgres, "Postgres")
+        db.commit()
+    body = _create_job(client, "PostgreSQL experience and Postgres tuning and Rust.")
+    _with_extractor(client, FakeExtractor(_proposal("PostgreSQL experience", mention="PostgreSQL")))
+    client.post(f"/job-descriptions/{body['id']}/extract")
+    _with_extractor(
+        client,
+        FakeExtractor(
+            _proposal("postgresql   EXPERIENCE"),  # same text, differently written
+            _proposal("Postgres tuning", mention="Postgres"),  # same skill, other words
+            _proposal("Rust"),  # genuinely new (unmapped)
+            _proposal("Kubernetes"),  # invented: grounding still applies
+        ),
+    )
+
+    body_after = client.post(f"/job-descriptions/{body['id']}/extract-new").json()
+
+    assert _texts(body_after) == ["Rust"]
+    assert [(r["text"], r["reason"]) for r in body_after["rejected"]] == [
+        ("postgresql   EXPERIENCE", "already a requirement"),
+        ("Postgres tuning", "already a requirement"),
+        ("Kubernetes", "not found in job description text"),
+    ]
+
+
+def test_extract_new_with_nothing_new_adds_nothing(client: TestClient) -> None:
+    body = _create_job(client, "Need Python experience.")
+    _with_extractor(client, FakeExtractor(_proposal("Python experience")))
+    client.post(f"/job-descriptions/{body['id']}/extract")
+
+    response = client.post(f"/job-descriptions/{body['id']}/extract-new")
+
+    assert response.status_code == 200
+    assert response.json()["accepted"] == []
+    assert len(client.get(f"/job-descriptions/{body['id']}").json()["requirements"]) == 1
+
+
+def test_extract_new_works_on_a_job_with_no_requirements_yet(client: TestClient) -> None:
+    body = _create_job(client, "Need Python experience.")
+    _with_extractor(client, FakeExtractor(_proposal("Python experience")))
+
+    response = client.post(f"/job-descriptions/{body['id']}/extract-new")
+
+    assert _texts(response.json()) == ["Python experience"]
+
+
+def test_extract_new_on_a_nonexistent_or_not_owned_id_is_404(client: TestClient, engine: Engine) -> None:
+    assert client.post("/job-descriptions/999/extract-new").status_code == 404
+
+    with _session(engine) as db:
+        other_job = JobDescription(user=User(email="other@example.com"), raw_text="Not yours.")
+        db.add(other_job)
+        db.commit()
+        other_job_id = other_job.id
+    assert client.post(f"/job-descriptions/{other_job_id}/extract-new").status_code == 404
+
+
+def test_extractor_info_says_whether_extraction_would_be_paid(client: TestClient, monkeypatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert client.get("/job-descriptions/extractor").json() == {"name": "skill_list", "paid": False}
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")  # never used to call anything
+    assert client.get("/job-descriptions/extractor").json() == {"name": "claude", "paid": True}
+
+
 # --- latest results -----------------------------------------------------------------
 
 

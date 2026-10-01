@@ -6,7 +6,13 @@ import { useParams } from "next/navigation";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
-import type { ComparisonResult, Gap, JobDescription } from "@/lib/types";
+import type {
+  ComparisonResult,
+  ExtractionResponse,
+  ExtractorInfo,
+  Gap,
+  JobDescription,
+} from "@/lib/types";
 
 type Loaded = {
   status: "loaded";
@@ -42,6 +48,7 @@ export default function JobDescriptionPage() {
   const [state, setState] = useState<PageState>({ status: "loading" });
   const [comparing, setComparing] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
+  const [lookMessage, setLookMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -61,6 +68,42 @@ export default function JobDescriptionPage() {
     try {
       await apiPost(`/job-descriptions/${jobId}/compare`, {});
       setState(await fetchJob(jobId));
+    } catch (error) {
+      setCompareError(errorMessage(error));
+    } finally {
+      setComparing(false);
+    }
+  }
+
+  // Re-reads the posting for skills saved since it was analyzed. Only NEW requirements
+  // are added (existing ones and their results are never touched), then the job is
+  // compared so they get a status right away. Asks first if the reader would be the
+  // paid Claude API (only when an ANTHROPIC_API_KEY is configured).
+  async function handleLookForNew() {
+    setCompareError(null);
+    setLookMessage(null);
+    setComparing(true);
+    try {
+      const extractor = await apiGet<ExtractorInfo>("/job-descriptions/extractor");
+      if (
+        extractor.paid &&
+        !window.confirm("This uses the paid Claude API and will cost money. Continue?")
+      ) {
+        return;
+      }
+      const found = await apiPost<ExtractionResponse>(`/job-descriptions/${jobId}/extract-new`, {});
+      if (found.accepted.length === 0) {
+        setLookMessage(
+          "No new skills found in this posting. Save the skill (or its nickname) on the Skills page first.",
+        );
+        return;
+      }
+      await apiPost(`/job-descriptions/${jobId}/compare`, {});
+      setState(await fetchJob(jobId));
+      const names = found.accepted.map((r) => r.skill_name ?? r.requirement_text).join(", ");
+      setLookMessage(
+        `Found ${found.accepted.length} new requirement${found.accepted.length === 1 ? "" : "s"}: ${names}. Compared automatically.`,
+      );
     } catch (error) {
       setCompareError(errorMessage(error));
     } finally {
@@ -123,16 +166,27 @@ export default function JobDescriptionPage() {
       <section className="mt-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-display text-lg text-ink">Requirements</h2>
-          {job.requirements.length > 0 && (
+          <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={handleCompareAgain}
+              onClick={handleLookForNew}
               disabled={comparing}
-              className="rounded bg-accent px-3 py-1.5 text-sm text-surface disabled:opacity-50"
+              title="Re-read this posting for skills you've saved since it was analyzed"
+              className="rounded border border-line px-3 py-1.5 text-sm text-ink disabled:opacity-50"
             >
-              {comparing ? "Comparing…" : "Compare again"}
+              Look for new skills
             </button>
-          )}
+            {job.requirements.length > 0 && (
+              <button
+                type="button"
+                onClick={handleCompareAgain}
+                disabled={comparing}
+                className="rounded bg-accent px-3 py-1.5 text-sm text-surface disabled:opacity-50"
+              >
+                {comparing ? "Working…" : "Compare again"}
+              </button>
+            )}
+          </div>
         </div>
         <p className="mt-1 text-sm text-ink-soft">
           {lastCompared
@@ -140,15 +194,15 @@ export default function JobDescriptionPage() {
             : "Not compared yet."}
         </p>
         {compareError && <p className="mt-2 text-sm text-not-verified">{compareError}</p>}
+        {lookMessage && <p className="mt-2 text-sm text-ink">{lookMessage}</p>}
 
         {job.requirements.length === 0 ? (
           <p className="mt-3 text-sm text-ink-soft">
-            No requirements were found in this posting. Requirements come from skills you&apos;d
-            saved when it was analyzed; to pick up newly saved skills, paste it again on the{" "}
-            <Link href="/job-descriptions" className="underline">
-              Job Descriptions
+            No requirements yet. They come from skills (and nicknames) you&apos;ve saved on the{" "}
+            <Link href="/skills" className="underline">
+              Skills
             </Link>{" "}
-            page.
+            page. Save the ones this posting mentions, then click &ldquo;Look for new skills&rdquo;.
           </p>
         ) : (
           <ul className="mt-3 flex flex-col gap-2">

@@ -25,6 +25,7 @@ from app.ai.client import RequirementExtractor
 from app.core.models import (
     ComparisonResultResponse,
     ExtractionResponse,
+    ExtractorInfo,
     GapResponse,
     JobDescriptionCreate,
     JobDescriptionResponse,
@@ -32,7 +33,12 @@ from app.core.models import (
 )
 from app.core.services import comparison_service, requirement_service
 from app.db.models import JobDescription, User
-from app.dependencies import get_current_user, get_db, get_requirement_extractor
+from app.dependencies import (
+    active_extractor_is_paid,
+    get_current_user,
+    get_db,
+    get_requirement_extractor,
+)
 
 router = APIRouter(prefix="/job-descriptions", tags=["job-descriptions"])
 
@@ -85,6 +91,14 @@ def list_job_descriptions(
     )
 
 
+# Declared before "/{job_description_id}" so "extractor" is never parsed as an id.
+@router.get("/extractor", response_model=ExtractorInfo)
+def read_extractor_info() -> ExtractorInfo:
+    """Which requirement reader is active, so the UI can warn before a paid call."""
+    paid = active_extractor_is_paid()
+    return ExtractorInfo(name="claude" if paid else "skill_list", paid=paid)
+
+
 @router.get("/{job_description_id}", response_model=JobDescriptionResponse)
 def read_job_description(
     job_description_id: int,
@@ -103,6 +117,24 @@ def extract_requirements(
 ) -> ExtractionResponse:
     job_description = _get_owned_job_description(db, job_description_id, user)
     outcome = requirement_service.extract_requirements(db, job_description, extractor)
+    db.commit()
+    return ExtractionResponse(
+        accepted=outcome.accepted,
+        rejected=[RejectedRequirementResponse.from_rejection(r) for r in outcome.rejected],
+    )
+
+
+@router.post("/{job_description_id}/extract-new", response_model=ExtractionResponse)
+def extract_new_requirements(
+    job_description_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    extractor: RequirementExtractor = Depends(get_requirement_extractor),
+) -> ExtractionResponse:
+    # "Look again": adds only requirements this job doesn't already have; existing
+    # requirements and their comparison results are never changed (requirement_service).
+    job_description = _get_owned_job_description(db, job_description_id, user)
+    outcome = requirement_service.extract_new_requirements(db, job_description, extractor)
     db.commit()
     return ExtractionResponse(
         accepted=outcome.accepted,

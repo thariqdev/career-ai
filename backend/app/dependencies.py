@@ -49,6 +49,15 @@ def get_requirement_extractor(db: Session = Depends(get_db)) -> RequirementExtra
     skills saved it proposes nothing. FastAPI caches get_db per request, so this reads
     through the same Session the route uses.
     """
-    if os.getenv("ANTHROPIC_API_KEY"):
+    if active_extractor_is_paid():
         return ClaudeRequirementExtractor()
     return SkillListExtractor(skill_service.skill_terms(db))
+
+
+def active_extractor_is_paid() -> bool:
+    """True when extraction would call the paid Claude API (an ANTHROPIC_API_KEY is set).
+
+    The one place that decision is made, so get_requirement_extractor and the API's
+    "is this paid?" answer (shown to the user before a paid call) can never disagree.
+    """
+    return bool(os.getenv("ANTHROPIC_API_KEY"))

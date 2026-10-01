@@ -116,6 +116,11 @@ class RejectedRequirementResponse(BaseModel):
         return cls(text=rejection.proposal.text, reason=rejection.reason)
 
 
+class ExtractorInfo(BaseModel):
+    name: Literal["skill_list", "claude"]
+    paid: bool
+
+
 class ExtractionResponse(BaseModel):
     accepted: list[JobRequirementResponse]
     rejected: list[RejectedRequirementResponse]
