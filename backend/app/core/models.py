@@ -116,6 +116,57 @@ class RejectedRequirementResponse(BaseModel):
         return cls(text=rejection.proposal.text, reason=rejection.reason)
 
 
+class PrepEvidenceResponse(BaseModel):
+    id: int
+    title: str
+    url: str | None
+    source: str | None
+
+
+class StudyLinkResponse(BaseModel):
+    mode: str
+    query: str
+    url: str
+
+
+class InterviewPrepItemResponse(BaseModel):
+    requirement_id: int
+    requirement_text: str
+    is_required: bool
+    skill_id: int | None
+    skill_name: str | None
+    status: str  # verified | partial | provisional | not_verified | no_claim | unmapped
+    guidance: str
+    cv_warning: str | None
+    evidence: list[PrepEvidenceResponse]
+    study_links: list[StudyLinkResponse]
+
+    @classmethod
+    def from_item(cls, item: Any) -> "InterviewPrepItemResponse":
+        # interview_prep_service.PrepItem is a plain dataclass, built field-by-field
+        # like GapResponse.from_gap.
+        requirement = item.requirement
+        return cls(
+            requirement_id=requirement.id,
+            requirement_text=requirement.requirement_text,
+            is_required=requirement.is_required,
+            skill_id=requirement.skill_id,
+            skill_name=requirement.skill.name if requirement.skill is not None else None,
+            status=item.status,
+            guidance=item.guidance,
+            cv_warning=item.cv_warning,
+            evidence=[PrepEvidenceResponse(**vars(e)) for e in item.evidence],
+            study_links=[StudyLinkResponse(**vars(s)) for s in item.study_links],
+        )
+
+
+class InterviewPrepResponse(BaseModel):
+    job_description_id: int
+    title: str | None
+    company: str | None
+    items: list[InterviewPrepItemResponse]
+
+
 class ExtractorInfo(BaseModel):
     name: Literal["skill_list", "claude"]
     paid: bool

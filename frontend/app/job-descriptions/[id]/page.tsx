@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
+import { isWebLink } from "@/lib/links";
 import type {
   ComparisonResult,
   ExtractionResponse,
@@ -36,11 +37,6 @@ function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : "Could not reach the backend.";
 }
 
-// source_url is free text the user typed, so only a real http(s) link is rendered
-// as a link; anything else (e.g. "javascript:...") is shown as plain text.
-function isWebLink(url: string): boolean {
-  return /^https?:\/\//i.test(url.trim());
-}
 
 export default function JobDescriptionPage() {
   const params = useParams<{ id: string }>();
@@ -142,7 +138,15 @@ export default function JobDescriptionPage() {
       <Link href="/job-descriptions" className="text-sm text-ink-soft underline">
         ← All job descriptions
       </Link>
-      <h1 className="mt-2 font-display text-2xl text-ink">{job.title ?? "Untitled job"}</h1>
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
+        <h1 className="font-display text-2xl text-ink">{job.title ?? "Untitled job"}</h1>
+        <Link
+          href={`/job-descriptions/${jobId}/prep`}
+          className="rounded bg-accent px-3 py-1.5 text-sm text-surface"
+        >
+          Interview prep →
+        </Link>
+      </div>
       <p className="mt-1 text-sm text-ink-soft">
         {job.company ?? "No company"} · added {new Date(job.created_at).toLocaleDateString()}
         {job.source_url &&

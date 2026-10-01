@@ -27,11 +27,13 @@ from app.core.models import (
     ExtractionResponse,
     ExtractorInfo,
     GapResponse,
+    InterviewPrepItemResponse,
+    InterviewPrepResponse,
     JobDescriptionCreate,
     JobDescriptionResponse,
     RejectedRequirementResponse,
 )
-from app.core.services import comparison_service, requirement_service
+from app.core.services import comparison_service, interview_prep_service, requirement_service
 from app.db.models import JobDescription, User
 from app.dependencies import (
     active_extractor_is_paid,
@@ -165,6 +167,24 @@ def read_latest_results(
     # Older results stay stored; comparisons append, they never overwrite.
     job_description = _get_owned_job_description(db, job_description_id, user)
     return comparison_service.latest_results(db, job_description)
+
+
+@router.get("/{job_description_id}/interview-prep", response_model=InterviewPrepResponse)
+def read_interview_prep(
+    job_description_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> InterviewPrepResponse:
+    # Read-only. Fixed templates filled only with the user's own data (see
+    # interview_prep_service); uses current claims, not the last comparison snapshot.
+    job_description = _get_owned_job_description(db, job_description_id, user)
+    items = interview_prep_service.interview_prep(db, user, job_description)
+    return InterviewPrepResponse(
+        job_description_id=job_description.id,
+        title=job_description.title,
+        company=job_description.company,
+        items=[InterviewPrepItemResponse.from_item(item) for item in items],
+    )
 
 
 @router.get("/{job_description_id}/gaps", response_model=list[GapResponse])

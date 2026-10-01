@@ -166,6 +166,7 @@ career-ai/
     │   │   │   ├── learning_progress_service.py ← get/list/set_progress() (never touches UserSkill/Evidence)
     │   │   │   ├── profile_service.py       ← create_project/work_experience/education, list_records, delete_record
     │   │   │   ├── evidence_service.py      ← delete_evidence() (refuses while linked or in comparison history)
+    │   │   │   ├── interview_prep_service.py ← interview_prep() (read-only, fixed templates, current proof)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
     │   ├── db/
@@ -221,7 +222,8 @@ career-ai/
         ├── test_learning_progress_api.py
         ├── test_cv_api.py
         ├── test_profile_api.py
-        └── test_evidence_removal_api.py
+        ├── test_evidence_removal_api.py
+        └── test_interview_prep_api.py
 ```
 
 ---
@@ -1297,6 +1299,43 @@ Added 2026-10-01. Before this, evidence and links were permanent. The interestin
   - editing evidence text
   - automatic status lowering (deliberately the user's explicit step)
   - deleting evidence that's in comparison history
+
+### Interview prep sheet per job
+
+Added 2026-10-01. This fulfils README item 9 ("prepare for interviews based on the skills a job requires") with **no AI**: deterministic templates over stored data only.
+
+- **`interview_prep_service.interview_prep(db, user, job)`** (read-only) builds one `PrepItem` per requirement, ordered by `is_required DESC, id`. On Postgres booleans sort `false < true`, so required items come first; this was confirmed live.
+  - **`status`:** the user's **current** `UserSkill.status` value, `no_claim` (mapped but unclaimed), or `unmapped` (no skill). It deliberately uses current claims, not the last `ComparisonResult` snapshot, so proof shows up immediately (tested).
+  - **`guidance`:** one fixed sentence per status from `_GUIDANCE`. Unproven statuses explicitly say not to claim or overstate.
+  - **`cv_warning`:** only when the skill is marked on the CV **and** not VERIFIED/PARTIAL.
+  - **`evidence`:** exactly the evidence linked to that claim, loaded in one joined query, each with a `source` label (`"project FundsApp"`, `"Intern at Acme"`, `"BSc, Uni"`) from its profile record.
+  - **`study_links`:** both learning modes, via `learning_service.search_query` / `youtube_search_url`, for mapped skills only.
+- **`GET /job-descriptions/{id}/interview-prep`** returns `InterviewPrepResponse {job_description_id, title, company, items[]}`, with the same ownership 404 as the other job routes.
+- **Frontend:**
+  - **New `app/job-descriptions/[id]/prep/page.tsx`**, linked by an "Interview prep →" button on the job page. One card per requirement shows text, required or nice to have, `StatusBadge` (`no_claim` maps to `null`, giving the existing "no claim" label), guidance, CV warning, the evidence list, and study links for unproven items.
+  - **Print-friendly:** a Print button calls `window.print()`, and `AppHeader`, the back link and study links are `print:hidden`. Cards use `break-inside-avoid`.
+  - **Wording fix from the live check:** the evidence list is headed "Talk about:" only for verified/partial items, and "Evidence you've linked:" otherwise. The user's real PostgreSQL claim is provisional *with* linked evidence, which would otherwise read as "not proven… talk about it".
+  - **Evidence URLs are not validated at creation**, so they're only rendered as links when `isWebLink`. That check moved from the job page into **`lib/links.ts`** and is now shared by both pages.
+- **Verified:**
+  - **Tests:** 8 new in `test_interview_prep_api.py`, built around one job covering every case (verified with project evidence, partial with work-experience evidence, provisional, not_verified, no claim, unmapped/nice to have):
+    - header and required-first order
+    - each status gives its template
+    - **the evidence listed is exactly the linked evidence**; an unlinked "Unrelated proof" never appears anywhere
+    - the CV warning appears only for an unproven skill on the CV
+    - study links appear only for mapped skills
+    - **current proof is reflected without comparing again**
+    - an empty job gives an empty sheet
+    - a missing or another user's job returns 404
+
+    Suite: **331 passed**.
+  - **Mutation check:** treating every claim as VERIFIED made `test_each_status_gets_its_template` and `test_reflects_current_proof…` fail. The file was restored byte-identical.
+  - `npm run build` is clean with the new route, and `npx eslint .` reports zero problems.
+  - **Live check:** read-only, against the user's own running server and real job. It showed `no_claim` for Python and Docker, `provisional` for their PostgreSQL claim with its linked evidence, and surfaced the wording issue above. No writes were made, and counts matched the snapshot.
+- **Not done:**
+  - AI-generated questions or answers
+  - mock interviews
+  - saving or editing the sheet
+  - PDF export (the browser's print-to-PDF works)
 
 ---
 

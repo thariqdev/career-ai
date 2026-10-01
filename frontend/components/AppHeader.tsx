@@ -8,7 +8,7 @@ export default function AppHeader() {
   const me = useMe();
 
   return (
-    <header className="border-b border-line bg-surface">
+    <header className="border-b border-line bg-surface print:hidden">
       <div className="mx-auto flex max-w-5xl items-center justify-between gap-6 px-6 py-4">
         <span className="font-display text-xl text-ink">Career AI</span>
 

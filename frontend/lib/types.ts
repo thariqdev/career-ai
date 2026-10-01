@@ -49,6 +49,35 @@ export type JobDescription = {
   requirements: JobRequirement[];
 };
 
+// Matches backend InterviewPrepResponse.
+export type InterviewPrepStatus =
+  | "verified"
+  | "partial"
+  | "provisional"
+  | "not_verified"
+  | "no_claim"
+  | "unmapped";
+
+export type InterviewPrepItem = {
+  requirement_id: number;
+  requirement_text: string;
+  is_required: boolean;
+  skill_id: number | null;
+  skill_name: string | null;
+  status: InterviewPrepStatus;
+  guidance: string;
+  cv_warning: string | null;
+  evidence: { id: number; title: string; url: string | null; source: string | null }[];
+  study_links: { mode: LearningMode; query: string; url: string }[];
+};
+
+export type InterviewPrep = {
+  job_description_id: number;
+  title: string | null;
+  company: string | null;
+  items: InterviewPrepItem[];
+};
+
 // Matches backend ExtractorInfo: which requirement reader is active, and whether
 // using it costs money.
 export type ExtractorInfo = { name: "skill_list" | "claude"; paid: boolean };
