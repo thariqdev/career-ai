@@ -2,9 +2,17 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
-import { apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
-import type { CVStatus, CVStatusResponse, Evidence, Skill, UserSkill } from "@/lib/types";
+import type {
+  CVStatus,
+  CVStatusResponse,
+  Evidence,
+  LearningModeResources,
+  Skill,
+  SkillLearningResources,
+  UserSkill,
+} from "@/lib/types";
 
 // The same five EvidenceType values as backend/app/db/models/enums.py, hardcoded
 // here — the same small, acceptable duplication StatusBadge already has for
@@ -33,12 +41,124 @@ function cvBadgeLabel(status: CVStatus): string {
   return status.replace(/_/g, " ");
 }
 
+const MODE_LABEL: Record<LearningModeResources["mode"], string> = {
+  theory_interview: "Theory / Interview",
+  technical_practical: "Technical / Practical",
+};
+
+// One learning mode's column. Holds its own add-link form state, so the two
+// columns' forms never interfere with each other.
+function LearningColumn({
+  entry,
+  busy,
+  onAdd,
+  onRemove,
+}: {
+  entry: LearningModeResources;
+  busy: boolean;
+  onAdd: (title: string, url: string) => Promise<void>;
+  onRemove: (resourceId: number) => Promise<void>;
+}) {
+  const [title, setTitle] = useState("");
+  const [url, setUrl] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    try {
+      await onAdd(title, url);
+      setTitle("");
+      setUrl("");
+    } catch (err) {
+      // e.g. the backend's 422 for a non-http(s) link, or 409 for a duplicate.
+      setError(err instanceof ApiError ? err.message : "Could not save this link.");
+    }
+  }
+
+  async function handleRemove(resourceId: number) {
+    setError(null);
+    try {
+      await onRemove(resourceId);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not remove this link.");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded border border-line p-4">
+      <h3 className="text-sm text-ink">{MODE_LABEL[entry.mode]}</h3>
+      <a
+        href={entry.search_url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-sm text-accent underline"
+      >
+        Search YouTube: &ldquo;{entry.search_query}&rdquo;
+      </a>
+
+      {entry.resources.length === 0 ? (
+        <p className="text-sm text-ink-soft">No saved links yet.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {entry.resources.map((resource) => (
+            <li key={resource.id} className="flex items-center justify-between gap-2 text-sm">
+              <a
+                href={resource.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-ink underline"
+              >
+                {resource.title}
+              </a>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => handleRemove(resource.id)}
+                className="rounded border border-line px-2 py-0.5 text-xs text-ink-soft disabled:opacity-50"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          required
+          placeholder="Title"
+          className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink"
+        />
+        <input
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          required
+          placeholder="https://…"
+          className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink"
+        />
+        <button
+          type="submit"
+          disabled={busy}
+          className="self-start rounded bg-accent px-3 py-1 text-sm text-surface disabled:opacity-50"
+        >
+          Save link
+        </button>
+        {error && <p className="text-sm text-not-verified">{error}</p>}
+      </form>
+    </div>
+  );
+}
+
 type Loaded = {
   status: "loaded";
   skill: Skill;
   cvStatus: CVStatusResponse;
   userSkill: UserSkill | null;
   evidence: Evidence[];
+  learning: SkillLearningResources;
 };
 
 type PageState = { status: "loading" } | { status: "error"; message: string } | Loaded;
@@ -72,7 +192,10 @@ export default function SkillDetailPage() {
       const userSkills = await apiGet<UserSkill[]>("/user-skills");
       const userSkill = userSkills.find((us) => us.skill_id === skillId) ?? null;
       const evidence = await apiGet<Evidence[]>("/evidence");
-      setState({ status: "loaded", skill, cvStatus, userSkill, evidence });
+      const learning = await apiGet<SkillLearningResources>(
+        `/skills/${skillId}/learning-resources`,
+      );
+      setState({ status: "loaded", skill, cvStatus, userSkill, evidence, learning });
     } catch (error) {
       setState({
         status: "error",
@@ -85,6 +208,39 @@ export default function SkillDetailPage() {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skillId]);
+
+  // Refetches only the learning-resources part, so saving or removing a link
+  // doesn't send the whole page back to "Loading…".
+  async function reloadLearning() {
+    const learning = await apiGet<SkillLearningResources>(
+      `/skills/${skillId}/learning-resources`,
+    );
+    setState((prev) => (prev.status === "loaded" ? { ...prev, learning } : prev));
+  }
+
+  async function handleAddResource(
+    mode: LearningModeResources["mode"],
+    title: string,
+    url: string,
+  ) {
+    setBusy(true);
+    try {
+      await apiPost(`/skills/${skillId}/learning-resources`, { mode, title, url });
+      await reloadLearning();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemoveResource(resourceId: number) {
+    setBusy(true);
+    try {
+      await apiDelete(`/learning-resources/${resourceId}`);
+      await reloadLearning();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleToggleCvPresence() {
     if (state.status !== "loaded") return;
@@ -346,6 +502,21 @@ export default function SkillDetailPage() {
           </section>
         </div>
       )}
+
+      <section className="mt-8">
+        <h2 className="font-display text-lg text-ink">Learning resources</h2>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          {state.learning.modes.map((entry) => (
+            <LearningColumn
+              key={entry.mode}
+              entry={entry}
+              busy={busy}
+              onAdd={(title, url) => handleAddResource(entry.mode, title, url)}
+              onRemove={handleRemoveResource}
+            />
+          ))}
+        </div>
+      </section>
     </main>
   );
 }

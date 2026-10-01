@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.db.models.enums import EvidenceType, VerificationStatus
+from app.db.models.enums import EvidenceType, LearningMode, VerificationStatus
 
 
 class HealthResponse(BaseModel):
@@ -291,3 +291,36 @@ class CVStatusResponse(BaseModel):
             cv_status=combined.cv_status.value,
             recommendation=combined.recommendation,
         )
+
+
+class LearningResourceCreate(BaseModel):
+    # Validated against the real LearningMode enum by Pydantic itself (bad value -> 422).
+    mode: LearningMode
+    title: str
+    url: str
+
+
+class LearningResourceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    skill_id: int
+    mode: str
+    title: str
+    url: str
+    created_at: datetime
+
+
+class LearningModeResources(BaseModel):
+    """One learning mode for one skill: its derived YouTube search link + saved links."""
+
+    mode: str
+    search_query: str
+    search_url: str
+    resources: list[LearningResourceResponse]
+
+
+class SkillLearningResourcesResponse(BaseModel):
+    skill_id: int
+    skill_name: str
+    modes: list[LearningModeResources]

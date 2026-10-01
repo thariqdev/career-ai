@@ -17,6 +17,13 @@ class EvidenceType(str, enum.Enum):
     OTHER = "other"
 
 
+class LearningMode(str, enum.Enum):
+    """The two learning modes PROJECT_RULES.md section 14 defines."""
+
+    THEORY_INTERVIEW = "theory_interview"
+    TECHNICAL_PRACTICAL = "technical_practical"
+
+
 class VerificationStatus(str, enum.Enum):
     """The four statuses PROJECT_RULES.md section 3 defines for a UserSkill claim.
 

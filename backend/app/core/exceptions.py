@@ -68,6 +68,27 @@ class RequirementsAlreadyExistError(DomainError):
         )
 
 
+class EmptyResourceTitleError(DomainError):
+    """A learning resource's title was blank or whitespace-only."""
+
+    def __init__(self) -> None:
+        super().__init__("Learning resource title must not be blank.")
+
+
+class InvalidResourceUrlError(DomainError):
+    """A learning resource's URL isn't an http(s) link with a host."""
+
+    def __init__(self, url: str) -> None:
+        super().__init__(f'"{url}" is not a valid http or https link.')
+
+
+class DuplicateLearningResourceError(DomainError):
+    """The same URL is already saved for this skill under this learning mode."""
+
+    def __init__(self, url: str) -> None:
+        super().__init__(f'"{url}" is already saved for this skill in this learning mode.')
+
+
 class AmbiguousSkillMatchError(DomainError):
     """The text matched more than one distinct Skill, so no single answer is safe."""
 

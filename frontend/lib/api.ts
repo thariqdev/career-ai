@@ -6,7 +6,7 @@
  * needs to be readable in browser-side code, not just on the server — without
  * it, the value would only exist during the server build and be undefined here.
  *
- * This is deliberately minimal: three functions sharing one internal helper, no
+ * This is deliberately minimal: four functions sharing one internal helper, no
  * retries, no caching, no request library. They just call `fetch`, check the
  * status, and parse JSON.
  */
@@ -39,6 +39,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         : `${path} responded with ${response.status}`;
     throw new ApiError(detail, response.status);
   }
+  // 204 No Content (e.g. a DELETE) has no body to parse.
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
@@ -52,6 +54,10 @@ export function apiPost<T>(path: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+export function apiDelete(path: string): Promise<void> {
+  return request<void>(path, { method: "DELETE" });
 }
 
 export function apiPatch<T>(path: string, body: unknown): Promise<T> {

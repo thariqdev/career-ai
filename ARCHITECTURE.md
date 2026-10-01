@@ -103,7 +103,7 @@
 | `JobRequirement` | A single skill/capability demanded by a job description, normalized to a canonical skill. |
 | `ComparisonResult` | Mapping of a requirement to the user's verification status, CV status, and reasoning. |
 | `SkillGap` | **A derived view, not a stored table.** The latest `ComparisonResult` per requirement whose status is not `VERIFIED` (i.e. `PARTIAL`, `PROVISIONAL`, or `NOT_VERIFIED`), computed by `comparison_service.skill_gaps`. Not stored because it would duplicate `ComparisonResult` and go stale as soon as evidence is added. |
-| `LearningResource` | A recommended official doc, video, or course with mode. |
+| `LearningResource` | A link (doc, video, playlist, course) the **user** saved for a skill under one learning mode (`theory_interview` or `technical_practical`). Only the user adds or removes these; nothing is created automatically. Belongs to the skill, not a user. YouTube search links are **not** stored here — they're derived per request (section 6.3). |
 | `LearningPlan` | A user-created plan linking skill gaps to resources. |
 | `LearningProgress` | Explicitly recorded progress toward a learning plan. |
 | `CVSkillPresence` | Whether a skill is currently listed on the user's CV — **not restricted to verified skills**. This is a fact the user states directly and is kept fully independent of `UserSkill.status` (section 12): a skill can be `VERIFIED` and absent from the CV, or `NOT_VERIFIED` and present on it. No service infers or sets this automatically. |
@@ -150,12 +150,21 @@ Paste JD → Backend → AI parser (structured output)
 ### 6.3 Recommending learning resources
 
 ```text
-Skill gaps → AI resource suggester (or curated catalog)
+Skill (e.g. a gap) → for each learning mode:
+        ├─ derived YouTube search link (fixed query template; built, never fetched or stored)
+        └─ user-curated LearningResource rows (added/removed only by the user)
                  ↓
-        Return resources per mode
+        Return both, per mode
                  ↓
-        User reviews and saves learning plan
+        User reviews and saves learning plan (not built yet)
 ```
+
+**Current implementation (2026-10-01):** resources come from two sources, neither involving AI or any third-party API call:
+
+1. **Derived YouTube search links.** For each mode, a fixed query ("{skill} interview questions" / "{skill} full course tutorial") is turned into a `youtube.com/results?search_query=…` URL. The app never requests it; clicking it runs YouTube's own live search, so results are always current, with no API key, scraping, or quota. Nothing is stored, so nothing can go stale (same reasoning as `SkillGap`).
+2. **User-curated links** (`LearningResource`), satisfying PROJECT_RULES.md §15's "curated, reviewable and editable". Only `http`/`https` links with a host are accepted.
+
+**Deliberately not used:** an AI resource suggester (an LLM can invent course names and URLs, which this project's anti-hallucination rule forbids, unless every link it returns is checked against a real source), unofficial YouTube scraping tools (against YouTube's terms, fragile), and pre-filled curated links (links written from memory are themselves unverified). The official YouTube Data API remains a compatible later addition (it needs a free Google API key) if stored titles and view counts are wanted.
 
 ## 7. API Boundaries
 

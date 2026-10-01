@@ -22,4 +22,7 @@ class Skill(Base):
     cv_skill_presences: Mapped[list["CVSkillPresence"]] = relationship(
         "CVSkillPresence", back_populates="skill"
     )
+    learning_resources: Mapped[list["LearningResource"]] = relationship(
+        "LearningResource", back_populates="skill"
+    )
 

@@ -81,6 +81,32 @@ export type UserSkill = {
   updated_at: string;
 };
 
+// Matches backend LearningResourceResponse / LearningModeResources /
+// SkillLearningResourcesResponse.
+export type LearningMode = "theory_interview" | "technical_practical";
+
+export type LearningResource = {
+  id: number;
+  skill_id: number;
+  mode: LearningMode;
+  title: string;
+  url: string;
+  created_at: string;
+};
+
+export type LearningModeResources = {
+  mode: LearningMode;
+  search_query: string;
+  search_url: string;
+  resources: LearningResource[];
+};
+
+export type SkillLearningResources = {
+  skill_id: number;
+  skill_name: string;
+  modes: LearningModeResources[];
+};
+
 // Matches backend EvidenceResponse.
 export type Evidence = {
   id: number;

@@ -10,16 +10,22 @@ from fastapi.responses import JSONResponse
 from app.core.exceptions import (
     AmbiguousSkillMatchError,
     DomainError,
+    DuplicateLearningResourceError,
+    EmptyResourceTitleError,
     EmptySkillTextError,
     EvidenceAlreadyLinkedError,
     EvidenceOwnershipError,
     InsufficientEvidenceError,
+    InvalidResourceUrlError,
     RequirementsAlreadyExistError,
     SkillNameCollisionError,
 )
 
 _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     EmptySkillTextError: 422,
+    EmptyResourceTitleError: 422,
+    InvalidResourceUrlError: 422,
+    DuplicateLearningResourceError: 409,
     SkillNameCollisionError: 409,
     AmbiguousSkillMatchError: 409,
     EvidenceOwnershipError: 409,
