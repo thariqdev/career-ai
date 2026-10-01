@@ -854,6 +854,43 @@ Added 2026-10-01. Frontend only; no backend change (suite still 217 passed).
   - Not checked in a real browser (no browser tooling here).
 - **Pre-existing lint finding, not fixed (out of scope):** `react-hooks/set-state-in-effect` flags `loadAll()` called inside `useEffect` in `app/skills/page.tsx` and `app/skills/[id]/page.tsx`. It was confirmed present in the last committed version too. It's a newer React lint rule about extra re-renders, not a bug; noted in the backlog.
 
+### Alias ("nickname") management: remove endpoint + UI
+
+Added 2026-10-01. Aliases are how the skill-list matcher finds more requirements, so they now have a UI.
+
+- **`skill_service.remove_alias(db, skill, alias)`:**
+  - It matches only among **this** skill's own aliases, using `normalize_text`, so case and extra whitespace are ignored. It never touches the skill's name or another skill's alias.
+  - No match raises `AliasNotFoundError`, mapped to **404** in `errors.py`. This is the first domain error mapped to 404; the existing 404s are raised as `HTTPException` in routes for missing ids.
+  - After the delete it flushes and expires `skill.aliases`, so the returned skill no longer lists the removed alias.
+- **`DELETE /skills/{id}/aliases?alias=...`** (`skills.py`) returns the updated `SkillResponse` (200), 404 for an unknown skill or alias, and 422 without `alias`.
+  - The alias goes in the **query string on purpose**: in the path, an alias like `CI/CD` would be split on its `/` by routing even when URL-encoded.
+- **Frontend:**
+  - `components/AliasEditor.tsx`: a list with a remove button per alias and an add form. Add and remove both call endpoints that return the updated `Skill`, which is passed to `onChange`, so there's no refetch. Backend messages (409 collision, 422 blank, 404) are shown verbatim. The alias is sent with `encodeURIComponent`.
+  - It's placed on the Skill Detail page under the badges.
+  - `/skills` shows "also: …" under names that have aliases.
+  - `lib/api.ts`'s `apiDelete` is now generic (`apiDelete<T = void>`), since this DELETE returns a body.
+- **Verified:**
+  - **Tests:** 7 new in `test_skills_api.py`:
+    - remove, after which `resolve` stops finding it
+    - case and whitespace are ignored
+    - `CI/CD` can be removed
+    - another skill's alias returns 404 with nothing changed
+    - the skill's own name as an alias returns 404
+    - an unknown skill returns 404
+    - a missing param returns 422
+
+    Suite: **224 passed**.
+  - **Mutation check:** matching across all aliases instead of `skill.aliases` made exactly `test_removing_another_skills_alias_is_404_and_changes_nothing` fail. The file was restored byte-identical.
+  - `npm run build` is clean, and ESLint is clean on `AliasEditor.tsx` and `api.ts`.
+  - **Live check** (temporary :8011):
+    1. With skill PostgreSQL and the posting "Experience with Postgres required.", the reader found nothing.
+    2. After adding alias `Postgres`, it found `("Postgres", "PostgreSQL")`.
+    3. Removing `" POSTGRES "` returned the skill with `aliases: []`, and the reader found nothing again.
+    4. `CI/CD` was added and then removed via `?alias=CI%2FCD`.
+    5. Removing a missing alias returned 404 with the message.
+    6. Cleaned up back to baseline.
+- **Not done:** renaming or deleting skills, merging skills.
+
 ---
 
 ## 8. What Is Already Working

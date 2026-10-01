@@ -67,6 +67,18 @@ def add_alias(skill_id: int, payload: AliasCreate, db: Session = Depends(get_db)
     return skill
 
 
+# The alias goes in the query string, not the path: an alias like "CI/CD" would be
+# split on its "/" by path routing even when URL-encoded.
+@router.delete("/{skill_id}/aliases", response_model=SkillResponse)
+def remove_alias(skill_id: int, alias: str, db: Session = Depends(get_db)) -> Skill:
+    skill = skill_service.get_skill(db, skill_id)
+    if skill is None:
+        raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found.")
+    skill_service.remove_alias(db, skill, alias)
+    db.commit()
+    return skill
+
+
 @router.patch("/{skill_id}/cv-presence", response_model=CVPresenceResponse)
 def set_cv_presence(
     skill_id: int,

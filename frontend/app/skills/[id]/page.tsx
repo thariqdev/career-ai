@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useParams } from "next/navigation";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
+import AliasEditor from "@/components/AliasEditor";
 import StatusBadge from "@/components/StatusBadge";
 import { MODE_LABEL } from "@/lib/learning";
 import type {
@@ -365,6 +366,13 @@ export default function SkillDetailPage() {
           {cvBadgeLabel(cvStatus.cv_status)}
         </button>
       </div>
+
+      <AliasEditor
+        skill={skill}
+        onChange={(updated) =>
+          setState((prev) => (prev.status === "loaded" ? { ...prev, skill: updated } : prev))
+        }
+      />
 
       {userSkill === null ? (
         <div className="mt-8">

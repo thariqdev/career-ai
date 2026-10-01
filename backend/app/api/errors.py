@@ -8,6 +8,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from app.core.exceptions import (
+    AliasNotFoundError,
     AmbiguousSkillMatchError,
     DomainError,
     DuplicateLearningResourceError,
@@ -26,6 +27,7 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     EmptyResourceTitleError: 422,
     InvalidResourceUrlError: 422,
     DuplicateLearningResourceError: 409,
+    AliasNotFoundError: 404,
     SkillNameCollisionError: 409,
     AmbiguousSkillMatchError: 409,
     EvidenceOwnershipError: 409,

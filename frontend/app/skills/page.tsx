@@ -158,6 +158,11 @@ export default function SkillsPage() {
                     <Link href={`/skills/${row.skill.id}`} className="hover:underline">
                       {row.skill.name}
                     </Link>
+                    {row.skill.aliases.length > 0 && (
+                      <span className="block text-xs text-ink-soft">
+                        also: {row.skill.aliases.join(", ")}
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 text-ink-soft">{row.skill.category ?? "—"}</td>
                   <td className="py-2">

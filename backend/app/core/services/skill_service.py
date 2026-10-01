@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
+    AliasNotFoundError,
     AmbiguousSkillMatchError,
     EmptySkillTextError,
     SkillNameCollisionError,
@@ -124,3 +125,21 @@ def add_alias(db: Session, skill: Skill, alias: str) -> SkillAlias:
     db.add(skill_alias)
     db.flush()
     return skill_alias
+
+
+def remove_alias(db: Session, skill: Skill, alias: str) -> None:
+    """Remove one of THIS skill's aliases, matched with the shared normalization.
+
+    Only this skill's own aliases are considered, so a name or another skill's alias
+    with the same text is never touched. Raises AliasNotFoundError if none matches.
+    """
+    db.flush()
+    normalized = normalize_text(alias)
+    match = next(
+        (item for item in skill.aliases if normalize_text(item.alias) == normalized), None
+    )
+    if match is None:
+        raise AliasNotFoundError(skill.name, alias)
+    db.delete(match)
+    db.flush()
+    db.expire(skill, ["aliases"])  # so skill.aliases is reloaded without the removed one

@@ -58,6 +58,13 @@ class SkillNameCollisionError(DomainError):
         )
 
 
+class AliasNotFoundError(DomainError):
+    """The skill has no alias matching this text."""
+
+    def __init__(self, skill_name: str, alias: str) -> None:
+        super().__init__(f'The skill "{skill_name}" has no alias "{alias.strip()}".')
+
+
 class RequirementsAlreadyExistError(DomainError):
     """Extraction was refused because the job description already has requirements."""
 

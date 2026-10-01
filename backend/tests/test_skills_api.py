@@ -155,6 +155,82 @@ def test_blank_alias_is_422(client: TestClient) -> None:
     assert response.status_code == 422
 
 
+# --- DELETE /skills/{id}/aliases ---------------------------------------------
+
+
+def _add_alias(client: TestClient, skill_id: int, alias: str) -> None:
+    assert client.post(f"/skills/{skill_id}/aliases", json={"alias": alias}).status_code == 201
+
+
+def test_remove_alias_returns_the_skill_without_it_and_resolve_stops_finding_it(
+    client: TestClient, engine: Engine
+) -> None:
+    skill = _create(client, "PostgreSQL")
+    _add_alias(client, skill["id"], "Postgres")
+    _add_alias(client, skill["id"], "PG")
+
+    response = client.delete(f"/skills/{skill['id']}/aliases", params={"alias": "Postgres"})
+
+    assert response.status_code == 200
+    assert response.json()["aliases"] == ["PG"]
+    assert client.get("/skills/resolve", params={"text": "postgres"}).status_code == 404
+    assert _counts(engine) == (1, 1)
+
+
+def test_remove_alias_ignores_case_and_extra_whitespace(client: TestClient, engine: Engine) -> None:
+    skill = _create(client, "PostgreSQL")
+    _add_alias(client, skill["id"], "Postgres")
+
+    response = client.delete(f"/skills/{skill['id']}/aliases", params={"alias": "  POSTGRES "})
+
+    assert response.status_code == 200
+    assert response.json()["aliases"] == []
+    assert _counts(engine) == (1, 0)
+
+
+def test_remove_alias_containing_a_slash(client: TestClient, engine: Engine) -> None:
+    skill = _create(client, "Continuous Integration")
+    _add_alias(client, skill["id"], "CI/CD")
+
+    response = client.delete(f"/skills/{skill['id']}/aliases", params={"alias": "CI/CD"})
+
+    assert response.status_code == 200
+    assert _counts(engine) == (1, 0)
+
+
+def test_removing_another_skills_alias_is_404_and_changes_nothing(
+    client: TestClient, engine: Engine
+) -> None:
+    postgres = _create(client, "PostgreSQL")
+    mysql = _create(client, "MySQL")
+    _add_alias(client, postgres["id"], "Postgres")
+
+    response = client.delete(f"/skills/{mysql['id']}/aliases", params={"alias": "Postgres"})
+
+    assert response.status_code == 404
+    assert "MySQL" in response.json()["detail"]
+    assert _counts(engine) == (2, 1)
+
+
+def test_removing_the_skills_own_name_as_an_alias_is_404(client: TestClient, engine: Engine) -> None:
+    skill = _create(client, "PostgreSQL")
+
+    response = client.delete(f"/skills/{skill['id']}/aliases", params={"alias": "PostgreSQL"})
+
+    assert response.status_code == 404
+    assert _counts(engine) == (1, 0)
+
+
+def test_remove_alias_on_an_unknown_skill_is_404(client: TestClient) -> None:
+    assert client.delete("/skills/999/aliases", params={"alias": "x"}).status_code == 404
+
+
+def test_remove_alias_without_the_alias_param_is_422(client: TestClient) -> None:
+    skill = _create(client, "PostgreSQL")
+
+    assert client.delete(f"/skills/{skill['id']}/aliases").status_code == 422
+
+
 # --- GET /skills/resolve -----------------------------------------------------
 
 

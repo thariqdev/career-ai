@@ -56,8 +56,9 @@ export function apiPost<T>(path: string, body: unknown): Promise<T> {
   });
 }
 
-export function apiDelete(path: string): Promise<void> {
-  return request<void>(path, { method: "DELETE" });
+// T defaults to void for 204 No Content; pass a type when the endpoint returns a body.
+export function apiDelete<T = void>(path: string): Promise<T> {
+  return request<T>(path, { method: "DELETE" });
 }
 
 export function apiPatch<T>(path: string, body: unknown): Promise<T> {
