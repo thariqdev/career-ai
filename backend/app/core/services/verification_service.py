@@ -8,7 +8,8 @@ without a trigger), so the rule lives here and every caller must go through it.
 The rule has to survive removals too, not just additions: unlink_evidence refuses to
 remove the last link of a VERIFIED/PARTIAL claim (LastEvidenceError), because that
 would leave a "verified" skill with no proof. It never lowers the status itself; the
-user does that explicitly via set_status, then unlinks.
+user does that explicitly via set_status, then unlinks. Removing the whole claim
+(delete_claim) is different: no claim is left behind to be "verified" without proof.
 
 Conventions:
 - Plain functions taking a SQLAlchemy Session; no HTTP or FastAPI knowledge.
@@ -21,13 +22,21 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
+    ClaimInUseError,
     EvidenceAlreadyLinkedError,
     EvidenceNotLinkedError,
     EvidenceOwnershipError,
     InsufficientEvidenceError,
     LastEvidenceError,
 )
-from app.db.models import Evidence, UserSkill, UserSkillEvidence
+from app.db.models import (
+    ComparisonResult,
+    Evidence,
+    JobDescription,
+    JobRequirement,
+    UserSkill,
+    UserSkillEvidence,
+)
 from app.db.models.enums import VerificationStatus
 
 # Statuses that make a claim about the user's background, so they need evidence.
@@ -106,3 +115,36 @@ def set_status(db: Session, user_skill: UserSkill, new_status: VerificationStatu
     user_skill.status = new_status
     db.flush()
     return user_skill
+
+
+def delete_claim(db: Session, user_skill: UserSkill) -> None:
+    """Remove a claim and its evidence links. The Evidence rows and the Skill are kept.
+
+    Refused with ClaimInUseError (409) while any past ComparisonResult cites this claim:
+    that's append-only history, the same reason evidence a comparison used can't be
+    deleted. Deleting those jobs (which deletes their own history) frees the claim.
+    """
+    db.flush()
+    jobs = db.execute(
+        select(JobDescription.id, JobDescription.title, func.count(ComparisonResult.id))
+        .join(JobRequirement, JobRequirement.job_description_id == JobDescription.id)
+        .join(ComparisonResult, ComparisonResult.job_requirement_id == JobRequirement.id)
+        .where(ComparisonResult.user_skill_id == user_skill.id)
+        .group_by(JobDescription.id, JobDescription.title)
+        .order_by(JobDescription.id)
+    ).all()
+    if jobs:
+        raise ClaimInUseError(
+            user_skill.skill.name,
+            sum(count for _, _, count in jobs),
+            [title or "Untitled" for _, title, _ in jobs],
+        )
+
+    for link in db.scalars(
+        select(UserSkillEvidence).where(UserSkillEvidence.user_skill_id == user_skill.id)
+    ):
+        db.delete(link)
+    db.flush()  # links first, so the claim row has nothing pointing at it
+    db.expire(user_skill, ["evidence_links"])
+    db.delete(user_skill)
+    db.flush()

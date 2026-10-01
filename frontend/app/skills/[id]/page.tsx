@@ -318,6 +318,27 @@ export default function SkillDetailPage() {
     }
   }
 
+  // The backend refuses (409) while past job comparisons cite the claim, and its
+  // message names those jobs; the evidence itself is always kept.
+  async function handleRemoveClaim() {
+    if (state.status !== "loaded" || state.userSkill === null) return;
+    const confirmed = window.confirm(
+      `Remove your claim on "${state.skill.name}"? Its status and evidence links are removed; ` +
+        "your evidence itself stays on your profile, and the skill stays in your list.",
+    );
+    if (!confirmed) return;
+    setStatusError(null);
+    setBusy(true);
+    try {
+      await apiDelete(`/user-skills/${state.userSkill.id}`);
+      await loadAll();
+    } catch (error) {
+      setStatusError(error instanceof ApiError ? error.message : "Could not remove the claim.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleLinkEvidence(evidenceId: number) {
     if (state.status !== "loaded" || state.userSkill === null) return;
     setLinkError(null);
@@ -499,6 +520,14 @@ export default function SkillDetailPage() {
                   {option.replace("_", " ")}
                 </button>
               ))}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handleRemoveClaim}
+                className="ml-auto rounded border border-line px-3 py-1.5 text-sm text-ink-soft disabled:opacity-50"
+              >
+                Remove claim
+              </button>
             </div>
             {statusError && <p className="mt-2 text-sm text-not-verified">{statusError}</p>}
           </section>

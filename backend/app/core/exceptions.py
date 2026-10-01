@@ -62,6 +62,20 @@ class EvidenceInUseError(DomainError):
         super().__init__(f'"{title}" can\'t be deleted because it is {" and ".join(reasons)}.')
 
 
+class ClaimInUseError(DomainError):
+    """A claim can't be removed while past comparison results cite it (that's history)."""
+
+    def __init__(self, skill_name: str, result_count: int, job_labels: list[str]) -> None:
+        results = f"{result_count} past comparison result{'s' if result_count != 1 else ''}"
+        jobs = ", ".join(f'"{label}"' for label in job_labels)
+        super().__init__(
+            f'Your claim on "{skill_name}" can\'t be removed because {results} '
+            f"{'uses' if result_count == 1 else 'use'} it "
+            f"(job{'s' if len(job_labels) != 1 else ''}: {jobs}). Delete "
+            f"{'those jobs' if len(job_labels) != 1 else 'that job'} first, or keep the claim."
+        )
+
+
 class InsufficientEvidenceError(DomainError):
     """A status that requires supporting evidence was requested with none linked."""
 
@@ -140,7 +154,8 @@ class SkillMergeConflictError(DomainError):
         super().__init__(
             f'Both "{source_name}" and "{target_name}" are claimed, so they can\'t be merged: '
             "combining two claims (their status and evidence) would mean the app deciding "
-            "which proof and status win, and that's your decision, not the app's."
+            "which proof and status win, and that's your decision, not the app's. Remove the "
+            "claim you don't want to keep (on its skill page), then merge."
         )
 
 

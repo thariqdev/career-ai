@@ -23,7 +23,7 @@ Every route resolves user: User = Depends(get_current_user); no route or schema 
 takes a user_id.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -128,3 +128,17 @@ def unlink_evidence(
     verification_service.unlink_evidence(db, user_skill, evidence_id)
     db.commit()
     return user_skill
+
+
+@router.delete("/{user_skill_id}", status_code=204)
+def delete_claim(
+    user_skill_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    # 409 while past comparison results cite the claim (ClaimInUseError). Its evidence
+    # links go with it; the Evidence itself and the Skill are kept.
+    user_skill = _get_owned_user_skill(db, user_skill_id, user)
+    verification_service.delete_claim(db, user_skill)
+    db.commit()
+    return Response(status_code=204)

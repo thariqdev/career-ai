@@ -141,7 +141,7 @@ career-ai/
     │   │   ├── __init__.py
     │   │   ├── health.py       ← GET /health endpoint
     │   │   ├── skills.py       ← /skills endpoints (thin routes over skill_service)
-    │   │   ├── user_skills.py  ← /user-skills endpoints (claim, list, link evidence, status)
+    │   │   ├── user_skills.py  ← /user-skills endpoints (claim, list, link evidence, status, remove claim)
     │   │   ├── evidence.py     ← /evidence endpoints (create, list)
     │   │   ├── cv.py                 ← POST /cv/scan (preview), PUT /cv/presence (confirmed save), GET /cv/status
     │   │   ├── learning_progress.py  ← PUT /skills/{id}/learning-progress + GET /learning-progress
@@ -155,7 +155,7 @@ career-ai/
     │   │   ├── models.py       ← Pydantic schemas (Health/Skill*/User* + JobDescription*/JobRequirement*/Extraction*/ComparisonResult*/Gap*)
     │   │   ├── services/
     │   │   │   ├── __init__.py
-    │   │   │   ├── verification_service.py  ← link_evidence(), set_status()
+    │   │   │   ├── verification_service.py  ← link_evidence(), set_status(), unlink_evidence(), delete_claim()
     │   │   │   ├── skill_service.py         ← resolve_skill(), create_skill(), add_alias(), list_skills(), get_skill(), normalize_text(), merge_skills()
     │   │   │   ├── comparison_service.py    ← compare_job_description(), latest_results(), skill_gaps(), RequirementGap
     │   │   │   ├── requirement_service.py   ← extract_requirements() (validates an extractor's proposals)
@@ -228,7 +228,8 @@ career-ai/
         ├── test_interview_prep_api.py
         ├── test_editing_api.py
         ├── test_learning_path_api.py
-        └── test_skill_merge_api.py
+        ├── test_skill_merge_api.py
+        └── test_claim_delete_api.py
 ```
 
 ---
@@ -1502,7 +1503,7 @@ Added 2026-10-02. `skill_service.merge_skills(db, source, target)` folds a dupli
   - **learning progress:** the further-along one is kept (FINISHED beats STUDYING) and the source row is deleted
   - **CV mark:** `present = target.present or source.present`, because the CV did mention one of the names
   - **saved links:** an exact duplicate (same mode and URL) is dropped, and the target's own copy is kept
-  - **claims:** `SkillMergeConflictError` (409). Choosing which status and proof win is the user's judgment. There's no claim delete yet, so such a pair currently can't be merged; the message says why rather than suggesting an action that doesn't exist.
+  - **claims:** `SkillMergeConflictError` (409). Choosing which status and proof win is the user's judgment. Since task 48 the message tells the user to remove the unwanted claim first (`DELETE /user-skills/{id}`), then merge.
 - **Other refusals:** merging into itself raises `SkillMergeIntoItselfError` (422); an unknown source or target returns 404 from the route.
 - **Covers every user's rows**, because skills are a shared taxonomy. The claim conflict is checked per user, so two different users' claims are not a conflict. The `uq_user_skill` constraint backs the claim rule in the database too.
 - **Order matters:** moves and drops are flushed, then the source is expired and deleted, so deleting the now-empty skill touches no child row. Then `add_alias`, then the target is expired so its collections reload.
@@ -1539,6 +1540,42 @@ Added 2026-10-02. `skill_service.merge_skills(db, source, target)` folds a dupli
   - merging more than two skills
   - automatic duplicate detection
   - merging two claims
+  - deleting a single job requirement
+
+### Removing a claim
+
+Added 2026-10-02. `verification_service.delete_claim(db, user_skill)` removes a claim and its `UserSkillEvidence` links. The `Evidence` rows and the `Skill` are kept, and the skill simply becomes unclaimed again.
+
+- **History is protected:** if any `ComparisonResult.user_skill_id` points at the claim, it raises `ClaimInUseError` (409). The message counts the results and names the jobs ("Untitled" when a job has no title), for example `… because 1 past comparison result uses it (job: "Backend"). Delete that job first, or keep the claim.` This is the same "refuse, don't rewrite history" rule as `delete_evidence`. Deleting the job (task 45) removes its own results and frees the claim.
+  - The jobs come from one grouped query: `JobDescription ⋈ JobRequirement ⋈ ComparisonResult`, filtered on the claim.
+- **A VERIFIED or PARTIAL claim can be removed outright.** `unlink_evidence` still refuses to strip the last proof from one, but removing the whole claim leaves nothing "verified" behind, so the invariant holds.
+- **Order:** links are deleted and flushed first, then `evidence_links` is expired and the claim is deleted.
+- **API:** `DELETE /user-skills/{id}` returns 204. Ownership goes through `_get_owned_user_skill`, so another user's claim or an unknown id both return 404.
+- **Frontend:** a **"Remove claim"** button on the Skill page's Status row, with a `window.confirm` that says the evidence is kept. A refusal is shown in the existing status error line. On success the page reloads and shows "You haven't claimed this skill yet".
+- **Merge follow-up:** `SkillMergeConflictError`'s message and the merge help text now point to removing one claim first. The test `test_removing_a_claim_unblocks_a_merge` covers the whole flow.
+- **Verified:**
+  - **Tests:** 8 new in `test_claim_delete_api.py`:
+    - remove keeps evidence and skill, and allows a re-claim
+    - a verified claim can be removed
+    - other claims and links are untouched
+    - cited by 2 results: 409 naming both jobs, nothing changed
+    - deleting the job frees the claim (singular wording checked)
+    - removal unblocks a merge
+    - another user's claim: 404, untouched
+    - unknown id: 404
+
+    Suite: **400 passed**.
+  - **Mutation check:** disabling the history refusal made the two history tests fail; the file was restored byte-identical. In SQLite the bad delete would silently succeed, because foreign keys aren't enforced there, which is exactly why the service check matters. On Postgres the foreign key would also block it.
+  - Build is clean, and eslint reports 0.
+  - **Live check** on :8011:
+    - A verified test claim was removed, and its evidence was kept.
+    - A claim cited by a test job's comparison got a 409 naming "ZZ job". After deleting the job, removal succeeded. An unknown id returned 404.
+    - The live run caught the grammar "1 … result use it", which is now fixed and tested.
+    - The user's real claim (id 1) is cited by 0 comparison results (read-only check), so it would be removable. It was not touched.
+    - Only the test ids were removed, sequences were reset, and counts matched the snapshot.
+- **Not done:**
+  - undo
+  - cascading into job history
   - deleting a single job requirement
 
 ---

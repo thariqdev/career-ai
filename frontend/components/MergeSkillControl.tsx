@@ -77,7 +77,7 @@ export default function MergeSkillControl({
       <p className="mt-1 text-sm text-ink-soft">
         For a duplicate of a skill you already have. Job requirements, nicknames, your claim
         and its evidence, saved links, learning progress and the CV mark all move to the other
-        skill. Not possible when both skills are claimed.
+        skill. If both skills are claimed, remove the claim you don&apos;t want first.
       </p>
       {lookalikes.length > 0 && (
         <p className="mt-2 text-sm text-ink">

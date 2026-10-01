@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.core.exceptions import (
     AliasNotFoundError,
     AmbiguousSkillMatchError,
+    ClaimInUseError,
     CVFileTooLargeError,
     NoCVTextError,
     UnsupportedCVFileError,
@@ -50,6 +51,7 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     EvidenceNotLinkedError: 404,
     LastEvidenceError: 409,
     EvidenceInUseError: 409,
+    ClaimInUseError: 409,
     TooManyEvidenceSourcesError: 422,
     UnsupportedCVFileError: 415,
     CVFileTooLargeError: 413,
