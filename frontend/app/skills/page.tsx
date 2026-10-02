@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
+import { Button, Card, EmptyState, Page, inputClasses } from "@/components/ui";
 import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
 import type { CVStatusResponse, Skill } from "@/lib/types";
 
@@ -142,113 +143,111 @@ export default function SkillsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="font-display text-2xl text-ink">Skills</h1>
+    <Page title="Skills">
+      <p className="mt-1 text-sm text-ink-soft">
+        Your skill list. Job postings and your CV are read against these names and nicknames.
+        Click a skill to claim it, prove it and plan how to learn it.
+      </p>
 
-      <form onSubmit={handleCreate} className="mt-6 flex flex-wrap items-end gap-3">
-        <label className="flex flex-col text-sm text-ink-soft">
-          Name
-          <input
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value);
-              setLookalikes(null);
-            }}
-            required
-            className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
-          />
-        </label>
-        <label className="flex flex-col text-sm text-ink-soft">
-          Category (optional)
-          <input
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded bg-accent px-4 py-1.5 text-sm text-surface disabled:opacity-50"
-        >
-          {submitting ? "Adding…" : "Add skill"}
-        </button>
-      </form>
-      {lookalikes && (
-        <div className="mt-3 flex flex-wrap items-center gap-3 rounded border border-warm bg-warm-soft px-3 py-2 text-sm text-ink">
-          <span>
-            &ldquo;{name.trim()}&rdquo; looks like <strong>{lookalikes.join(", ")}</strong>.
-            {" "}If it&apos;s the same thing, add it as a nickname on that skill&apos;s page instead.
-          </span>
-          <button
-            type="button"
-            onClick={createSkill}
-            disabled={submitting}
-            className="rounded border border-line bg-surface px-3 py-1 text-ink disabled:opacity-50"
-          >
-            Add anyway
-          </button>
-          <button
-            type="button"
-            onClick={() => setLookalikes(null)}
-            className="rounded px-3 py-1 text-ink-soft hover:text-ink"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-      {formError && <p className="mt-2 text-sm text-not-verified">{formError}</p>}
+      <Card className="mt-6">
+        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col gap-1 text-sm text-ink-soft">
+            Name
+            <input
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setLookalikes(null);
+              }}
+              required
+              placeholder="e.g. Kubernetes"
+              className={inputClasses}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm text-ink-soft">
+            Category (optional)
+            <input
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              placeholder="e.g. DevOps"
+              className={inputClasses}
+            />
+          </label>
+          <Button type="submit" variant="primary" disabled={submitting}>
+            {submitting ? "Adding…" : "Add skill"}
+          </Button>
+        </form>
+        {lookalikes && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-warm/40 bg-warm-soft/60 px-4 py-3 text-sm text-ink">
+            <span>
+              &ldquo;{name.trim()}&rdquo; looks like <strong>{lookalikes.join(", ")}</strong>.
+              {" "}If it&apos;s the same thing, add it as a nickname on that skill&apos;s page instead.
+            </span>
+            <Button size="sm" onClick={createSkill} disabled={submitting}>
+              Add anyway
+            </Button>
+            <Button size="sm" onClick={() => setLookalikes(null)} className="border-transparent bg-transparent">
+              Cancel
+            </Button>
+          </div>
+        )}
+        {formError && <p className="mt-2 text-sm text-not-verified">{formError}</p>}
+      </Card>
 
-      <div className="mt-8">
+      <div className="mt-6">
         {state.status === "loading" && <p className="text-ink-soft">Loading…</p>}
 
-        {state.status === "error" && (
-          <p className="text-not-verified">Error: {state.message}</p>
+        {state.status === "error" && <p className="text-not-verified">Error: {state.message}</p>}
+
+        {state.status === "loaded" && state.rows.length === 0 && (
+          <EmptyState>No skills yet. Add the ones you know or want to learn above.</EmptyState>
         )}
 
-        {state.status === "loaded" && (
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-line text-ink-soft">
-              <tr>
-                <th className="py-2">Name</th>
-                <th className="py-2">Category</th>
-                <th className="py-2">Knowledge</th>
-                <th className="py-2">CV</th>
-              </tr>
-            </thead>
-            <tbody>
-              {state.rows.map((row) => (
-                <tr key={row.skill.id} className="border-b border-line">
-                  <td className="py-2 text-ink">
-                    <Link href={`/skills/${row.skill.id}`} className="hover:underline">
-                      {row.skill.name}
-                    </Link>
-                    {row.skill.aliases.length > 0 && (
-                      <span className="block text-xs text-ink-soft">
-                        also: {row.skill.aliases.join(", ")}
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2 text-ink-soft">{row.skill.category ?? "—"}</td>
-                  <td className="py-2">
-                    <StatusBadge status={row.cvStatus.knowledge_status} />
-                  </td>
-                  <td className="py-2">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleCvPresence(row)}
-                      title="Click to toggle CV presence"
-                      className={`cursor-pointer rounded px-2 py-0.5 font-mono text-xs ${cvBadgeClasses(row.cvStatus.cv_status)}`}
-                    >
-                      {cvBadgeLabel(row.cvStatus.cv_status)}
-                    </button>
-                  </td>
+        {state.status === "loaded" && state.rows.length > 0 && (
+          <div className="overflow-x-auto rounded-lg border border-line bg-surface shadow-sm">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-line bg-ground/60 text-xs uppercase tracking-wide text-ink-soft">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Name</th>
+                  <th className="px-4 py-2 font-medium">Category</th>
+                  <th className="px-4 py-2 font-medium">Knowledge</th>
+                  <th className="px-4 py-2 font-medium">CV</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {state.rows.map((row) => (
+                  <tr key={row.skill.id} className="border-b border-line last:border-b-0 hover:bg-ground/40">
+                    <td className="px-4 py-3 text-ink">
+                      <Link href={`/skills/${row.skill.id}`} className="font-medium hover:underline">
+                        {row.skill.name}
+                      </Link>
+                      {row.skill.aliases.length > 0 && (
+                        <span className="block text-xs text-ink-soft">
+                          also: {row.skill.aliases.join(", ")}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-ink-soft">{row.skill.category ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={row.cvStatus.knowledge_status} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCvPresence(row)}
+                        title="Click to toggle CV presence"
+                        className={`cursor-pointer rounded px-2 py-0.5 font-mono text-xs ${cvBadgeClasses(row.cvStatus.cv_status)}`}
+                      >
+                        {cvBadgeLabel(row.cvStatus.cv_status)}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
-    </main>
+    </Page>
   );
 }

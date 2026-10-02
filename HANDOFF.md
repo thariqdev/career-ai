@@ -1844,6 +1844,32 @@ Added 2026-10-02. This is looks-only: all handlers, confirms, messages and fetch
   - **Visual and print judgment is the user's.**
 - **Last slice:** Skills list, CV and Profile.
 
+### Visual design pass, slice 4 (final): Skills list, My CV, My Profile
+
+Added 2026-10-02. This is looks-only: handlers, confirms, messages and fetches are unchanged. **The design pass is now complete:** a grep finds no page still using the old `max-w-3xl px-6` wrapper or the old one-off button classes. Every page uses `Page` and the `components/ui.tsx` pieces.
+
+- **`/skills`:**
+  - `Page` with an intro line.
+  - The add form is a Card with `inputClasses`, placeholders and a primary button.
+  - The "looks like …" warning is a warm-tinted box with small `Button`s.
+  - **The table is in a bordered, shadowed, horizontally scrollable wrapper:** a tinted uppercase header, roomier cells, row hover, and a bold linked name with the "also:" nicknames line.
+  - An `EmptyState` shows when there are no skills.
+- **`/cv`:**
+  - The upload form is a Card. The file input is a dashed drop-style box with a styled `file:` button, followed by an "or paste its text" divider and the textarea (`inputClasses`, still disabled while a file is chosen).
+  - The review step shows an accent-tinted "Read N characters" note.
+  - "Found on your CV" and "Marked on your CV, but not found" are Cards of clickable bordered checkbox rows (`accent-accent`); "already marked" is right-aligned.
+  - The Save and Cancel `Button`s are unchanged in behavior.
+  - The saved state is a Card with a green "✓ Saved: …".
+- **`/profile`:**
+  - Each `ProfileSection` is a Card with a `SectionHeading` and an `EmptyState`.
+  - Entries are bordered rows, with Edit as a small plain button and **Remove as small danger**.
+  - The add/edit form is a tinted inner box. It's headed "Add to <section>" or "Editing …", with `inputClasses` fields.
+  - The sections are stacked with `gap-6` inside `Page`.
+- **Verified:**
+  - Build is clean, and eslint reports 0. Backend: **432 passed**, untouched.
+  - **Smoke test:** a production build on a temporary :3011 returned 200 for all 8 routes.
+  - **Visual judgment is the user's.**
+
 ---
 
 ## 8. What Is Already Working
