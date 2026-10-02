@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.client import RequirementExtractor
 from app.core.models import (
+    ApplicationUpdate,
     ComparisonResultResponse,
     ExtractionResponse,
     ExtractorInfo,
@@ -35,6 +36,7 @@ from app.core.models import (
     SkillResponse,
 )
 from app.core.services import (
+    application_service,
     comparison_service,
     interview_prep_service,
     job_description_service,
@@ -132,6 +134,20 @@ def delete_job_description(
     job_description_service.delete_job_description(db, job_description)
     db.commit()
     return Response(status_code=204)
+
+
+@router.patch("/{job_description_id}/application", response_model=JobDescriptionResponse)
+def update_application(
+    job_description_id: int,
+    payload: ApplicationUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> JobDescription:
+    """Your application status, applied-on date and note. 422 for an impossible date."""
+    job_description = _get_owned_job_description(db, job_description_id, user)
+    application_service.update_application(db, job_description, payload.model_dump(exclude_unset=True))
+    db.commit()
+    return job_description
 
 
 @router.delete("/{job_description_id}/requirements/{requirement_id}", status_code=204)

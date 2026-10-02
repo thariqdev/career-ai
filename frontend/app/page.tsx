@@ -6,6 +6,7 @@ import { apiGet, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import LearnLinks from "@/components/LearnLinks";
 import { ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
+import { APPLICATION_CLASSES, APPLICATION_LABEL, APPLICATION_STATUSES } from "@/lib/applications";
 import { PROGRESS_LABEL, useLearningResources } from "@/lib/learning";
 import type {
   CVStatusResponse,
@@ -239,6 +240,25 @@ export default function DashboardPage() {
           href="/job-descriptions"
         />
       </div>
+
+      {state.jobDescriptions.some((j) => j.application_status !== "saved") && (
+        <section className="mt-6">
+          <Link
+            href="/job-descriptions"
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm shadow-sm transition-colors hover:border-accent"
+          >
+            <span className="font-medium text-ink">Your applications:</span>
+            {APPLICATION_STATUSES.filter((s) => s !== "saved").map((status) => {
+              const n = state.jobDescriptions.filter((j) => j.application_status === status).length;
+              return n === 0 ? null : (
+                <span key={status} className={`rounded px-2 py-0.5 text-xs font-medium ${APPLICATION_CLASSES[status]}`}>
+                  {n} {APPLICATION_LABEL[status].toLowerCase()}
+                </span>
+              );
+            })}
+          </Link>
+        </section>
+      )}
 
       <section className="mt-10">
         <SectionHeading

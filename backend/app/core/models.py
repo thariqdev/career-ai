@@ -3,7 +3,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from app.db.models.enums import EvidenceType, LearningMode, VerificationStatus
+from app.db.models.enums import ApplicationStatus, EvidenceType, LearningMode, VerificationStatus
 
 
 class HealthResponse(BaseModel):
@@ -63,6 +63,14 @@ class JobDescriptionCreate(BaseModel):
     source_url: str | None = None
 
 
+class ApplicationUpdate(BaseModel):
+    """PATCH body for a job's application tracking: only the fields sent change."""
+
+    status: ApplicationStatus | None = None
+    applied_on: date | None = None
+    notes: str | None = None
+
+
 class JobRequirementResponse(BaseModel):
     """Public shape of a JobRequirement; `skill_name` is pulled from the relationship."""
 
@@ -105,6 +113,9 @@ class JobDescriptionResponse(BaseModel):
     source_url: str | None
     raw_text: str
     created_at: datetime
+    application_status: ApplicationStatus
+    applied_on: date | None
+    application_notes: str | None
     requirements: list[JobRequirementResponse]
 
 

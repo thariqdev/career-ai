@@ -17,6 +17,17 @@ class EvidenceType(str, enum.Enum):
     OTHER = "other"
 
 
+class ApplicationStatus(str, enum.Enum):
+    """Where the user's application for a job stands. Only ever set by the user."""
+
+    SAVED = "saved"
+    APPLIED = "applied"
+    INTERVIEWING = "interviewing"
+    OFFER = "offer"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
 class LearningMode(str, enum.Enum):
     """The two learning modes PROJECT_RULES.md section 14 defines."""
 

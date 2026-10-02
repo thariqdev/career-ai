@@ -55,7 +55,13 @@ from app.db.models import (
     UserSkillEvidence,
     WorkExperience,
 )
-from app.db.models.enums import EvidenceType, LearningMode, LearningStatus, VerificationStatus
+from app.db.models.enums import (
+    ApplicationStatus,
+    EvidenceType,
+    LearningMode,
+    LearningStatus,
+    VerificationStatus,
+)
 
 MAX_IMPORT_BYTES = 5 * 1024 * 1024
 MAX_PROBLEMS_SHOWN = 20
@@ -155,6 +161,10 @@ class JobIn(_Strict):
     source_url: str | None
     raw_text: str
     created_at: datetime
+    # Added in task 58; older backups don't have them and restore as "saved".
+    application_status: ApplicationStatus = ApplicationStatus.SAVED
+    applied_on: date | None = None
+    application_notes: str | None = None
     requirements: list[RequirementIn]
     comparison_results: list[ResultIn]
     removed_skill_ids: list[int]
@@ -326,6 +336,8 @@ def check(file: ExportFile) -> list[str]:
         dates_in_order(f"Education {education.id}", education.start_date, education.end_date)
 
     for job in file.job_descriptions:
+        if job.applied_on is not None and job.application_status == ApplicationStatus.SAVED:
+            problems.append(f"Job {job.id} is saved (not applied to) but has an applied-on date.")
         requirement_ids = {r.id for r in job.requirements}
         for requirement in job.requirements:
             if requirement.job_description_id != job.id:
@@ -500,6 +512,8 @@ def restore(db: Session, user: User, raw: bytes) -> dict[str, int]:
             JobDescription(
                 user=user, title=j.title, company=j.company, source_url=j.source_url,
                 raw_text=j.raw_text, created_at=j.created_at,
+                application_status=j.application_status, applied_on=j.applied_on,
+                application_notes=j.application_notes,
             )
         )
         requirement = {

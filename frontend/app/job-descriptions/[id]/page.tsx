@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { apiDelete, apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import NotInSkillsYet from "@/components/NotInSkillsYet";
+import ApplicationEditor from "@/components/ApplicationEditor";
 import StatusBadge from "@/components/StatusBadge";
 import { Button, ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
 import { isWebLink } from "@/lib/links";
@@ -269,6 +270,15 @@ export default function JobDescriptionPage() {
             <ButtonLink href={`/job-descriptions/${jobId}/prep`} variant="primary">
               Interview prep →
             </ButtonLink>
+          </div>
+          <div className="mt-5 border-t border-line pt-4">
+            <h2 className="mb-3 font-medium text-ink">Your application</h2>
+            <ApplicationEditor
+              job={job}
+              onSaved={(updated) =>
+                setState((prev) => (prev.status === "loaded" ? { ...prev, job: updated } : prev))
+              }
+            />
           </div>
         </Card>
 

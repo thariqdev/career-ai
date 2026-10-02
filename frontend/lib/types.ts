@@ -39,6 +39,15 @@ export type JobRequirement = {
   created_at: string;
 };
 
+// Matches backend ApplicationStatus: where your application for a job stands.
+export type ApplicationStatus =
+  | "saved"
+  | "applied"
+  | "interviewing"
+  | "offer"
+  | "rejected"
+  | "withdrawn";
+
 export type JobDescription = {
   id: number;
   title: string | null;
@@ -46,6 +55,9 @@ export type JobDescription = {
   source_url: string | null;
   raw_text: string;
   created_at: string;
+  application_status: ApplicationStatus;
+  applied_on: string | null; // YYYY-MM-DD
+  application_notes: string | null;
   requirements: JobRequirement[];
 };
 

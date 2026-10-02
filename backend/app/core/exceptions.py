@@ -184,6 +184,10 @@ class AppNotEmptyError(DomainError):
         )
 
 
+class ApplicationDateError(DomainError):
+    """An applied-on date that can't be right (in the future, or on a job not applied to)."""
+
+
 class AliasNotFoundError(DomainError):
     """The skill has no alias matching this text."""
 

@@ -5,7 +5,13 @@ import Link from "next/link";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
-import { Button, ButtonLink, Card, EmptyState, Page, SectionHeading, inputClasses } from "@/components/ui";
+import {
+  ACTIVE_STATUSES,
+  APPLICATION_CLASSES,
+  APPLICATION_LABEL,
+  CLOSED_STATUSES,
+} from "@/lib/applications";
+import { Button, ButtonLink, Card, EmptyState, Page, Pill, SectionHeading, inputClasses } from "@/components/ui";
 import type {
   ComparisonResult,
   ExtractionResponse,
@@ -18,11 +24,23 @@ import type {
 // (/job-descriptions/{id}) where it can be revisited and compared again.
 type Stage = "creating" | "extracting" | "comparing" | "loading-gaps";
 
+// Filters for the past-jobs list, by application status.
+const FILTERS = {
+  all: { label: "All", match: () => true },
+  active: { label: "Active", match: (j: JobDescription) => ACTIVE_STATUSES.includes(j.application_status) },
+  saved: { label: "Saved", match: (j: JobDescription) => j.application_status === "saved" },
+  offer: { label: "Offer", match: (j: JobDescription) => j.application_status === "offer" },
+  closed: { label: "Closed", match: (j: JobDescription) => CLOSED_STATUSES.includes(j.application_status) },
+} as const;
+
+type FilterKey = keyof typeof FILTERS;
+
 // The user's job descriptions, newest first (GET /job-descriptions already orders
 // them). Refetched whenever reloadKey changes, i.e. after each new analysis.
 function PastJobs({ reloadKey }: { reloadKey: number }) {
   const [jobs, setJobs] = useState<JobDescription[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [filter, setFilter] = useState<FilterKey>("all");
 
   useEffect(() => {
     let active = true;
@@ -42,8 +60,20 @@ function PastJobs({ reloadKey }: { reloadKey: number }) {
         {!failed && jobs === null && <p className="text-sm text-ink-soft">Loading…</p>}
         {jobs !== null && jobs.length === 0 && <EmptyState>None yet. Analyze one above.</EmptyState>}
         {jobs !== null && jobs.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {(Object.keys(FILTERS) as FilterKey[]).map((key) => (
+              <Pill key={key} selected={filter === key} onClick={() => setFilter(key)}>
+                {FILTERS[key].label} ({jobs.filter(FILTERS[key].match).length})
+              </Pill>
+            ))}
+          </div>
+        )}
+        {jobs !== null && jobs.length > 0 && jobs.filter(FILTERS[filter].match).length === 0 && (
+          <EmptyState>No jobs with this status.</EmptyState>
+        )}
+        {jobs !== null && jobs.length > 0 && (
           <ul className="flex flex-col gap-2">
-            {jobs.map((job) => (
+            {jobs.filter(FILTERS[filter].match).map((job) => (
               <li key={job.id}>
                 <Link
                   href={`/job-descriptions/${job.id}`}
@@ -56,6 +86,10 @@ function PastJobs({ reloadKey }: { reloadKey: number }) {
                     </span>
                   </span>
                   <span className="flex items-center gap-3 text-ink-soft">
+                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${APPLICATION_CLASSES[job.application_status]}`}>
+                      {APPLICATION_LABEL[job.application_status]}
+                      {job.applied_on ? ` · ${job.applied_on}` : ""}
+                    </span>
                     {job.requirements.length} requirement{job.requirements.length === 1 ? "" : "s"}
                     <span className="text-accent">Open →</span>
                   </span>

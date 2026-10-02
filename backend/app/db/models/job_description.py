@@ -1,8 +1,10 @@
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Date, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.db.models.enums import ApplicationStatus
 from database import Base
 
 
@@ -25,6 +27,16 @@ class JobDescription(Base):
     company: Mapped[str | None] = mapped_column(String, nullable=True)
     source_url: Mapped[str | None] = mapped_column(String, nullable=True)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # The user's own application tracking (task 58). Never inferred: only the user sets it.
+    application_status: Mapped[ApplicationStatus] = mapped_column(
+        SAEnum(ApplicationStatus, name="application_status"),
+        nullable=False,
+        default=ApplicationStatus.SAVED,
+        server_default=ApplicationStatus.SAVED.name,
+    )
+    applied_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    application_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

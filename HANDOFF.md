@@ -133,7 +133,8 @@ career-ai/
     │       ├── 9bd5ef6ad2a1_create_learning_resources_table.py
     │       ├── e034a498adb5_create_learning_progress_table.py
     │       ├── 10b8111a70ad_evidence_at_most_one_source.py  ← hand-written check constraint
-    │       └── e8afb10fbb1b_create_dismissed_requirements_table.py  ← "not for this job" notes
+    │       ├── e8afb10fbb1b_create_dismissed_requirements_table.py  ← "not for this job" notes
+    │       └── 9139638edafb_add_application_tracking_to_job_.py  ← application_status/applied_on/application_notes
     ├── app/
     │   ├── __init__.py
     │   ├── main.py             ← FastAPI app; registers the DomainError handler + health/skills/me/job-descriptions/user-skills/evidence routers
@@ -171,6 +172,7 @@ career-ai/
     │   │   │   ├── job_description_service.py ← delete_job_description(), delete_requirement() (each with its own history only)
     │   │   │   ├── learning_path_service.py ← learning_paths() (4 steps, done/current/todo, read-only)
     │   │   │   ├── export_service.py ← export_all() (read-only backup of one user's data + shared taxonomy)
+    │   │   │   ├── application_service.py ← update_application() (status, applied-on date, note; PATCH rules)
     │   │   │   ├── import_service.py ← parse()/check()/preview()/restore() (restore a v1 export into an EMPTY app)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
@@ -239,6 +241,7 @@ career-ai/
         ├── test_ollama_extractor.py
         ├── test_export_api.py
         ├── test_import_api.py
+        ├── test_application_api.py
         └── conftest.py   ← autouse: unsets OLLAMA_MODEL/OLLAMA_BASE_URL for every test
 ```
 
@@ -1974,6 +1977,68 @@ Added 2026-10-02.
   - other format versions
   - partial restore
   - a "reset app" button (restore needs an empty app; emptying it stays a deliberate manual step)
+
+### Application tracking per job
+
+Added 2026-10-02.
+
+- **Schema:** migration **`9139638edafb`** adds three columns to `job_descriptions`, and **Alembic head is now `9139638edafb`**:
+  - `application_status`, a new Postgres enum `application_status` with labels `SAVED`/`APPLIED`/`INTERVIEWING`/`OFFER`/`REJECTED`/`WITHDRAWN`, NOT NULL, `server_default 'SAVED'`, so existing jobs became "saved"
+  - `applied_on DATE NULL`
+  - `application_notes TEXT NULL`
+
+  **The migration was hand-adjusted:** `op.add_column` doesn't create a Postgres enum type the way `create_table` does, so `upgrade` calls `.create(checkfirst=True)` first, and `downgrade` drops the type after the column (the same fix as the other enum migrations). On live Postgres, upgrade → downgrade → upgrade all ran, `alembic check` is clean, and the user's job 1 is `SAVED`/NULL/NULL.
+
+  The Python enum is `ApplicationStatus` (lowercase values) in `enums.py`.
+- **`application_service.update_application(db, job, changes, today=None)`** uses PATCH semantics, with the rules checked on the final state:
+  - an applied-on date in the future gives `ApplicationDateError` (422)
+  - **saved + a sent date gives 422**, and moving to saved clears the date
+  - **moving to `applied` with no stored date and no `applied_on` key records today**; no other status ever fills in a date
+  - `notes` is stripped, and blank or null clears it
+- **API:**
+  - `PATCH /job-descriptions/{id}/application` takes `{status?, applied_on?, notes?}` (`ApplicationUpdate`) and returns `JobDescriptionResponse`, which now carries `application_status`, `applied_on` and `application_notes`. Ownership gives 404.
+- **Backup:**
+  - Export picks up the new columns automatically through the generic `_row`.
+  - Import's `JobIn` has them with **defaults** (saved/None/None), so pre-task-58 backups still restore.
+  - `check()` flags a saved job that has an applied-on date.
+- **Frontend:**
+  - **`lib/applications.ts`:** statuses, labels, tag colors from existing tokens, ACTIVE (applied, interviewing) and CLOSED (rejected, withdrawn) sets, and `localToday()` (local, not UTC, YYYY-MM-DD).
+  - **New `components/ApplicationEditor.tsx`** sits in the job page header card under "Your application":
+    - status `Pill`s and a date input (`max=localToday()`, disabled for saved), plus a note field and Save
+    - an empty date is **omitted** (so "applied" fills in today), or sent as null when clearing an existing date or for saved
+  - **`/job-descriptions`:** each past job shows a status tag (with the applied date as YYYY-MM-DD, to avoid UTC parsing). Filter pills (All, Active, Saved, Offer, Closed) show counts, and a filter with no matches shows an `EmptyState`.
+  - **Dashboard:** a "Your applications:" strip (counts per non-saved status, linking to Job Descriptions) appears once any job is past "saved".
+- **Verified:**
+  - **Tests:** 15 new in `tests/test_application_api.py`:
+    - the default is saved
+    - applied fills in today, and an explicit date is kept
+    - only sent fields change
+    - a blank or null note clears it
+    - other statuses never invent a date
+    - a future date gives 422 with nothing changed
+    - saved + a date gives 422
+    - going back to saved clears the date
+    - an unknown status gives 422
+    - another user's job, or a missing one, gives 404
+    - the list includes the fields
+    - export and restore keep them
+    - **an older backup without the fields restores as saved**
+    - a dated saved job in a backup is flagged
+
+    Suite: **472 passed**.
+  - **Mutation check:** allowing future dates made `test_a_future_date_is_refused` fail. The file was restored byte-identical.
+  - Build is clean, and eslint reports 0.
+  - **Live check** on :8011:
+    - The real job 1 was read only: saved/None/None.
+    - On a ZZ job: new = saved; applied filled in today and kept the note; a future date gave 422; interviewing kept the date; the export included it.
+    - The ZZ job was then deleted, the sequence reset, job 1 confirmed unchanged, and counts matched the snapshot.
+  - **Smoke test:** a production build on :3011 returned 200 for `/`, `/job-descriptions`, `/job-descriptions/1` and `/profile`.
+  - Note: the user had deleted their duplicate skill "pytho n" themselves since task 57, so the real data is now 3 skills.
+- **Not done:**
+  - reminders
+  - contacts
+  - a status history
+  - ranking gaps by live applications
 
 ---
 
