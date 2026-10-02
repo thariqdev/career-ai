@@ -230,7 +230,7 @@ def test_default_extractor_with_no_saved_skills_accepts_and_rejects_nothing(
     response = client.post(f"/job-descriptions/{body['id']}/extract")
 
     assert response.status_code == 200
-    assert response.json() == {"accepted": [], "rejected": []}
+    assert response.json() == {"accepted": [], "rejected": [], "linked": [], "note": None}
 
 
 def test_default_extractor_finds_saved_skills_and_maps_them(
@@ -437,10 +437,10 @@ def test_extract_new_on_a_nonexistent_or_not_owned_id_is_404(client: TestClient,
 
 def test_extractor_info_says_whether_extraction_would_be_paid(client: TestClient, monkeypatch) -> None:
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    assert client.get("/job-descriptions/extractor").json() == {"name": "skill_list", "paid": False}
+    assert client.get("/job-descriptions/extractor").json() == {"name": "skill_list", "paid": False, "model": None}
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")  # never used to call anything
-    assert client.get("/job-descriptions/extractor").json() == {"name": "claude", "paid": True}
+    assert client.get("/job-descriptions/extractor").json() == {"name": "claude", "paid": True, "model": None}
 
 
 # --- delete -------------------------------------------------------------------------

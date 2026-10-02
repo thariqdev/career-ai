@@ -174,13 +174,18 @@ class InterviewPrepResponse(BaseModel):
 
 
 class ExtractorInfo(BaseModel):
-    name: Literal["skill_list", "claude"]
+    name: Literal["skill_list", "claude", "ollama"]
     paid: bool
+    model: str | None = None  # the local Ollama model, when that reader is active
 
 
 class ExtractionResponse(BaseModel):
     accepted: list[JobRequirementResponse]
     rejected: list[RejectedRequirementResponse]
+    # Existing requirements that had no skill and now match one you've saved since.
+    linked: list[JobRequirementResponse] = []
+    # Set when the AI reader was configured but couldn't be used this time.
+    note: str | None = None
 
 
 class ComparisonResultResponse(BaseModel):

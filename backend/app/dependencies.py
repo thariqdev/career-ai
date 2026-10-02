@@ -1,11 +1,17 @@
 import os
 from collections.abc import Generator
+from typing import Literal
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.ai.client import RequirementExtractor
 from app.ai.providers.claude_extractor import ClaudeRequirementExtractor
+from app.ai.providers.ollama_extractor import (
+    DEFAULT_BASE_URL,
+    CombinedRequirementExtractor,
+    OllamaRequirementExtractor,
+)
 from app.ai.providers.skill_list_extractor import SkillListExtractor
 from app.core.services import skill_service, user_service
 from app.db.models import User
@@ -41,7 +47,8 @@ def get_current_user(db: Session = Depends(get_db)) -> User:
 
 
 def get_requirement_extractor(db: Session = Depends(get_db)) -> RequirementExtractor:
-    """Claude if ANTHROPIC_API_KEY is set, otherwise the deterministic skill-list matcher.
+    """Claude if ANTHROPIC_API_KEY is set; else the skill-list matcher plus local Ollama
+    if OLLAMA_MODEL is set; else the deterministic skill-list matcher alone.
 
     The single wiring point for extraction. ClaudeRequirementExtractor() never touches
     the network at construction time (see its docstring). The matcher gets a snapshot
@@ -49,9 +56,30 @@ def get_requirement_extractor(db: Session = Depends(get_db)) -> RequirementExtra
     skills saved it proposes nothing. FastAPI caches get_db per request, so this reads
     through the same Session the route uses.
     """
-    if active_extractor_is_paid():
+    name = active_extractor_name()
+    if name == "claude":
         return ClaudeRequirementExtractor()
+    if name == "ollama":
+        ai = OllamaRequirementExtractor(
+            ollama_model(), base_url=os.getenv("OLLAMA_BASE_URL") or DEFAULT_BASE_URL
+        )
+        return CombinedRequirementExtractor(skill_service.skill_terms(db), ai)
     return SkillListExtractor(skill_service.skill_terms(db))
+
+
+def ollama_model() -> str | None:
+    """The local Ollama model to use (OLLAMA_MODEL), or None when it isn't configured."""
+    return (os.getenv("OLLAMA_MODEL") or "").strip() or None
+
+
+def active_extractor_name() -> Literal["claude", "ollama", "skill_list"]:
+    """Which reader extraction uses. The paid Claude reader keeps priority when its key is
+    set, so the "this costs money" check can never be bypassed by also setting Ollama."""
+    if active_extractor_is_paid():
+        return "claude"
+    if ollama_model() is not None:
+        return "ollama"
+    return "skill_list"
 
 
 def active_extractor_is_paid() -> bool:

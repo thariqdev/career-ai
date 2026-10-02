@@ -198,7 +198,8 @@ career-ai/
     │       ├── providers/
     │       │   ├── __init__.py
     │       │   ├── skill_list_extractor.py  ← SkillListExtractor (deterministic, no AI; the default)
-    │       │   └── claude_extractor.py      ← ClaudeRequirementExtractor (used only when ANTHROPIC_API_KEY is set)
+    │       │   ├── claude_extractor.py      ← ClaudeRequirementExtractor (used only when ANTHROPIC_API_KEY is set)
+    │       │   └── ollama_extractor.py      ← OllamaRequirementExtractor + CombinedRequirementExtractor (free, local; only when OLLAMA_MODEL is set)
     │       ├── prompts/        ← empty
     │       └── schemas.py      ← ExtractedRequirement, ExtractionResult (structured-output contract)
     └── tests/
@@ -232,7 +233,9 @@ career-ai/
         ├── test_learning_path_api.py
         ├── test_skill_merge_api.py
         ├── test_claim_delete_api.py
-        └── test_requirement_delete_api.py
+        ├── test_requirement_delete_api.py
+        ├── test_ollama_extractor.py
+        └── conftest.py   ← autouse: unsets OLLAMA_MODEL/OLLAMA_BASE_URL for every test
 ```
 
 ---
@@ -1146,7 +1149,7 @@ Added 2026-10-01. A posting was read once. `extract_requirements` refuses a seco
   - **Design note:** the skill-level check compares only against *pre-existing* requirements, not within the new batch, so first-time extraction behavior stays byte-identical.
 - **API** (`job_descriptions.py`):
   - **`POST /job-descriptions/{id}/extract-new`** returns an `ExtractionResponse`, with the same ownership 404.
-  - **`GET /job-descriptions/extractor`** returns `{"name": "skill_list" | "claude", "paid": bool}`. It's declared before `/{job_description_id}`.
+  - **`GET /job-descriptions/extractor`** returns `{"name": "skill_list" | "claude", "paid": bool}`. Since task 51 `name` can also be `"ollama"`, with a `model` field. It's declared before `/{job_description_id}`.
   - `dependencies.active_extractor_is_paid()` is now the single decision point used by both `get_requirement_extractor` and this endpoint, so they can't disagree.
 - **Frontend** (`app/job-descriptions/[id]/page.tsx`):
   - The **Look for new skills** button (shown even with zero requirements) runs: `GET /extractor`, then a **`window.confirm` if `paid`** (CLAUDE.md: don't spend money on the Claude API without asking), then `POST /extract-new`. If anything was accepted, it runs `POST /compare` and reloads, showing "Found N new requirement(s): …. Compared automatically."; otherwise it says to save the skill first.
@@ -1666,6 +1669,73 @@ Added 2026-10-02. Before this, a requirement removed in task 49 came back on the
 - **Not done:**
   - notes for unmapped requirements
   - a global "never suggest this skill" setting
+
+### Optional free local AI reader (Ollama)
+
+Added 2026-10-02. The user's original wish was a free AI. **Ollama** runs a model on their own machine: no key, no cost, and the posting never leaves the computer. It's **off unless `OLLAMA_MODEL` is set** in `backend/.env`. It is not installed on the user's machine today.
+
+- **Which reader runs:** `app/dependencies.py` decides, through `active_extractor_name()`:
+  1. `claude` if `ANTHROPIC_API_KEY` is set, which **keeps priority**, so the "costs money" confirm can't be bypassed
+  2. else `ollama` if `OLLAMA_MODEL` is non-blank
+  3. else `skill_list`
+
+  `ollama_model()` strips the value, so a blank means off. `OLLAMA_BASE_URL` is optional and defaults to `http://127.0.0.1:11434`.
+- **`OllamaRequirementExtractor(model, base_url, transport=None)`** sends one `POST /api/chat` with:
+  - `stream: false`
+  - `format` = `ExtractionResult.model_json_schema()`, Ollama's structured output
+  - `temperature: 0`
+  - a verbatim-copy prompt that asks only for **named skills**
+
+  Limits: a 120 s timeout, a 200 KB reply cap, and at most 100 proposals. Any HTTP error, non-200 reply, oversized reply or malformed JSON raises the internal `ExtractorUnavailableError`. The httpx client is built per call, never at import time, and `transport` exists only for tests (`httpx.MockTransport`). `httpx` was added to `requirements.txt`; it was already installed as a dependency of `anthropic`.
+- **`CombinedRequirementExtractor(terms_by_skill, ai)`** is what the app actually uses when Ollama is on. It runs `SkillListExtractor` first, then **adds only** AI proposals that:
+  - have a `skill_mention` of 60 characters or fewer; soft lines like "5+ years" are dropped
+  - aren't a skill the matcher already found, including via an alias (checked by casefolded term → skill)
+  - aren't duplicates of each other
+
+  An added proposal's **text becomes the mention**, so the row reads "Kubernetes". If the AI is unavailable, it returns the matcher's result alone and sets `self.note` ("AI reader unavailable, used your skill list only. …"). Extraction never fails because of the AI.
+- **The trust boundary is unchanged:** everything still goes through `requirement_service`. That means the grounding check (an invented "Rust" is rejected as "not found in job description text"), dedup, mapping only via `resolve_skill`, and the dismissal notes from task 50. Unknown skills are stored as requirements with `skill_id = None`, and **no skill is ever created** by the AI.
+- **Linking skill-less rows (`requirement_service._link_skillless`):**
+  - On `extract_new_requirements`, an existing requirement with **no** skill whose text now `resolve_skill`s exactly gets that skill. For example, after the user saves "Kubernetes", the existing "Kubernetes" row is linked instead of a duplicate being added.
+  - It never links to a skill the job already has or one dismissed for the job, and never links two rows to one skill.
+  - It only fills an empty `skill_id`, never re-points one. Past results stay until the next compare.
+  - `ExtractionOutcome.linked`, then `ExtractionResponse.linked`.
+- **API changes:**
+  - `ExtractionResponse` gains `linked: []` and `note: str | None`. The routes build it through `_extraction_response`, and `note` comes from `getattr(extractor, "note", None)`.
+  - `ExtractorInfo` gains `name: "ollama"` and `model`.
+- **Frontend:**
+  - `lib/types.ts` has the matching types.
+  - **New `components/NotInSkillsYet.tsx`** on the job page lists skill-less requirements of 60 characters or fewer, under "Mentioned in this posting, not in your skills yet". Each has an **Add skill** button:
+    - It runs the `/skills/similar` look-alike check first. A look-alike shows a "looks like X, add as a nickname there" link instead.
+    - Otherwise it does `POST /skills` (name only), then `handleLookForNew`, which keeps the paid-confirm, links, compares and reloads.
+  - The job page shows "Read with your skill list / your skill list + local AI (model, free) / Claude (paid)".
+  - The "Look for new skills" message reports found and linked requirements plus any note.
+  - The new-job result on `/job-descriptions` shows the note.
+  - `.env.example` documents `OLLAMA_MODEL` and `OLLAMA_BASE_URL`.
+- **Tests:** a new `tests/conftest.py` unsets `OLLAMA_MODEL` and `OLLAMA_BASE_URL` for every test, because `database.py` loads `.env`. `tests/test_ollama_extractor.py` has 16 tests:
+  - the request shape
+  - 5 unusable-reply cases
+  - unreachable
+  - the cap
+  - combined merge rules
+  - combined fallback
+  - API: the AI's proposals are grounded and create no skills
+  - save then look again links the row
+  - no double-linking
+  - real wiring with nothing listening returns the matcher result plus a note
+  - Claude keeps priority
+  - a blank model means off
+
+  Two exact-shape assertions in `test_job_descriptions_api.py` were updated for the new fields. Suite: **432 passed**.
+- **Mutation check:** disabling the grounding check made `test_ai_proposals_are_still_grounded_and_never_create_skills` fail. The file was restored byte-identical.
+- **Live check** on :8011:
+  - The normal `.env`, with no `OLLAMA_*` keys, reports `skill_list`.
+  - Started with `OLLAMA_MODEL=llama3.2` while Ollama isn't installed, it reports `ollama` with the model. A ZZ job's extract returned 200 in about 2.8 s (the refused connect to localhost) with the matcher's requirement and the fallback note.
+  - Only the test rows were removed, and counts matched the snapshot.
+- **Never run against a real Ollama:** it isn't installed. The real model's answer quality is untested.
+- **Known gaps:**
+  - Removing a skill-less requirement leaves no dismissal note, so the AI may re-add it on look-again.
+  - AI quality depends on the model.
+  - There's no streaming or progress bar during a slow local run.
 
 ---
 

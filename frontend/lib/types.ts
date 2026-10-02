@@ -94,13 +94,21 @@ export type InterviewPrep = {
   items: InterviewPrepItem[];
 };
 
-// Matches backend ExtractorInfo: which requirement reader is active, and whether
-// using it costs money.
-export type ExtractorInfo = { name: "skill_list" | "claude"; paid: boolean };
+// Matches backend ExtractorInfo: which requirement reader is active, whether using it
+// costs money, and the local Ollama model when that reader is on.
+export type ExtractorInfo = {
+  name: "skill_list" | "claude" | "ollama";
+  paid: boolean;
+  model: string | null;
+};
 
 export type ExtractionResponse = {
   accepted: JobRequirement[];
   rejected: { text: string; reason: string }[];
+  // Existing skill-less requirements that now match a skill you've saved since.
+  linked: JobRequirement[];
+  // Set when the AI reader was configured but couldn't be used this time.
+  note: string | null;
 };
 
 export type ComparisonResult = {

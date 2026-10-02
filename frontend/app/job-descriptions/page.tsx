@@ -193,6 +193,9 @@ export default function JobDescriptionsPage() {
 
       {state.status === "done" && (
         <div className="mt-8">
+          {state.extraction.note && (
+            <p className="mb-3 text-sm text-ink-soft">{state.extraction.note}</p>
+          )}
           {state.extraction.accepted.length === 0 ? (
             <p className="text-ink-soft">
               None of your saved skills appear in this posting. Requirements are found by

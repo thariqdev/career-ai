@@ -43,9 +43,11 @@ from app.core.services import (
 from app.db.models import JobDescription, JobRequirement, Skill, User
 from app.dependencies import (
     active_extractor_is_paid,
+    active_extractor_name,
     get_current_user,
     get_db,
     get_requirement_extractor,
+    ollama_model,
 )
 
 router = APIRouter(prefix="/job-descriptions", tags=["job-descriptions"])
@@ -103,8 +105,10 @@ def list_job_descriptions(
 @router.get("/extractor", response_model=ExtractorInfo)
 def read_extractor_info() -> ExtractorInfo:
     """Which requirement reader is active, so the UI can warn before a paid call."""
-    paid = active_extractor_is_paid()
-    return ExtractorInfo(name="claude" if paid else "skill_list", paid=paid)
+    name = active_extractor_name()
+    return ExtractorInfo(
+        name=name, paid=active_extractor_is_paid(), model=ollama_model() if name == "ollama" else None
+    )
 
 
 @router.get("/{job_description_id}", response_model=JobDescriptionResponse)
@@ -185,10 +189,7 @@ def extract_requirements(
     job_description = _get_owned_job_description(db, job_description_id, user)
     outcome = requirement_service.extract_requirements(db, job_description, extractor)
     db.commit()
-    return ExtractionResponse(
-        accepted=outcome.accepted,
-        rejected=[RejectedRequirementResponse.from_rejection(r) for r in outcome.rejected],
-    )
+    return _extraction_response(outcome, extractor)
 
 
 @router.post("/{job_description_id}/extract-new", response_model=ExtractionResponse)
@@ -198,14 +199,23 @@ def extract_new_requirements(
     db: Session = Depends(get_db),
     extractor: RequirementExtractor = Depends(get_requirement_extractor),
 ) -> ExtractionResponse:
-    # "Look again": adds only requirements this job doesn't already have; existing
-    # requirements and their comparison results are never changed (requirement_service).
+    # "Look again": adds only requirements this job doesn't already have, and links an
+    # existing skill-less requirement to a skill saved since (requirement_service).
     job_description = _get_owned_job_description(db, job_description_id, user)
     outcome = requirement_service.extract_new_requirements(db, job_description, extractor)
     db.commit()
+    return _extraction_response(outcome, extractor)
+
+
+def _extraction_response(
+    outcome: requirement_service.ExtractionOutcome, extractor: RequirementExtractor
+) -> ExtractionResponse:
     return ExtractionResponse(
         accepted=outcome.accepted,
         rejected=[RejectedRequirementResponse.from_rejection(r) for r in outcome.rejected],
+        linked=outcome.linked,
+        # Only the combined Ollama reader sets a note (when it had to fall back).
+        note=getattr(extractor, "note", None),
     )
 
 

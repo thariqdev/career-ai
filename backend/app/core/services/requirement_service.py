@@ -25,7 +25,11 @@ refused, before the extractor is called, so requirements are never silently dupl
 extract_new_requirements is the explicit "look again" path instead: same rules, plus a
 proposal is rejected as REJECTED_EXISTING if its text, or the skill it maps to, is
 already among this job's requirements. It only ever ADDS rows; existing requirements
-and their comparison results are never changed or deleted.
+and their comparison results are never changed or deleted, with one exception: an
+existing requirement that has NO skill is linked to a skill when its text now names one
+exactly (e.g. "Kubernetes", found by the AI reader, after the user saves that skill).
+That only fills an empty skill_id; nothing is unlinked or re-pointed, and its past results
+stay as they were until the next comparison.
 
 Both entry points also skip any skill the user removed from this job earlier (a
 DismissedRequirement note), rejecting it as REJECTED_DISMISSED, so a correction sticks.
@@ -34,7 +38,7 @@ Callers pass any object implementing RequirementExtractor. Same conventions as t
 knowledge, flush but never commit, and flush before reading (autoflush=False).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -66,6 +70,7 @@ class ExtractionOutcome:
 
     accepted: list[JobRequirement]
     rejected: list[RejectedRequirement]
+    linked: list[JobRequirement] = field(default_factory=list)
 
 
 def _map_skill(db: Session, mention: str | None) -> Skill | None:
@@ -122,18 +127,44 @@ def extract_new_requirements(
             select(JobRequirement).where(JobRequirement.job_description_id == job_description.id)
         )
     )
-    existing_texts = {skill_service.normalize_text(r.requirement_text) for r in existing}
+    dismissed = _dismissed_skill_ids(db, job_description)
     existing_skill_ids = {r.skill_id for r in existing if r.skill_id is not None}
+    linked = _link_skillless(db, existing, existing_skill_ids | dismissed)
+    existing_texts = {skill_service.normalize_text(r.requirement_text) for r in existing}
+    existing_skill_ids |= {r.skill_id for r in linked}
 
     proposal = extractor.extract_requirements(job_description.raw_text)
-    return _validate_and_store(
+    outcome = _validate_and_store(
         db,
         job_description,
         proposal.requirements,
         existing_texts,
         existing_skill_ids,
-        _dismissed_skill_ids(db, job_description),
+        dismissed,
     )
+    return ExtractionOutcome(accepted=outcome.accepted, rejected=outcome.rejected, linked=linked)
+
+
+def _link_skillless(
+    db: Session, existing: list[JobRequirement], blocked_skill_ids: set[int]
+) -> list[JobRequirement]:
+    """Give a skill to existing requirements that have none and whose text names one exactly.
+
+    Never links to a skill this job already has a requirement for, or one the user removed
+    from this job (blocked_skill_ids), and never two rows to the same skill.
+    """
+    linked: list[JobRequirement] = []
+    for requirement in existing:
+        if requirement.skill_id is not None:
+            continue
+        skill = _map_skill(db, requirement.requirement_text)
+        if skill is None or skill.id in blocked_skill_ids:
+            continue
+        requirement.skill = skill
+        blocked_skill_ids = blocked_skill_ids | {skill.id}
+        linked.append(requirement)
+    db.flush()
+    return linked
 
 
 def _validate_and_store(

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { apiDelete, apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
+import NotInSkillsYet from "@/components/NotInSkillsYet";
 import StatusBadge from "@/components/StatusBadge";
 import { isWebLink } from "@/lib/links";
 import type {
@@ -22,18 +23,44 @@ type Loaded = {
   results: ComparisonResult[];
   gaps: Gap[];
   dismissed: Skill[];
+  reader: ExtractorInfo;
 };
 
 type PageState = { status: "loading" } | { status: "error"; message: string } | Loaded;
 
 async function fetchJob(id: number): Promise<Loaded> {
-  const [job, results, gaps, dismissed] = await Promise.all([
+  const [job, results, gaps, dismissed, reader] = await Promise.all([
     apiGet<JobDescription>(`/job-descriptions/${id}`),
     apiGet<ComparisonResult[]>(`/job-descriptions/${id}/results`),
     apiGet<Gap[]>(`/job-descriptions/${id}/gaps`),
     apiGet<Skill[]>(`/job-descriptions/${id}/dismissed`),
+    apiGet<ExtractorInfo>("/job-descriptions/extractor"),
   ]);
-  return { status: "loaded", job, results, gaps, dismissed };
+  return { status: "loaded", job, results, gaps, dismissed, reader };
+}
+
+function readerLabel(reader: ExtractorInfo): string {
+  if (reader.name === "ollama") return `your skill list + local AI (${reader.model}, free)`;
+  if (reader.name === "claude") return "Claude (paid)";
+  return "your skill list";
+}
+
+// One line summing up a "Look for new skills" run.
+function lookSummary(found: ExtractionResponse): string {
+  const parts: string[] = [];
+  if (found.accepted.length > 0) {
+    const names = found.accepted.map((r) => r.skill_name ?? r.requirement_text).join(", ");
+    parts.push(
+      `Found ${found.accepted.length} new requirement${found.accepted.length === 1 ? "" : "s"}: ${names}.`,
+    );
+  }
+  if (found.linked.length > 0) {
+    const names = found.linked.map((r) => r.skill_name ?? r.requirement_text).join(", ");
+    parts.push(`Linked to your skills: ${names}.`);
+  }
+  parts.push("Compared automatically.");
+  if (found.note) parts.push(found.note);
+  return parts.join(" ");
 }
 
 function errorMessage(error: unknown): string {
@@ -111,18 +138,16 @@ export default function JobDescriptionPage() {
         return;
       }
       const found = await apiPost<ExtractionResponse>(`/job-descriptions/${jobId}/extract-new`, {});
-      if (found.accepted.length === 0) {
+      if (found.accepted.length === 0 && found.linked.length === 0) {
         setLookMessage(
-          "No new skills found in this posting. Save the skill (or its nickname) on the Skills page first.",
+          "No new skills found in this posting. Save the skill (or its nickname) on the Skills page first." +
+            (found.note ? ` ${found.note}` : ""),
         );
         return;
       }
       await apiPost(`/job-descriptions/${jobId}/compare`, {});
       setState(await fetchJob(jobId));
-      const names = found.accepted.map((r) => r.skill_name ?? r.requirement_text).join(", ");
-      setLookMessage(
-        `Found ${found.accepted.length} new requirement${found.accepted.length === 1 ? "" : "s"}: ${names}. Compared automatically.`,
-      );
+      setLookMessage(lookSummary(found));
     } catch (error) {
       setCompareError(errorMessage(error));
     } finally {
@@ -153,6 +178,13 @@ export default function JobDescriptionPage() {
     } finally {
       setComparing(false);
     }
+  }
+
+  // Saves a skill the posting mentions (only its name: no claim, no status), then looks
+  // again so the skill-less requirement is linked to it and compared.
+  async function handleAddSkill(name: string) {
+    await apiPost<Skill>("/skills", { name, category: null });
+    await handleLookForNew();
   }
 
   // Deletes only the "not for this job" note; the next "Look for new skills" may find it.
@@ -190,7 +222,12 @@ export default function JobDescriptionPage() {
     );
   }
 
-  const { job, results, gaps, dismissed } = state;
+  const { job, results, gaps, dismissed, reader } = state;
+  // Short skill-less lines are skill names (the local AI reader stores them that way);
+  // a long sentence, e.g. from the Claude reader, isn't offered as a skill name.
+  const skillless = job.requirements.filter(
+    (r) => r.skill_id === null && r.requirement_text.length <= 60,
+  );
   const resultByRequirement = new Map(results.map((r) => [r.job_requirement_id, r] as const));
   const lastCompared = results.reduce<string | null>(
     (latest, r) => (latest === null || r.created_at > latest ? r.created_at : latest),
@@ -256,6 +293,7 @@ export default function JobDescriptionPage() {
             )}
           </div>
         </div>
+        <p className="mt-1 text-xs text-ink-soft">Read with {readerLabel(reader)}.</p>
         <p className="mt-1 text-sm text-ink-soft">
           {lastCompared
             ? `Last compared ${new Date(lastCompared).toLocaleString()}. Proved a skill since? Compare again to update.`
@@ -309,6 +347,8 @@ export default function JobDescriptionPage() {
             })}
           </ul>
         )}
+
+        <NotInSkillsYet requirements={skillless} busy={comparing} onAdd={handleAddSkill} />
 
         {dismissed.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-ink-soft">

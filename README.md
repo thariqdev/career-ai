@@ -236,7 +236,7 @@ Job-description endpoints (all scoped to that one user automatically — no `use
 | `POST /job-descriptions/{id}/extract` | Extract requirements from the text — by default, finds your saved skills (and their aliases) in it; Claude-backed instead if `ANTHROPIC_API_KEY` is set |
 | `POST /job-descriptions/{id}/compare` | Compare its requirements against your verified skills |
 | `POST /job-descriptions/{id}/extract-new` | Look again: add only requirements this job doesn't already have (e.g. skills saved since); existing requirements and results are never changed |
-| `GET /job-descriptions/extractor` | Which requirement reader is active (`skill_list`, free, or `claude`, paid), so the UI can warn before a paid call |
+| `GET /job-descriptions/extractor` | Which requirement reader is active (`skill_list`, free; `ollama`, free and local, with its `model`; or `claude`, paid), so the UI can warn before a paid call |
 | `GET /job-descriptions/{id}/interview-prep` | An interview prep sheet: per requirement, what you can honestly say (fixed templates filled only with your current claims, linked evidence and CV status; nothing generated) |
 | `GET /job-descriptions/{id}/results` | The latest status of every requirement, verified ones included (comparing again adds new results; old ones are kept) |
 | `GET /job-descriptions/{id}/gaps` | The requirements you're not yet `VERIFIED` for |
@@ -244,6 +244,8 @@ Job-description endpoints (all scoped to that one user automatically — no `use
 Interactive API docs are served at `http://127.0.0.1:8000/docs`.
 
 **How requirements are extracted:** by default (no `ANTHROPIC_API_KEY` in `.env`), `/extract` uses a skill-list matcher. It looks for every skill name and alias you've saved, whole words only, and turns each one it finds into a requirement using the posting's exact words. It is free, instant, and can't invent anything, but it only finds skills you've already added. To use the Claude-backed extractor instead, add a real key to `.env` (`ANTHROPIC_API_KEY=sk-ant-...`) and restart the server. This costs money per call. Either way, the same validation rules apply (see `requirement_service`).
+
+**Optional free AI reader (Ollama).** To also spot skills you haven't saved yet, install [Ollama](https://ollama.com) (free, runs on your own computer), run `ollama pull llama3.2` (about 2 GB), and add `OLLAMA_MODEL=llama3.2` to `backend/.env`, then restart the backend. The app then uses your skill list **plus** the local model. Skills the model finds that you haven't saved appear on the job page under "Mentioned in this posting, not in your skills yet", each with an **Add skill** button. The model can't invent requirements: everything must appear word-for-word in the posting, and it never creates skills or claims. If Ollama isn't running, the app quietly uses your skill list alone and says so. A Claude key, if set, takes priority.
 
 ### 5. Run tests
 
