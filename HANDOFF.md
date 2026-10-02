@@ -671,7 +671,7 @@ Added 2026-09-29 — Phase 2 begins with the bare minimum needed to prove the fr
 Added 2026-09-29 — the first page that's actually functional, not just a proof of connection: it lists real skills, shows real verification/CV status, and lets you create a skill and toggle CV presence, all against the unmodified backend. No backend change in this task; CORS already allowed it.
 
 - **Design tokens (`frontend/app/globals.css`)** — colors and fonts defined **once**, as Tailwind v4 theme variables (`@theme`), not a `tailwind.config.ts` (see the note in the previous section on why this Next.js version doesn't use one). Every `--color-x` variable automatically becomes Tailwind utilities `bg-x`/`text-x`/`border-x`; every `--font-x` becomes `font-x`. Colors: `ground`/`surface`/`ink`/`ink-soft`/`line` (neutrals), `accent`/`accent-soft` (teal), `warm`/`warm-soft` (amber), and four status pairs — `verified`, `partial`, `provisional`, `not-verified` (each with a matching `-bg`). Fonts, via `next/font/google` (not a manual `<link>`, so Next.js self-hosts them): **Fraunces** → `font-display` (headings), **IBM Plex Sans** → `font-sans` (body, the default), **IBM Plex Mono** → `font-mono` (badges/data labels). The scaffold's original Geist fonts and light/dark `--background`/`--foreground` scheme were removed — no dark palette was specified in this task, so introducing a half-finished dark mode would have meant guessing colors nobody gave.
-- **`frontend/components/AppHeader.tsx`** — the wordmark, three nav links (`Dashboard` → `/`, `Skills` → `/skills`, `Job Descriptions` → `/job-descriptions`, the last one a deliberate 404 for now — no page exists yet), and a user-email chip. Wired into `app/layout.tsx` once, so it appears above every page automatically — **`app/page.tsx` itself needed no edit for the header to appear above it**, only for its own inline styles to be replaced with the new tokens.
+- **`frontend/components/AppHeader.tsx`** (restyled in task 52: active-page highlight, all five links; see "Visual design pass, slice 1") — the wordmark, three nav links (`Dashboard` → `/`, `Skills` → `/skills`, `Job Descriptions` → `/job-descriptions`, the last one a deliberate 404 for now — no page exists yet), and a user-email chip. Wired into `app/layout.tsx` once, so it appears above every page automatically — **`app/page.tsx` itself needed no edit for the header to appear above it**, only for its own inline styles to be replaced with the new tokens.
 - **`frontend/lib/useMe.ts`** — the `GET /me` fetch-and-three-state logic already proven on the home page, pulled out into one small reusable hook rather than copy-pasted a second time for the header's chip. The home page's own `/health` + `/me` proof code was **left as its own inline logic, unchanged** — it's a different use case (showing the raw JSON of both calls together, not just an email), so sharing the hook there too would have meant restructuring proven code for a debatable gain; not done.
 - **`frontend/lib/types.ts`** — `Skill`, `CVStatus` (the three-value string union), `CVStatusResponse`, and `User`, copied field-for-field from `backend/app/core/models.py`. `User` wasn't named in the task's own list but was needed by both `useMe` and the pre-existing home page, so it was added as a small, clearly-justified extra rather than left undefined.
 - **`frontend/lib/api.ts`** — gained `apiPost`/`apiPatch` alongside the existing `apiGet`, all three now sharing one internal `request` helper. Error handling was tightened here too: if the backend's error body has a plain string `detail` (which is exactly what `EmptySkillTextError`/`SkillNameCollisionError` produce — see `app/api/errors.py`), that exact message becomes the thrown `ApiError`'s message, instead of a generic "responded with 409".
@@ -1736,6 +1736,42 @@ Added 2026-10-02. The user's original wish was a free AI. **Ollama** runs a mode
   - Removing a skill-less requirement leaves no dismissal note, so the AI may re-add it on look-again.
   - AI quality depends on the model.
   - There's no streaming or progress bar during a slow local run.
+
+### Visual design pass, slice 1: shared UI pieces, header, Dashboard
+
+Added 2026-10-02. This is a looks-only change: no data, fetching or behavior changed, and the backend wasn't touched. It's done in slices so each can be judged by eye. **Slice 1** is the frame and the Dashboard. The palette and fonts are unchanged; the user kept the warm off-white and dark green.
+
+- **New `components/ui.tsx`.** These are plain presentational components, built only from the `globals.css` tokens:
+  - `Button` with a `variant`: `primary` (accent fill), `plain` (bordered white) or `danger` (red outline)
+  - `buttonClasses(variant, extra)` for styling other elements
+  - `ButtonLink`, a `next/link` styled as a button
+  - `Card` (`rounded-lg border bg-surface p-5 shadow-sm`)
+  - `SectionHeading({title, hint?, actions?})`
+  - `EmptyState` (a dashed box)
+  - `Page({title?})` (`max-w-4xl`, responsive padding, `text-3xl` display title)
+
+  **Later slices should use these instead of repeating class lists.**
+- **`AppHeader.tsx`:**
+  - Nav items come from a `NAV` array. The **active page** is highlighted (`usePathname`, `aria-current="page"`). `/` matches only itself; the others also match their sub-pages.
+  - The wordmark links home.
+  - The layout wraps on narrow screens: on mobile the nav moves to its own full-width row.
+  - "offline" is now a red chip with a tooltip.
+- **Dashboard (`app/page.tsx`):** only the render changed; `fetchDashboard` and the ranking are untouched.
+  - The stat tiles are clickable cards.
+  - "Skills to learn" is a 2-column card grid. Each card shows "Next step: … →" as a primary `ButtonLink`, or "Learning path complete ✓", with the YouTube links below a divider.
+  - Recent comparison and CV recommendations are in `Card`s, with an "Open job →" action.
+  - Empty states say what to do first.
+- **Verified:**
+  - `npm run build` is clean, and eslint reports 0. Backend: **432 passed** (unchanged).
+  - **Smoke test:** a production build served on a temporary :3011 returned 200 for `/`, `/skills`, `/job-descriptions`, `/cv`, `/profile`, `/skills/1` and `/job-descriptions/1`. The server-rendered header marked Dashboard as `aria-current="page"`. Port 3011 was freed afterwards.
+  - **Not judged visually by me:** the user checks it in their browser.
+- **Next slices:**
+  1. Skill page
+  2. Job pages
+  3. Skills list
+  4. CV and Profile
+
+  Each switches to `components/ui.tsx`.
 
 ---
 

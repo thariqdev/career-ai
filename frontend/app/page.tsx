@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiGet, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import LearnLinks from "@/components/LearnLinks";
+import { ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
 import { PROGRESS_LABEL, useLearningResources } from "@/lib/learning";
 import type {
   CVStatusResponse,
@@ -114,34 +115,70 @@ function SkillsToLearn({
   const learning = useLearningResources(items.map((item) => item.skillId));
 
   if (items.length === 0) {
-    return <p className="mt-2 text-ink-soft">No open gaps right now.</p>;
+    return (
+      <div className="mt-3">
+        <EmptyState>
+          No open gaps right now. Paste a job posting on{" "}
+          <Link href="/job-descriptions" className="underline">
+            Job Descriptions
+          </Link>{" "}
+          to see what to learn next.
+        </EmptyState>
+      </div>
+    );
   }
   return (
-    <ul className="mt-3 flex flex-col gap-3">
+    <ul className="mt-3 grid gap-3 sm:grid-cols-2">
       {items.map((item) => (
-        <li key={item.skillId} className="flex flex-col gap-1 text-sm text-ink">
-          <span>
-            {item.name}{" "}
-            <span className="text-ink-soft">
-              — needed by {item.jobs} {item.jobs === 1 ? "job" : "jobs"}
-            </span>
-            {progressBySkill[item.skillId] && (
-              <span className="ml-2 rounded bg-accent-soft px-2 py-0.5 font-mono text-xs text-accent">
-                {PROGRESS_LABEL[progressBySkill[item.skillId]].toLowerCase()}
-              </span>
+        <li key={item.skillId}>
+          <Card className="flex h-full flex-col gap-3 p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <Link href={`/skills/${item.skillId}`} className="font-medium text-ink hover:underline">
+                  {item.name}
+                </Link>
+                <p className="text-xs text-ink-soft">
+                  needed by {item.jobs} {item.jobs === 1 ? "job" : "jobs"}
+                </p>
+              </div>
+              {progressBySkill[item.skillId] && (
+                <span className="rounded bg-accent-soft px-2 py-0.5 font-mono text-xs text-accent">
+                  {PROGRESS_LABEL[progressBySkill[item.skillId]].toLowerCase()}
+                </span>
+              )}
+            </div>
+            {item.skillId in nextStepBySkill && (
+              <ButtonLink
+                href={`/skills/${item.skillId}`}
+                variant={nextStepBySkill[item.skillId] ? "primary" : "plain"}
+                className="self-start"
+              >
+                {nextStepBySkill[item.skillId]
+                  ? `Next step: ${nextStepBySkill[item.skillId]} →`
+                  : "Learning path complete ✓"}
+              </ButtonLink>
             )}
-          </span>
-          {item.skillId in nextStepBySkill && (
-            <Link href={`/skills/${item.skillId}`} className="text-xs text-ink-soft underline">
-              {nextStepBySkill[item.skillId]
-                ? `Next step: ${nextStepBySkill[item.skillId]}`
-                : "Learning path complete"}
-            </Link>
-          )}
-          {learning[item.skillId] && <LearnLinks learning={learning[item.skillId]} />}
+            {learning[item.skillId] && (
+              <div className="mt-auto border-t border-line pt-3">
+                <LearnLinks learning={learning[item.skillId]} />
+              </div>
+            )}
+          </Card>
         </li>
       ))}
     </ul>
+  );
+}
+
+function StatTile({ value, label, href }: { value: number; label: string; href: string }) {
+  return (
+    <Link
+      href={href}
+      className="rounded-lg border border-line bg-surface px-4 py-3 shadow-sm transition-colors hover:border-accent"
+    >
+      <p className="font-display text-3xl text-ink">{value}</p>
+      <p className="text-sm text-ink-soft">{label}</p>
+    </Link>
   );
 }
 
@@ -171,43 +208,43 @@ export default function DashboardPage() {
 
   if (state.status === "loading") {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-8">
-        <p className="text-ink-soft">Loading…</p>
-      </main>
+      <Page title="Dashboard">
+        <p className="mt-4 text-ink-soft">Loading…</p>
+      </Page>
     );
   }
 
   if (state.status === "error") {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-8">
-        <p className="text-not-verified">Error: {state.message}</p>
-      </main>
+      <Page title="Dashboard">
+        <p className="mt-4 text-not-verified">Error: {state.message}</p>
+      </Page>
     );
   }
 
   const mostRecent = state.jobDescriptions[0] ?? null;
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="font-display text-2xl text-ink">Dashboard</h1>
+    <Page title="Dashboard">
+      <p className="mt-1 text-sm text-ink-soft">
+        What you can prove, what jobs ask for, and what to learn next.
+      </p>
 
-      <div className="mt-6 grid grid-cols-3 gap-4">
-        <div className="rounded border border-line px-4 py-3">
-          <p className="text-2xl text-ink">{state.verifiedCount}</p>
-          <p className="text-sm text-ink-soft">Verified skills</p>
-        </div>
-        <div className="rounded border border-line px-4 py-3">
-          <p className="text-2xl text-ink">{state.totalGaps}</p>
-          <p className="text-sm text-ink-soft">Open gaps</p>
-        </div>
-        <div className="rounded border border-line px-4 py-3">
-          <p className="text-2xl text-ink">{state.jobDescriptions.length}</p>
-          <p className="text-sm text-ink-soft">Job descriptions analyzed</p>
-        </div>
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatTile value={state.verifiedCount} label="Verified skills" href="/skills" />
+        <StatTile value={state.totalGaps} label="Open gaps" href="/job-descriptions" />
+        <StatTile
+          value={state.jobDescriptions.length}
+          label="Job descriptions analyzed"
+          href="/job-descriptions"
+        />
       </div>
 
-      <section className="mt-8">
-        <h2 className="font-display text-lg text-ink">Skills to learn</h2>
+      <section className="mt-10">
+        <SectionHeading
+          title="Skills to learn"
+          hint="Ranked by how many of your saved jobs ask for them."
+        />
         <SkillsToLearn
           items={state.skillsToLearn}
           progressBySkill={state.progressBySkill}
@@ -215,41 +252,59 @@ export default function DashboardPage() {
         />
       </section>
 
-      <section className="mt-8">
-        <h2 className="font-display text-lg text-ink">Recent comparison</h2>
-        {mostRecent === null ? (
-          <p className="mt-2 text-ink-soft">
-            No job descriptions yet. Paste one on the{" "}
-            <Link href="/job-descriptions" className="underline">
-              Job Descriptions
-            </Link>{" "}
-            page to see a comparison here.
-          </p>
-        ) : (
-          <div className="mt-2">
-            <p className="text-ink">
-              <Link href={`/job-descriptions/${mostRecent.id}`} className="underline">
+      <section className="mt-10">
+        <SectionHeading
+          title="Recent comparison"
+          actions={
+            mostRecent && (
+              <ButtonLink href={`/job-descriptions/${mostRecent.id}`}>Open job →</ButtonLink>
+            )
+          }
+        />
+        <div className="mt-3">
+          {mostRecent === null ? (
+            <EmptyState>
+              No job descriptions yet. Paste one on the{" "}
+              <Link href="/job-descriptions" className="underline">
+                Job Descriptions
+              </Link>{" "}
+              page to see a comparison here.
+            </EmptyState>
+          ) : (
+            <Card>
+              <p className="font-medium text-ink">
                 {mostRecent.title ?? "Untitled"}
-              </Link>
-              {mostRecent.company ? ` — ${mostRecent.company}` : ""}
-            </p>
-            <GapList gaps={state.mostRecentGaps} />
-          </div>
-        )}
+                {mostRecent.company && (
+                  <span className="font-normal text-ink-soft"> · {mostRecent.company}</span>
+                )}
+              </p>
+              <GapList gaps={state.mostRecentGaps} />
+            </Card>
+          )}
+        </div>
       </section>
 
-      <section className="mt-8">
-        <h2 className="font-display text-lg text-ink">CV recommendations</h2>
-        {state.recommendations.length === 0 ? (
-          <p className="mt-2 text-ink-soft">No CV recommendations right now.</p>
-        ) : (
-          <ul className="mt-3 flex flex-col gap-2 text-sm text-ink">
-            {state.recommendations.map((recommendation, index) => (
-              <li key={index}>{recommendation}</li>
-            ))}
-          </ul>
-        )}
+      <section className="mt-10">
+        <SectionHeading title="CV recommendations" />
+        <div className="mt-3">
+          {state.recommendations.length === 0 ? (
+            <EmptyState>No CV recommendations right now.</EmptyState>
+          ) : (
+            <Card>
+              <ul className="flex flex-col gap-2 text-sm text-ink">
+                {state.recommendations.map((recommendation, index) => (
+                  <li key={index} className="flex gap-2">
+                    <span className="text-warm" aria-hidden>
+                      •
+                    </span>
+                    {recommendation}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        </div>
       </section>
-    </main>
+    </Page>
   );
 }
