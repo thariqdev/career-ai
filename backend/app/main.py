@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     cv,
     evidence,
+    export,
     health,
     job_descriptions,
     learning_path,
@@ -42,3 +43,4 @@ app.include_router(learning_progress.router)
 app.include_router(learning_path.router)
 app.include_router(cv.router)
 app.include_router(profile.router)
+app.include_router(export.router)

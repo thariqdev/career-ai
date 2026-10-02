@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import { Button, Card, EmptyState, Page, SectionHeading, inputClasses } from "@/components/ui";
+import DownloadMyData from "@/components/DownloadMyData";
 import { dateRange, educationLabel, projectLabel, workLabel } from "@/lib/profile";
 import type { Education, Project, WorkExperience } from "@/lib/types";
 
@@ -257,6 +258,8 @@ export default function ProfilePage() {
           label={educationLabel}
           details={(e) => dateRange(e.start_date, e.end_date)}
         />
+
+        <DownloadMyData />
       </div>
     </Page>
   );

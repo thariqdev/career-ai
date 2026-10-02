@@ -170,6 +170,7 @@ career-ai/
     │   │   │   ├── interview_prep_service.py ← interview_prep() (read-only, fixed templates, current proof)
     │   │   │   ├── job_description_service.py ← delete_job_description(), delete_requirement() (each with its own history only)
     │   │   │   ├── learning_path_service.py ← learning_paths() (4 steps, done/current/todo, read-only)
+    │   │   │   ├── export_service.py ← export_all() (read-only backup of one user's data + shared taxonomy)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
     │   ├── db/
@@ -235,6 +236,7 @@ career-ai/
         ├── test_claim_delete_api.py
         ├── test_requirement_delete_api.py
         ├── test_ollama_extractor.py
+        ├── test_export_api.py
         └── conftest.py   ← autouse: unsets OLLAMA_MODEL/OLLAMA_BASE_URL for every test
 ```
 
@@ -1869,6 +1871,46 @@ Added 2026-10-02. This is looks-only: handlers, confirms, messages and fetches a
   - Build is clean, and eslint reports 0. Backend: **432 passed**, untouched.
   - **Smoke test:** a production build on a temporary :3011 returned 200 for all 8 routes.
   - **Visual judgment is the user's.**
+
+### Download my data (JSON export)
+
+Added 2026-10-02. All user-entered data lives only in local PostgreSQL. This gives the user a one-click backup, and an honest record of exactly what's stored (nothing generated).
+
+- **`export_service.export_all(db, user)`** is read-only. It doesn't even flush. It returns:
+  - a header: `app`, `format_version` (`FORMAT_VERSION = 1`), `exported_at` (UTC ISO), and `user` (email, full name)
+  - the data sections:
+    - `skills`, each with its `aliases` list
+    - `claims`, each with `evidence_ids`
+    - `evidence`
+    - `projects`, `work_experiences`, `educations`
+    - `job_descriptions`, each with its `requirements`, its `comparison_results` (with cited `evidence_ids`) and its `removed_skill_ids` (task 50's notes)
+    - `cv_marks`, `learning_progress`, `learning_resources`
+
+  **Rows are serialized generically:** every column via `__table__.columns`, minus `user_id`. Enums use `.value` and dates use ISO strings. Ids are kept, so the links stay understandable.
+- **Ownership:** per-user tables use `mine(model)` (`model.user_id == user.id`). Requirements, results and notes are reached through the user's own jobs, and evidence links through the user's own claims. Shared taxonomy tables (skills, aliases, learning_resources) are exported in full.
+- **API:** `GET /export` (`app/api/export.py`, registered in `main.py`) returns a `JSONResponse` with `Content-Disposition: attachment; filename="career-ai-export-YYYY-MM-DD.json"`. It doesn't commit.
+- **Frontend:** a new `components/DownloadMyData.tsx` card at the bottom of My Profile. It does `apiGet("/export")`, then saves the pretty-printed JSON as a Blob through a temporary `<a download>`, which avoids relying on cross-origin header exposure. It shows "✓ Saved to your downloads" or the error.
+- **Verified:**
+  - **Tests:** 6 new in `tests/test_export_api.py`:
+    - every section, with the links between records intact
+    - removed requirements are included
+    - **another user's claims, evidence, project, job, CV mark and progress are absent**, and there's no `user_id` in rows
+    - the download headers
+    - an empty DB gives empty lists
+    - every table's row count is unchanged after two exports
+
+    Suite: **438 passed**.
+  - **Mutation check:** dropping the user filter in `mine()` made 3 tests fail. The file was restored byte-identical.
+  - Build is clean, and eslint reports 0.
+  - **Live check** on :8011, read-only:
+    - It returned 200 with the dated filename.
+    - The export of the user's real data (4 skills, 1 alias, 1 claim on skill 2 that is provisional with evidence [1], 1 piece of evidence "vv", 1 job with 3 requirements and 3 results) **matched the DB counts**.
+    - All table counts were unchanged afterwards.
+    - The file was saved only to the session scratchpad (2.4 KB).
+- **Not done:**
+  - import/restore (writes data; needs its own design)
+  - CSV or PDF
+  - scheduled backups
 
 ---
 

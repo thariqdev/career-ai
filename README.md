@@ -201,6 +201,7 @@ Skills endpoints (skills are a shared taxonomy; there is no authentication yet):
 | `GET /learning-progress` | Every skill you've started or finished studying |
 | `GET /skills/{skill_id}/learning-path` | The four-step path for a skill (start learning, finish, prove it, get verified), each step `done` / `current` / `todo`, worked out only from what you've recorded |
 | `GET /learning-paths?skill_ids=1&skill_ids=2` | The same for several skills in one request (unknown ids are skipped) |
+| `GET /export` | Download everything stored for you (skills, claims, evidence, profile, jobs and results, CV marks, learning progress and links) as one JSON file; read-only. Also on My Profile as "Download my data" |
 | `POST /cv/scan` | Preview only: upload a CV (`file`: PDF, .docx or .txt, up to 5 MB) or paste it (`text`), as form data; returns which saved skills it mentions. Saves nothing, and the CV is never stored |
 | `PUT /cv/presence` | Save your confirmed choices after a scan (`{"present_skill_ids": [...], "absent_skill_ids": [...]}`) |
 | `GET /cv/status` | Combined proof + CV status (and any advice) for every skill you've claimed or marked on your CV, in one request |
