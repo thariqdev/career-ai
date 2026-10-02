@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { apiPatch, ApiError } from "@/lib/api";
 import type { Skill } from "@/lib/types";
+import { Button, inputClasses } from "@/components/ui";
 
 /**
  * The skill's name and category, with an Edit form (PATCH /skills/{id}). Claims,
@@ -48,25 +49,21 @@ export default function SkillNameEditor({
 
   if (!editing) {
     return (
-      <div className="flex flex-wrap items-baseline gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl text-ink">{skill.name}</h1>
+          <h1 className="font-display text-3xl text-ink">{skill.name}</h1>
           <p className="mt-1 text-sm text-ink-soft">{skill.category ?? "No category"}</p>
         </div>
-        <button
-          type="button"
-          onClick={startEdit}
-          className="rounded border border-line px-2 py-0.5 text-xs text-ink-soft"
-        >
+        <Button size="sm" onClick={startEdit}>
           Edit name / category
-        </button>
+        </Button>
       </div>
     );
   }
 
-  const input = "rounded border border-line bg-surface px-3 py-1.5 text-ink";
+  const input = inputClasses;
   return (
-    <form onSubmit={handleSave} className="flex flex-col gap-2 rounded border border-line p-3">
+    <form onSubmit={handleSave} className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col text-sm text-ink-soft">
           Name
@@ -78,20 +75,10 @@ export default function SkillNameEditor({
         </label>
       </div>
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded bg-accent px-3 py-1.5 text-sm text-surface disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={saving}>
           {saving ? "Saving…" : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={() => setEditing(false)}
-          className="rounded border border-line px-3 py-1.5 text-sm text-ink"
-        >
-          Cancel
-        </button>
+        </Button>
+        <Button onClick={() => setEditing(false)}>Cancel</Button>
       </div>
       {error && <p className="text-sm text-not-verified">{error}</p>}
     </form>

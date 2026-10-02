@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
 import type { Skill } from "@/lib/types";
+import { Button, inputClasses } from "@/components/ui";
 
 // Look-alikes of this skill ("pytho n" -> Python), excluding itself. Never throws:
 // the hint is optional, so a failed check just shows no suggestion.
@@ -72,8 +73,8 @@ export default function MergeSkillControl({
   if (others.length === 0) return null;
 
   return (
-    <section className="mt-12 border-t border-line pt-6">
-      <h2 className="font-display text-lg text-ink">Merge into another skill</h2>
+    <div>
+      <h3 className="font-medium text-ink">Merge into another skill</h3>
       <p className="mt-1 text-sm text-ink-soft">
         For a duplicate of a skill you already have. Job requirements, nicknames, your claim
         and its evidence, saved links, learning progress and the CV mark all move to the other
@@ -88,7 +89,7 @@ export default function MergeSkillControl({
         <select
           value={targetId}
           onChange={(e) => setChosen(e.target.value)}
-          className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink"
+          className={inputClasses}
         >
           <option value="">Choose a skill…</option>
           {others.map((s) => (
@@ -97,16 +98,11 @@ export default function MergeSkillControl({
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          disabled={busy || merging || target === null}
-          onClick={handleMerge}
-          className="rounded border border-line px-3 py-1.5 text-sm text-ink disabled:opacity-50"
-        >
+        <Button variant="danger" disabled={busy || merging || target === null} onClick={handleMerge}>
           {merging ? "Merging…" : "Merge"}
-        </button>
+        </Button>
       </div>
       {error && <p className="mt-2 text-sm text-not-verified">{error}</p>}
-    </section>
+    </div>
   );
 }

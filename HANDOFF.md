@@ -1773,6 +1773,45 @@ Added 2026-10-02. This is a looks-only change: no data, fetching or behavior cha
 
   Each switches to `components/ui.tsx`.
 
+### Visual design pass, slice 2: the Skill page
+
+Added 2026-10-02. This is looks-only: every handler, message, confirm dialog and fetch on `/skills/[id]` is unchanged, and eslint's unused-variable check confirms all handlers are still wired.
+
+- **`components/ui.tsx` additions:**
+  - `Button` gained `size: "sm" | "md"`, and `buttonClasses` gained a third `size` argument
+  - **`Pill`** is a rounded toggle with `aria-pressed`, filled with the accent color when selected
+  - **`inputClasses`** is the shared input/select style with an accent focus ring
+- **Page layout:** a single column of cards inside `Page`, in this order:
+  1. a header card (name, category, Knowledge badge, clickable CV badge)
+  2. **Your path**
+  3. **Your claim**
+  4. Learning progress
+  5. Learning resources
+  6. Nicknames
+  7. **Danger zone**
+
+  "Your claim" contains the status pills, "Remove claim" as a small danger button in the heading, linked evidence, other evidence and the add-evidence form.
+
+  The Danger zone is a red-bordered section holding **Merge into another skill** and **Delete skill**. The Merge button is now the danger variant.
+
+  The claim card comes right after the path, so the path's "link it as evidence below" stays true.
+- **New local `EvidenceRow`** in the page replaces two near-identical evidence `<li>` blocks: a type chip, the title, the source, an optional description and an action slot. Link is primary and Delete is danger.
+- **Restyled components:**
+  - `LearningPathChecklist` is a Card. Numbered circles become ✓ (done, in the verified color) or → (current); done titles are struck through, and the current step is tinted.
+  - `AliasEditor` and `LearningProgressControl` are Cards; progress uses `Pill`.
+  - `SkillNameEditor` uses a 3xl title and a small Edit button, and its form uses `inputClasses` and `Button`.
+  - `MergeSkillControl` is an `h3` block without its own border.
+  - `EvidenceForm` is a tinted box using `inputClasses` and `Button`.
+  - `LearningColumn` shows a tinted box with a button-like "▶ Search YouTube" link and small Remove buttons.
+- **Verified:**
+  - Build is clean, and eslint reports 0. Backend: **432 passed**, untouched.
+  - **Smoke test:** a production build on a temporary :3011 returned 200 for all pages, including `/skills/1` and `/skills/4`, then was stopped.
+  - **Visual judgment is the user's.**
+- **Next slices:**
+  1. Job pages
+  2. Skills list
+  3. CV and Profile
+
 ---
 
 ## 8. What Is Already Working

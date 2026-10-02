@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { apiDelete, apiPost, ApiError } from "@/lib/api";
+import { Button, Card, SectionHeading, inputClasses } from "@/components/ui";
 import type { Skill } from "@/lib/types";
 
 /**
@@ -48,20 +49,20 @@ export default function AliasEditor({
   }
 
   return (
-    <section className="mt-6">
-      <h2 className="font-display text-lg text-ink">Nicknames</h2>
-      <p className="mt-1 text-sm text-ink-soft">
-        Other names job postings use for {skill.name}. The requirement reader finds these too.
-      </p>
+    <Card>
+      <SectionHeading
+        title="Nicknames"
+        hint={`Other names job postings use for ${skill.name}. The requirement reader finds these too.`}
+      />
 
       {skill.aliases.length === 0 ? (
-        <p className="mt-2 text-sm text-ink-soft">No nicknames yet.</p>
+        <p className="mt-3 text-sm text-ink-soft">No nicknames yet.</p>
       ) : (
-        <ul className="mt-2 flex flex-wrap gap-2">
+        <ul className="mt-3 flex flex-wrap gap-2">
           {skill.aliases.map((text) => (
             <li
               key={text}
-              className="flex items-center gap-2 rounded border border-line px-2 py-0.5 text-sm text-ink"
+              className="flex items-center gap-2 rounded-full border border-line bg-ground px-3 py-0.5 text-sm text-ink"
             >
               {text}
               <button
@@ -84,17 +85,13 @@ export default function AliasEditor({
           onChange={(e) => setAlias(e.target.value)}
           required
           placeholder="e.g. Postgres"
-          className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink"
+          className={inputClasses}
         />
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded bg-accent px-3 py-1.5 text-sm text-surface disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={busy}>
           Add nickname
-        </button>
+        </Button>
       </form>
       {error && <p className="mt-2 text-sm text-not-verified">{error}</p>}
-    </section>
+    </Card>
   );
 }

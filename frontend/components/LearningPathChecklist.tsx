@@ -1,7 +1,14 @@
 import Link from "next/link";
+import { Card, SectionHeading } from "@/components/ui";
 import type { LearningPath } from "@/lib/types";
 
-const MARK = { done: "✓", current: "→", todo: "○" } as const;
+const MARK = { done: "✓", current: "→", todo: "" } as const;
+
+const MARK_CLASSES = {
+  done: "border-verified bg-verified text-surface",
+  current: "border-accent bg-accent-soft text-accent",
+  todo: "border-line bg-surface text-ink-soft",
+} as const;
 
 /**
  * The four-step path for one skill. Which steps are done, and which one is current,
@@ -10,31 +17,37 @@ const MARK = { done: "✓", current: "→", todo: "○" } as const;
  */
 export default function LearningPathChecklist({ path }: { path: LearningPath }) {
   return (
-    <section className="mt-6 rounded border border-line p-4">
-      <h2 className="font-display text-lg text-ink">Your path</h2>
-      <p className="mt-1 text-sm text-ink-soft">
-        {path.next_step ? `Next step: ${path.next_step}.` : "All steps done. Nice work."}
-      </p>
-      <ol className="mt-3 flex flex-col gap-3">
-        {path.steps.map((step) => (
+    <Card>
+      <SectionHeading
+        title="Your path"
+        hint={path.next_step ? `Next step: ${path.next_step}.` : "All steps done. Nice work."}
+      />
+      <ol className="mt-4 flex flex-col gap-2">
+        {path.steps.map((step, index) => (
           <li
             key={step.key}
-            className={`flex gap-3 text-sm ${step.state === "current" ? "rounded bg-accent-soft p-2" : ""}`}
+            className={`flex gap-3 rounded-md p-2 text-sm ${
+              step.state === "current" ? "bg-accent-soft/60 ring-1 ring-accent-soft" : ""
+            }`}
           >
             <span
               aria-label={step.state}
-              className={`font-mono ${
-                step.state === "done"
-                  ? "text-verified"
-                  : step.state === "current"
-                    ? "text-accent"
-                    : "text-ink-soft"
-              }`}
+              className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border font-mono text-xs ${MARK_CLASSES[step.state]}`}
             >
-              {MARK[step.state]}
+              {MARK[step.state] || index + 1}
             </span>
-            <div>
-              <p className={step.state === "todo" ? "text-ink-soft" : "text-ink"}>{step.title}</p>
+            <div className="pt-0.5">
+              <p
+                className={
+                  step.state === "todo"
+                    ? "text-ink-soft"
+                    : step.state === "done"
+                      ? "text-ink-soft line-through decoration-line"
+                      : "font-medium text-ink"
+                }
+              >
+                {step.title}
+              </p>
               {step.state !== "done" && (
                 <>
                   <p className="mt-0.5 text-ink-soft">{step.detail}</p>
@@ -67,6 +80,6 @@ export default function LearningPathChecklist({ path }: { path: LearningPath }) 
           </li>
         ))}
       </ol>
-    </section>
+    </Card>
   );
 }

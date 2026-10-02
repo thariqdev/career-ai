@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { apiPut, ApiError } from "@/lib/api";
 import { PROGRESS_LABEL } from "@/lib/learning";
+import { Card, Pill, SectionHeading } from "@/components/ui";
 import type { LearningProgress, LearningProgressStatus } from "@/lib/types";
 
 const OPTIONS: LearningProgressStatus[] = ["not_started", "studying", "finished"];
@@ -42,24 +43,18 @@ export default function LearningProgressControl({
   }
 
   return (
-    <section className="mt-6">
-      <h2 className="font-display text-lg text-ink">Learning progress</h2>
+    <Card>
+      <SectionHeading title="Learning progress" hint="How far you are. Studying is never proof." />
       <div className="mt-3 flex flex-wrap gap-2">
         {OPTIONS.map((option) => (
-          <button
+          <Pill
             key={option}
-            type="button"
+            selected={status === option}
             disabled={busy}
             onClick={() => choose(option)}
-            aria-pressed={status === option}
-            className={`rounded border px-3 py-1.5 text-sm disabled:opacity-50 ${
-              status === option
-                ? "border-accent bg-accent-soft text-accent"
-                : "border-line text-ink-soft"
-            }`}
           >
             {PROGRESS_LABEL[option]}
-          </button>
+          </Pill>
         ))}
       </div>
       {status === "finished" && !verified && (
@@ -69,6 +64,6 @@ export default function LearningProgressControl({
         </p>
       )}
       {error && <p className="mt-2 text-sm text-not-verified">{error}</p>}
-    </section>
+    </Card>
   );
 }

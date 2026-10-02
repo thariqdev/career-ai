@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import AliasEditor from "@/components/AliasEditor";
@@ -10,6 +10,7 @@ import LearningProgressControl from "@/components/LearningProgressControl";
 import MergeSkillControl from "@/components/MergeSkillControl";
 import SkillNameEditor from "@/components/SkillNameEditor";
 import StatusBadge from "@/components/StatusBadge";
+import { Button, Card, EmptyState, Page, Pill, SectionHeading, inputClasses } from "@/components/ui";
 import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
 import { MODE_LABEL } from "@/lib/learning";
 import { educationLabel, projectLabel, workLabel } from "@/lib/profile";
@@ -71,15 +72,15 @@ function LearningColumn({
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded border border-line p-4">
-      <h3 className="text-sm text-ink">{MODE_LABEL[entry.mode]}</h3>
+    <div className="flex flex-col gap-3 rounded-lg border border-line bg-ground/40 p-4">
+      <h3 className="font-medium text-ink">{MODE_LABEL[entry.mode]}</h3>
       <a
         href={entry.search_url}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-sm text-accent underline"
+        className="inline-flex items-center gap-1 self-start rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-accent hover:border-accent"
       >
-        Search YouTube: &ldquo;{entry.search_query}&rdquo;
+        ▶ Search YouTube: &ldquo;{entry.search_query}&rdquo;
       </a>
 
       {entry.resources.length === 0 ? (
@@ -96,44 +97,64 @@ function LearningColumn({
               >
                 {resource.title}
               </a>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => handleRemove(resource.id)}
-                className="rounded border border-line px-2 py-0.5 text-xs text-ink-soft disabled:opacity-50"
-              >
+              <Button size="sm" disabled={busy} onClick={() => handleRemove(resource.id)}>
                 Remove
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
       )}
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-2">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-2 border-t border-line pt-3">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           required
           placeholder="Title"
-          className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink"
+          className={inputClasses}
         />
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           required
           placeholder="https://…"
-          className="rounded border border-line bg-surface px-3 py-1.5 text-sm text-ink"
+          className={inputClasses}
         />
-        <button
-          type="submit"
-          disabled={busy}
-          className="self-start rounded bg-accent px-3 py-1 text-sm text-surface disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={busy} className="self-start">
           Save link
-        </button>
+        </Button>
         {error && <p className="text-sm text-not-verified">{error}</p>}
       </form>
     </div>
+  );
+}
+
+// One piece of evidence: type, title, source and description, with its action buttons.
+function EvidenceRow({
+  item,
+  source,
+  showDescription,
+  children,
+}: {
+  item: Evidence;
+  source: string | null;
+  showDescription: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <li className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-line bg-surface px-3 py-2 text-sm">
+      <div className="min-w-0">
+        <span className="mr-2 rounded bg-ground px-1.5 py-0.5 font-mono text-xs text-ink-soft">
+          {item.evidence_type}
+        </span>
+        <span className="font-medium text-ink">{item.title}</span>
+        {source && <span className="text-ink-soft"> · {source}</span>}
+        {showDescription && item.description && (
+          <p className="mt-1 text-ink-soft">{item.description}</p>
+        )}
+      </div>
+      <span className="flex gap-2">{children}</span>
+    </li>
   );
 }
 
@@ -420,17 +441,17 @@ export default function SkillDetailPage() {
 
   if (state.status === "loading") {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <Page>
         <p className="text-ink-soft">Loading…</p>
-      </main>
+      </Page>
     );
   }
 
   if (state.status === "error") {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <Page>
         <p className="text-not-verified">Error: {state.message}</p>
-      </main>
+      </Page>
     );
   }
 
@@ -455,236 +476,211 @@ export default function SkillDetailPage() {
     : [];
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
-      <SkillNameEditor skill={skill} onSaved={loadAll} />
-
-      <div className="mt-3 flex items-center gap-3">
-        <StatusBadge status={cvStatus.knowledge_status} />
-        <button
-          type="button"
-          onClick={handleToggleCvPresence}
-          disabled={busy}
-          title="Click to toggle CV presence"
-          className={`cursor-pointer rounded px-2 py-0.5 font-mono text-xs disabled:opacity-50 ${cvBadgeClasses(cvStatus.cv_status)}`}
-        >
-          {cvBadgeLabel(cvStatus.cv_status)}
-        </button>
-      </div>
-
-      <LearningPathChecklist path={state.path} />
-
-      <AliasEditor
-        skill={skill}
-        onChange={(updated) =>
-          setState((prev) => (prev.status === "loaded" ? { ...prev, skill: updated } : prev))
-        }
-      />
-
-      {/* Reload after a progress change so "Your path" ticks its steps too. */}
-      <LearningProgressControl
-        skillId={skill.id}
-        status={state.progress}
-        verified={cvStatus.knowledge_status === "verified"}
-        onChange={() => loadAll()}
-      />
-
-      {userSkill === null ? (
-        <div className="mt-8">
-          <p className="text-ink-soft">You haven&apos;t claimed this skill yet.</p>
-          <button
-            type="button"
-            onClick={handleClaim}
-            disabled={busy}
-            className="mt-3 rounded bg-accent px-4 py-1.5 text-sm text-surface disabled:opacity-50"
-          >
-            Claim this skill
-          </button>
-        </div>
-      ) : (
-        <div className="mt-8 flex flex-col gap-8">
-          <section>
-            <h2 className="font-display text-lg text-ink">Status</h2>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {STATUS_OPTIONS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => handleSetStatus(option)}
-                  className={`rounded border px-3 py-1.5 text-sm disabled:opacity-50 ${
-                    userSkill.status === option
-                      ? "border-accent bg-accent-soft text-accent"
-                      : "border-line text-ink-soft"
-                  }`}
-                >
-                  {option.replace("_", " ")}
-                </button>
-              ))}
+    <Page>
+      <div className="flex flex-col gap-6">
+        <Card>
+          <SkillNameEditor skill={skill} onSaved={loadAll} />
+          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-ink-soft">
+            <span className="flex items-center gap-2">
+              Knowledge <StatusBadge status={cvStatus.knowledge_status} />
+            </span>
+            <span className="flex items-center gap-2">
+              CV
               <button
                 type="button"
+                onClick={handleToggleCvPresence}
                 disabled={busy}
-                onClick={handleRemoveClaim}
-                className="ml-auto rounded border border-line px-3 py-1.5 text-sm text-ink-soft disabled:opacity-50"
+                title="Click to toggle CV presence"
+                className={`cursor-pointer rounded px-2 py-0.5 font-mono text-xs disabled:opacity-50 ${cvBadgeClasses(cvStatus.cv_status)}`}
               >
-                Remove claim
+                {cvBadgeLabel(cvStatus.cv_status)}
               </button>
-            </div>
-            {statusError && <p className="mt-2 text-sm text-not-verified">{statusError}</p>}
-          </section>
+            </span>
+          </div>
+        </Card>
 
-          <section>
-            <h2 className="font-display text-lg text-ink">Evidence</h2>
-            {linkedEvidence.length === 0 ? (
-              <p className="mt-2 text-ink-soft">No evidence linked yet.</p>
-            ) : (
-              <ul className="mt-3 flex flex-col gap-2">
-                {linkedEvidence.map((item) =>
-                  editingEvidenceId === item.id ? (
-                    <li key={item.id}>{editorFor(item)}</li>
-                  ) : (
-                  <li
-                    key={item.id}
-                    className="flex items-start justify-between gap-3 rounded border border-line px-3 py-2 text-sm"
-                  >
-                    <div>
-                      <span className="font-mono text-xs text-ink-soft">{item.evidence_type}</span>{" "}
-                      <span className="text-ink">{item.title}</span>
-                      {evidenceSource(item, state) && (
-                        <span className="text-ink-soft"> · {evidenceSource(item, state)}</span>
-                      )}
-                      {item.description && (
-                        <p className="mt-1 text-ink-soft">{item.description}</p>
-                      )}
-                    </div>
-                    <span className="flex gap-2">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => setEditingEvidenceId(item.id)}
-                        className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => handleUnlinkEvidence(item.id)}
-                        className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
-                      >
-                        Unlink
-                      </button>
-                    </span>
-                  </li>
-                  ),
-                )}
-              </ul>
-            )}
+        <LearningPathChecklist path={state.path} />
 
-            {unlinkedEvidence.length > 0 && (
-              <div className="mt-4">
-                <h3 className="text-sm text-ink-soft">Your other evidence</h3>
-                <ul className="mt-2 flex flex-col gap-2">
-                  {unlinkedEvidence.map((item) =>
-                    editingEvidenceId === item.id ? (
-                      <li key={item.id}>{editorFor(item)}</li>
-                    ) : (
-                    <li
-                      key={item.id}
-                      className="flex items-center justify-between rounded border border-line px-3 py-2 text-sm"
-                    >
-                      <span>
-                        <span className="font-mono text-xs text-ink-soft">{item.evidence_type}</span>{" "}
-                        <span className="text-ink">{item.title}</span>
-                        {evidenceSource(item, state) && (
-                          <span className="text-ink-soft"> · {evidenceSource(item, state)}</span>
-                        )}
-                      </span>
-                      <span className="flex gap-2">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => handleLinkEvidence(item.id)}
-                          className="rounded border border-line px-2 py-1 text-xs text-ink disabled:opacity-50"
-                        >
-                          Link
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => setEditingEvidenceId(item.id)}
-                          className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => handleDeleteEvidence(item)}
-                          className="rounded border border-line px-2 py-1 text-xs text-ink-soft disabled:opacity-50"
-                        >
-                          Delete
-                        </button>
-                      </span>
-                    </li>
-                    ),
-                  )}
-                </ul>
-              </div>
-            )}
-            {linkError && <p className="mt-2 text-sm text-not-verified">{linkError}</p>}
-
-            <div className="mt-6">
-              <EvidenceForm
-                heading="Add new evidence"
-                submitLabel="Add evidence"
-                projects={state.projects}
-                works={state.works}
-                educations={state.educations}
-                onSubmit={createEvidence}
+        <Card>
+          {userSkill === null ? (
+            <>
+              <SectionHeading
+                title="Your claim"
+                hint="Claim the skill to set its status and link proof to it."
               />
+              <EmptyState>You haven&apos;t claimed this skill yet.</EmptyState>
+              <Button variant="primary" onClick={handleClaim} disabled={busy} className="mt-3">
+                Claim this skill
+              </Button>
+            </>
+          ) : (
+            <div className="flex flex-col gap-6">
+              <section>
+                <SectionHeading
+                  title="Your claim"
+                  hint="Verified and partial need linked evidence; the app checks."
+                  actions={
+                    <Button size="sm" variant="danger" disabled={busy} onClick={handleRemoveClaim}>
+                      Remove claim
+                    </Button>
+                  }
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {STATUS_OPTIONS.map((option) => (
+                    <Pill
+                      key={option}
+                      selected={userSkill.status === option}
+                      disabled={busy}
+                      onClick={() => handleSetStatus(option)}
+                    >
+                      {option.replace("_", " ")}
+                    </Pill>
+                  ))}
+                </div>
+                {statusError && <p className="mt-2 text-sm text-not-verified">{statusError}</p>}
+              </section>
+
+              <section className="border-t border-line pt-5">
+                <h3 className="font-medium text-ink">Linked evidence</h3>
+                {linkedEvidence.length === 0 ? (
+                  <p className="mt-2 text-sm text-ink-soft">No evidence linked yet.</p>
+                ) : (
+                  <ul className="mt-3 flex flex-col gap-2">
+                    {linkedEvidence.map((item) =>
+                      editingEvidenceId === item.id ? (
+                        <li key={item.id}>{editorFor(item)}</li>
+                      ) : (
+                        <EvidenceRow
+                          key={item.id}
+                          item={item}
+                          source={evidenceSource(item, state)}
+                          showDescription
+                        >
+                          <Button size="sm" disabled={busy} onClick={() => setEditingEvidenceId(item.id)}>
+                            Edit
+                          </Button>
+                          <Button size="sm" disabled={busy} onClick={() => handleUnlinkEvidence(item.id)}>
+                            Unlink
+                          </Button>
+                        </EvidenceRow>
+                      ),
+                    )}
+                  </ul>
+                )}
+
+                {unlinkedEvidence.length > 0 && (
+                  <div className="mt-5">
+                    <h3 className="font-medium text-ink">Your other evidence</h3>
+                    <ul className="mt-2 flex flex-col gap-2">
+                      {unlinkedEvidence.map((item) =>
+                        editingEvidenceId === item.id ? (
+                          <li key={item.id}>{editorFor(item)}</li>
+                        ) : (
+                          <EvidenceRow
+                            key={item.id}
+                            item={item}
+                            source={evidenceSource(item, state)}
+                            showDescription={false}
+                          >
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              disabled={busy}
+                              onClick={() => handleLinkEvidence(item.id)}
+                            >
+                              Link
+                            </Button>
+                            <Button size="sm" disabled={busy} onClick={() => setEditingEvidenceId(item.id)}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              disabled={busy}
+                              onClick={() => handleDeleteEvidence(item)}
+                            >
+                              Delete
+                            </Button>
+                          </EvidenceRow>
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                )}
+                {linkError && <p className="mt-2 text-sm text-not-verified">{linkError}</p>}
+
+                <div className="mt-5">
+                  <EvidenceForm
+                    heading="Add new evidence"
+                    submitLabel="Add evidence"
+                    projects={state.projects}
+                    works={state.works}
+                    educations={state.educations}
+                    onSubmit={createEvidence}
+                  />
+                </div>
+              </section>
             </div>
-          </section>
-        </div>
-      )}
+          )}
+        </Card>
 
-      <section className="mt-8">
-        <h2 className="font-display text-lg text-ink">Learning resources</h2>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2">
-          {state.learning.modes.map((entry) => (
-            <LearningColumn
-              key={entry.mode}
-              entry={entry}
+        {/* Reload after a progress change so "Your path" ticks its steps too. */}
+        <LearningProgressControl
+          skillId={skill.id}
+          status={state.progress}
+          verified={cvStatus.knowledge_status === "verified"}
+          onChange={() => loadAll()}
+        />
+
+        <Card>
+          <SectionHeading
+            title="Learning resources"
+            hint="YouTube searches open YouTube itself; saved links are your own picks."
+          />
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {state.learning.modes.map((entry) => (
+              <LearningColumn
+                key={entry.mode}
+                entry={entry}
+                busy={busy}
+                onAdd={(title, url) => handleAddResource(entry.mode, title, url)}
+                onRemove={handleRemoveResource}
+              />
+            ))}
+          </div>
+        </Card>
+
+        <AliasEditor
+          skill={skill}
+          onChange={(updated) =>
+            setState((prev) => (prev.status === "loaded" ? { ...prev, skill: updated } : prev))
+          }
+        />
+
+        <section className="rounded-lg border border-not-verified/40 bg-surface p-5">
+          <h2 className="font-display text-lg text-not-verified">Danger zone</h2>
+          <p className="mt-0.5 text-sm text-ink-soft">These change or remove the skill itself.</p>
+          <div className="mt-4 flex flex-col gap-6">
+            <MergeSkillControl
+              skill={skill}
+              skills={state.skills}
               busy={busy}
-              onAdd={(title, url) => handleAddResource(entry.mode, title, url)}
-              onRemove={handleRemoveResource}
+              onMerged={(target) => router.push(`/skills/${target.id}`)}
             />
-          ))}
-        </div>
-      </section>
-
-      <MergeSkillControl
-        skill={skill}
-        skills={state.skills}
-        busy={busy}
-        onMerged={(target) => router.push(`/skills/${target.id}`)}
-      />
-
-      <section className="mt-12 border-t border-line pt-6">
-        <h2 className="font-display text-lg text-ink">Delete this skill</h2>
-        <p className="mt-1 text-sm text-ink-soft">
-          Only possible while nothing uses it: no claim, no job requirements, not marked on
-          your CV, no saved links, no learning progress. Its nicknames are deleted with it.
-        </p>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={handleDeleteSkill}
-          className="mt-3 rounded border border-not-verified px-3 py-1.5 text-sm text-not-verified disabled:opacity-50"
-        >
-          Delete skill
-        </button>
-        {deleteError && <p className="mt-2 text-sm text-not-verified">{deleteError}</p>}
-      </section>
-    </main>
+            <div className="border-t border-line pt-5">
+              <h3 className="font-medium text-ink">Delete this skill</h3>
+              <p className="mt-1 text-sm text-ink-soft">
+                Only possible while nothing uses it: no claim, no job requirements, not marked on
+                your CV, no saved links, no learning progress. Its nicknames are deleted with it.
+              </p>
+              <Button variant="danger" disabled={busy} onClick={handleDeleteSkill} className="mt-3">
+                Delete skill
+              </Button>
+              {deleteError && <p className="mt-2 text-sm text-not-verified">{deleteError}</p>}
+            </div>
+          </div>
+        </section>
+      </div>
+    </Page>
   );
 }

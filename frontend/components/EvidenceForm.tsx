@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { Button, inputClasses } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { educationLabel, projectLabel, workLabel } from "@/lib/profile";
 import type { Education, Evidence, Project, WorkExperience } from "@/lib/types";
@@ -94,11 +95,14 @@ export default function EvidenceForm({
     }
   }
 
-  const input = "rounded border border-line bg-surface px-3 py-1.5 text-ink";
+  const input = inputClasses;
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-3 rounded border border-line p-4">
-      <h3 className="text-sm text-ink-soft">{heading}</h3>
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col gap-3 rounded-lg border border-line bg-ground/50 p-4"
+    >
+      <h3 className="font-medium text-ink">{heading}</h3>
       <label className="flex flex-col text-sm text-ink-soft">
         Type
         <select value={type} onChange={(e) => setType(e.target.value as EvidenceBody["evidence_type"])} className={input}>
@@ -169,18 +173,10 @@ export default function EvidenceForm({
         )}
       </label>
       <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded bg-accent px-4 py-1.5 text-sm text-surface disabled:opacity-50"
-        >
+        <Button type="submit" variant="primary" disabled={saving}>
           {saving ? "Saving…" : submitLabel}
-        </button>
-        {onCancel && (
-          <button type="button" onClick={onCancel} className="rounded border border-line px-4 py-1.5 text-sm text-ink">
-            Cancel
-          </button>
-        )}
+        </Button>
+        {onCancel && <Button onClick={onCancel}>Cancel</Button>}
       </div>
       {error && <p className="text-sm text-not-verified">{error}</p>}
     </form>

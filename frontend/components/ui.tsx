@@ -15,22 +15,56 @@ const VARIANT_CLASSES: Record<Variant, string> = {
   danger: "border border-not-verified bg-surface text-not-verified hover:bg-not-verified-bg",
 };
 
+type Size = "sm" | "md";
+
 const BASE_BUTTON =
-  "inline-flex items-center justify-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium " +
+  "inline-flex items-center justify-center gap-1 rounded-md font-medium " +
   "transition-colors disabled:cursor-not-allowed disabled:opacity-50";
 
-export function buttonClasses(variant: Variant = "plain", extra = ""): string {
-  return `${BASE_BUTTON} ${VARIANT_CLASSES[variant]} ${extra}`.trim();
+const SIZE_CLASSES: Record<Size, string> = {
+  sm: "px-2 py-0.5 text-xs",
+  md: "px-3 py-1.5 text-sm",
+};
+
+export function buttonClasses(variant: Variant = "plain", extra = "", size: Size = "md"): string {
+  return `${BASE_BUTTON} ${SIZE_CLASSES[size]} ${VARIANT_CLASSES[variant]} ${extra}`.trim();
 }
 
 export function Button({
   variant = "plain",
+  size = "md",
   className = "",
   type = "button",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
-  return <button type={type} className={buttonClasses(variant, className)} {...props} />;
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
+  return <button type={type} className={buttonClasses(variant, className, size)} {...props} />;
 }
+
+/** One option in a row of choices (status, progress): filled when selected. */
+export function Pill({
+  selected,
+  className = "",
+  type = "button",
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { selected: boolean }) {
+  return (
+    <button
+      type={type}
+      aria-pressed={selected}
+      className={`rounded-full border px-3 py-1 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+        selected
+          ? "border-accent bg-accent text-surface"
+          : "border-line bg-surface text-ink-soft hover:border-accent hover:text-ink"
+      } ${className}`.trim()}
+      {...props}
+    />
+  );
+}
+
+/** The standard text input / select / textarea look. */
+export const inputClasses =
+  "rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink " +
+  "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft";
 
 /** A link styled like a button (e.g. "Next step: …"). */
 export function ButtonLink({
