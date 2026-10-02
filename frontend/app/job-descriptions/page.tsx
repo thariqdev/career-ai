@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
+import { Button, ButtonLink, Card, EmptyState, Page, SectionHeading, inputClasses } from "@/components/ui";
 import type {
   ComparisonResult,
   ExtractionResponse,
@@ -35,38 +36,47 @@ function PastJobs({ reloadKey }: { reloadKey: number }) {
 
   return (
     <section className="mt-10">
-      <h2 className="font-display text-lg text-ink">Past job descriptions</h2>
-      {failed && <p className="mt-2 text-sm text-not-verified">Could not load past job descriptions.</p>}
-      {!failed && jobs === null && <p className="mt-2 text-sm text-ink-soft">Loading…</p>}
-      {jobs !== null && jobs.length === 0 && (
-        <p className="mt-2 text-sm text-ink-soft">None yet. Analyze one above.</p>
-      )}
-      {jobs !== null && jobs.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-2">
-          {jobs.map((job) => (
-            <li key={job.id} className="text-sm">
-              <Link href={`/job-descriptions/${job.id}`} className="text-ink underline">
-                {job.title ?? "Untitled job"}
-              </Link>
-              <span className="text-ink-soft">
-                {job.company ? ` · ${job.company}` : ""} · {new Date(job.created_at).toLocaleDateString()}
-                {" · "}
-                {job.requirements.length} requirement{job.requirements.length === 1 ? "" : "s"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <SectionHeading title="Past job descriptions" hint="Newest first. Open one to revisit or compare again." />
+      <div className="mt-3">
+        {failed && <p className="text-sm text-not-verified">Could not load past job descriptions.</p>}
+        {!failed && jobs === null && <p className="text-sm text-ink-soft">Loading…</p>}
+        {jobs !== null && jobs.length === 0 && <EmptyState>None yet. Analyze one above.</EmptyState>}
+        {jobs !== null && jobs.length > 0 && (
+          <ul className="flex flex-col gap-2">
+            {jobs.map((job) => (
+              <li key={job.id}>
+                <Link
+                  href={`/job-descriptions/${job.id}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm shadow-sm transition-colors hover:border-accent"
+                >
+                  <span>
+                    <span className="font-medium text-ink">{job.title ?? "Untitled job"}</span>
+                    <span className="text-ink-soft">
+                      {job.company ? ` · ${job.company}` : ""} · {new Date(job.created_at).toLocaleDateString()}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-3 text-ink-soft">
+                    {job.requirements.length} requirement{job.requirements.length === 1 ? "" : "s"}
+                    <span className="text-accent">Open →</span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }
 
 const STAGE_LABEL: Record<Stage, string> = {
-  creating: "Creating…",
-  extracting: "Extracting…",
-  comparing: "Comparing…",
-  "loading-gaps": "Loading gaps…",
+  creating: "Saving the posting",
+  extracting: "Reading requirements",
+  comparing: "Comparing with your proof",
+  "loading-gaps": "Finding gaps",
 };
+
+const STAGES: Stage[] = ["creating", "extracting", "comparing", "loading-gaps"];
 
 type PageState =
   | { status: "form" }
@@ -133,88 +143,110 @@ export default function JobDescriptionsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
-      <h1 className="font-display text-2xl text-ink">Job Descriptions</h1>
+    <Page title="Job Descriptions">
+      <p className="mt-1 text-sm text-ink-soft">
+        Paste a job posting to see which requirements you can prove and where the gaps are.
+      </p>
 
       {(state.status === "form" || state.status === "error") && (
-        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
-          <label className="flex flex-col text-sm text-ink-soft">
-            Job posting text
-            <textarea
-              value={rawText}
-              onChange={(e) => setRawText(e.target.value)}
-              required
-              rows={8}
-              className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
-            />
-          </label>
-          <div className="flex flex-wrap gap-3">
-            <label className="flex flex-col text-sm text-ink-soft">
-              Title (optional)
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
+        <Card className="mt-6">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            <label className="flex flex-col gap-1 text-sm text-ink-soft">
+              Job posting text
+              <textarea
+                value={rawText}
+                onChange={(e) => setRawText(e.target.value)}
+                required
+                rows={8}
+                placeholder="Paste the full posting here…"
+                className={inputClasses}
               />
             </label>
-            <label className="flex flex-col text-sm text-ink-soft">
-              Company (optional)
-              <input
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
-              />
-            </label>
-            <label className="flex flex-col text-sm text-ink-soft">
-              Source URL (optional)
-              <input
-                value={sourceUrl}
-                onChange={(e) => setSourceUrl(e.target.value)}
-                className="rounded border border-line bg-surface px-3 py-1.5 text-ink"
-              />
-            </label>
-          </div>
-          <button
-            type="submit"
-            className="self-start rounded bg-accent px-4 py-1.5 text-sm text-surface"
-          >
-            Analyze
-          </button>
-        </form>
-      )}
-
-      {state.status === "error" && (
-        <p className="mt-2 text-sm text-not-verified">Error: {state.message}</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex flex-col gap-1 text-sm text-ink-soft">
+                Title (optional)
+                <input value={title} onChange={(e) => setTitle(e.target.value)} className={inputClasses} />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ink-soft">
+                Company (optional)
+                <input value={company} onChange={(e) => setCompany(e.target.value)} className={inputClasses} />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-ink-soft">
+                Source URL (optional)
+                <input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} className={inputClasses} />
+              </label>
+            </div>
+            <Button type="submit" variant="primary" className="self-start">
+              Analyze
+            </Button>
+          </form>
+          {state.status === "error" && (
+            <p className="mt-3 text-sm text-not-verified">Error: {state.message}</p>
+          )}
+        </Card>
       )}
 
       {state.status === "running" && (
-        <p className="mt-6 text-ink-soft">{STAGE_LABEL[state.stage]}</p>
+        <Card className="mt-6">
+          <ol className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
+            {STAGES.map((stage, index) => {
+              const current = STAGES.indexOf(state.stage);
+              return (
+                <li
+                  key={stage}
+                  className={
+                    index < current
+                      ? "text-verified"
+                      : index === current
+                        ? "font-medium text-accent"
+                        : "text-ink-soft"
+                  }
+                >
+                  {index < current ? "✓ " : index === current ? "→ " : ""}
+                  {STAGE_LABEL[stage]}
+                </li>
+              );
+            })}
+          </ol>
+        </Card>
       )}
 
       {state.status === "done" && (
-        <div className="mt-8">
-          {state.extraction.note && (
-            <p className="mb-3 text-sm text-ink-soft">{state.extraction.note}</p>
-          )}
+        <Card className="mt-6">
+          <SectionHeading
+            title={state.jobDescription.title ?? "Untitled job"}
+            hint={state.jobDescription.company ?? undefined}
+            actions={
+              <ButtonLink href={`/job-descriptions/${state.jobDescription.id}`} variant="primary">
+                Open this job&apos;s page →
+              </ButtonLink>
+            }
+          />
+          {state.extraction.note && <p className="mt-3 text-sm text-ink-soft">{state.extraction.note}</p>}
           {state.extraction.accepted.length === 0 ? (
-            <p className="text-ink-soft">
-              None of your saved skills appear in this posting. Requirements are found by
-              matching the skills (and aliases) you&apos;ve added on the{" "}
-              <Link href="/skills" className="underline">
-                Skills
-              </Link>{" "}
-              page — add the ones this job mentions, then analyze it again.
-            </p>
+            <div className="mt-4">
+              <EmptyState>
+                None of your saved skills appear in this posting. Requirements are found by
+                matching the skills (and aliases) you&apos;ve added on the{" "}
+                <Link href="/skills" className="underline">
+                  Skills
+                </Link>{" "}
+                page — add the ones this job mentions, then analyze it again.
+              </EmptyState>
+            </div>
           ) : (
             <>
-              <h2 className="font-display text-lg text-ink">Requirements</h2>
-              <ul className="mt-3 flex flex-col gap-2">
+              <h3 className="mt-5 font-medium text-ink">Requirements</h3>
+              <ul className="mt-2 flex flex-col gap-2">
                 {state.extraction.accepted.map((requirement) => {
                   const comparison = state.comparisons.find(
                     (c) => c.job_requirement_id === requirement.id,
                   );
                   return (
-                    <li key={requirement.id} className="flex items-center gap-3 text-sm text-ink">
+                    <li
+                      key={requirement.id}
+                      className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2 text-sm text-ink"
+                    >
                       <span>{requirement.requirement_text}</span>
                       <StatusBadge status={comparison?.knowledge_status ?? null} />
                     </li>
@@ -222,27 +254,18 @@ export default function JobDescriptionsPage() {
                 })}
               </ul>
 
-              <h2 className="mt-6 font-display text-lg text-ink">Gaps</h2>
+              <h3 className="mt-6 font-medium text-ink">Gaps</h3>
               <GapList gaps={state.gaps} />
             </>
           )}
 
-          <div className="mt-6 flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded border border-line px-4 py-1.5 text-sm text-ink"
-            >
-              Analyze another job description
-            </button>
-            <Link href={`/job-descriptions/${state.jobDescription.id}`} className="text-sm underline">
-              Open this job&apos;s page
-            </Link>
+          <div className="mt-6 border-t border-line pt-4">
+            <Button onClick={resetForm}>Analyze another job description</Button>
           </div>
-        </div>
+        </Card>
       )}
 
       <PastJobs reloadKey={pastReloadKey} />
-    </main>
+    </Page>
   );
 }

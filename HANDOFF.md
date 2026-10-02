@@ -1812,6 +1812,38 @@ Added 2026-10-02. This is looks-only: every handler, message, confirm dialog and
   2. Skills list
   3. CV and Profile
 
+### Visual design pass, slice 3: the job pages
+
+Added 2026-10-02. This is looks-only: all handlers, confirms, messages and fetches are unchanged, and eslint shows nothing unused.
+
+- **`/job-descriptions`:**
+  - Wrapped in `Page` with a one-line intro.
+  - **The paste form is a Card:** `inputClasses` fields, a 3-column grid for title, company and URL on wider screens, and a primary Analyze button. Errors show inside the card.
+  - **While running**, a Card shows the four stages (`STAGES` array) as a checklist with ✓, → and pending marks. The friendlier `STAGE_LABEL` text is "Saving the posting", "Reading requirements", "Comparing with your proof" and "Finding gaps".
+  - **The result** is a Card with the job title, an "Open this job's page →" primary button, requirement rows with badges, then `GapList` and "Analyze another".
+  - **`PastJobs`:** each job is a full-width clickable card row (title, company, date, requirement count, "Open →").
+- **`/job-descriptions/[id]`:** in order:
+  1. a back link
+  2. a header Card (3xl title, meta line, primary "Interview prep →")
+  3. **Requirements** Card
+  4. Gaps Card
+  5. the original posting in a `<details>` Card
+  6. a red-bordered **Danger zone** for Delete job (still `print:hidden`)
+
+  The Requirements Card's `SectionHeading` puts "Last compared …" and "Read with …" in the hint, with **Look for new skills** and **Compare again** as actions. `lookMessage` shows in an accent-tinted box. Requirement rows are bordered, with a small Remove button. "Removed from this job" is a tinted strip of chips.
+- **`/job-descriptions/[id]/prep`:**
+  - `Page` and a 3xl title, a `Button` for Print, and an `EmptyState`.
+  - `PrepCard` is a white shadowed card (`print:shadow-none`, still `break-inside-avoid`) with a "required" or "nice to have" chip.
+  - Print still hides the header, the back/print row and the study links.
+- **Shared components:**
+  - **`GapList`:** each gap is a bordered row with a bold requirement. "No gaps" is a green-tinted note. This also affects the Dashboard's recent comparison, consistently.
+  - **`NotInSkillsYet`:** a warm-tinted box with rounded chips.
+- **Verified:**
+  - Build is clean, and eslint reports 0. Backend: **432 passed**, untouched.
+  - **Smoke test:** a production build on a temporary :3011 returned 200 for all pages, including `/job-descriptions/1` and `/job-descriptions/1/prep`.
+  - **Visual and print judgment is the user's.**
+- **Last slice:** Skills list, CV and Profile.
+
 ---
 
 ## 8. What Is Already Working

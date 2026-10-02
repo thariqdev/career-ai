@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { apiGet, ApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
+import { Button, EmptyState, Page } from "@/components/ui";
 import { MODE_LABEL } from "@/lib/learning";
 import { isWebLink } from "@/lib/links";
 import type { InterviewPrep, InterviewPrepItem } from "@/lib/types";
@@ -19,10 +20,10 @@ const PROVEN = new Set(["verified", "partial"]);
 
 function PrepCard({ item }: { item: InterviewPrepItem }) {
   return (
-    <li className="break-inside-avoid rounded border border-line p-4">
+    <li className="break-inside-avoid rounded-lg border border-line bg-surface p-5 shadow-sm print:shadow-none">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-ink">{item.requirement_text}</span>
-        <span className="text-xs text-ink-soft">
+        <span className="font-medium text-ink">{item.requirement_text}</span>
+        <span className="rounded bg-ground px-1.5 py-0.5 text-xs text-ink-soft">
           {item.is_required ? "required" : "nice to have"}
         </span>
         {item.status === "unmapped" ? (
@@ -101,36 +102,30 @@ export default function InterviewPrepPage() {
 
   if (state.status === "loading") {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <Page>
         <p className="text-ink-soft">Loading…</p>
-      </main>
+      </Page>
     );
   }
   if (state.status === "error") {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <Page>
         <p className="text-not-verified">Error: {state.message}</p>
-      </main>
+      </Page>
     );
   }
 
   const { prep } = state;
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
+    <Page>
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Link href={`/job-descriptions/${jobId}`} className="text-sm text-ink-soft underline">
+        <Link href={`/job-descriptions/${jobId}`} className="text-sm text-ink-soft hover:text-ink">
           ← Back to the job
         </Link>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="rounded border border-line px-3 py-1.5 text-sm text-ink"
-        >
-          Print
-        </button>
+        <Button onClick={() => window.print()}>Print</Button>
       </div>
 
-      <h1 className="mt-2 font-display text-2xl text-ink">
+      <h1 className="mt-3 font-display text-3xl text-ink">
         Interview prep: {prep.title ?? "Untitled job"}
         {prep.company ? ` at ${prep.company}` : ""}
       </h1>
@@ -141,10 +136,12 @@ export default function InterviewPrepPage() {
       </p>
 
       {prep.items.length === 0 ? (
-        <p className="mt-6 text-sm text-ink-soft">
-          This job has no requirements yet, so there&apos;s nothing to prepare. Use &ldquo;Look
-          for new skills&rdquo; on the job&apos;s page first.
-        </p>
+        <div className="mt-6">
+          <EmptyState>
+            This job has no requirements yet, so there&apos;s nothing to prepare. Use &ldquo;Look
+            for new skills&rdquo; on the job&apos;s page first.
+          </EmptyState>
+        </div>
       ) : (
         <ul className="mt-6 flex flex-col gap-3">
           {prep.items.map((item) => (
@@ -152,6 +149,6 @@ export default function InterviewPrepPage() {
           ))}
         </ul>
       )}
-    </main>
+    </Page>
   );
 }

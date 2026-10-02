@@ -7,6 +7,7 @@ import { apiDelete, apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import NotInSkillsYet from "@/components/NotInSkillsYet";
 import StatusBadge from "@/components/StatusBadge";
+import { Button, ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
 import { isWebLink } from "@/lib/links";
 import type {
   ComparisonResult,
@@ -205,20 +206,20 @@ export default function JobDescriptionPage() {
 
   if (state.status === "loading") {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <Page>
         <p className="text-ink-soft">Loading…</p>
-      </main>
+      </Page>
     );
   }
 
   if (state.status === "error") {
     return (
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <Page>
         <p className="text-not-verified">Error: {state.message}</p>
         <Link href="/job-descriptions" className="mt-2 inline-block text-sm underline">
           Back to job descriptions
         </Link>
-      </main>
+      </Page>
     );
   }
 
@@ -235,170 +236,183 @@ export default function JobDescriptionPage() {
   );
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
-      <Link href="/job-descriptions" className="text-sm text-ink-soft underline">
+    <Page>
+      <Link href="/job-descriptions" className="text-sm text-ink-soft hover:text-ink">
         ← All job descriptions
       </Link>
-      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
-        <h1 className="font-display text-2xl text-ink">{job.title ?? "Untitled job"}</h1>
-        <Link
-          href={`/job-descriptions/${jobId}/prep`}
-          className="rounded bg-accent px-3 py-1.5 text-sm text-surface"
-        >
-          Interview prep →
-        </Link>
-      </div>
-      <p className="mt-1 text-sm text-ink-soft">
-        {job.company ?? "No company"} · added {new Date(job.created_at).toLocaleDateString()}
-        {job.source_url &&
-          (isWebLink(job.source_url) ? (
-            <>
-              {" · "}
-              <a
-                href={job.source_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-              >
-                original posting
-              </a>
-            </>
-          ) : (
-            ` · ${job.source_url}`
-          ))}
-      </p>
 
-      <section className="mt-8">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-display text-lg text-ink">Requirements</h2>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={handleLookForNew}
-              disabled={comparing}
-              title="Re-read this posting for skills you've saved since it was analyzed"
-              className="rounded border border-line px-3 py-1.5 text-sm text-ink disabled:opacity-50"
-            >
-              Look for new skills
-            </button>
-            {job.requirements.length > 0 && (
-              <button
-                type="button"
-                onClick={handleCompareAgain}
-                disabled={comparing}
-                className="rounded bg-accent px-3 py-1.5 text-sm text-surface disabled:opacity-50"
-              >
-                {comparing ? "Working…" : "Compare again"}
-              </button>
-            )}
+      <div className="mt-3 flex flex-col gap-6">
+        <Card>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="font-display text-3xl text-ink">{job.title ?? "Untitled job"}</h1>
+              <p className="mt-1 text-sm text-ink-soft">
+                {job.company ?? "No company"} · added {new Date(job.created_at).toLocaleDateString()}
+                {job.source_url &&
+                  (isWebLink(job.source_url) ? (
+                    <>
+                      {" · "}
+                      <a
+                        href={job.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline"
+                      >
+                        original posting
+                      </a>
+                    </>
+                  ) : (
+                    ` · ${job.source_url}`
+                  ))}
+              </p>
+            </div>
+            <ButtonLink href={`/job-descriptions/${jobId}/prep`} variant="primary">
+              Interview prep →
+            </ButtonLink>
           </div>
-        </div>
-        <p className="mt-1 text-xs text-ink-soft">Read with {readerLabel(reader)}.</p>
-        <p className="mt-1 text-sm text-ink-soft">
-          {lastCompared
-            ? `Last compared ${new Date(lastCompared).toLocaleString()}. Proved a skill since? Compare again to update.`
-            : "Not compared yet."}
-        </p>
-        {compareError && <p className="mt-2 text-sm text-not-verified">{compareError}</p>}
-        {lookMessage && <p className="mt-2 text-sm text-ink">{lookMessage}</p>}
+        </Card>
 
-        {job.requirements.length === 0 ? (
-          <p className="mt-3 text-sm text-ink-soft">
-            No requirements yet. They come from skills (and nicknames) you&apos;ve saved on the{" "}
-            <Link href="/skills" className="underline">
-              Skills
-            </Link>{" "}
-            page. Save the ones this posting mentions, then click &ldquo;Look for new skills&rdquo;.
-          </p>
-        ) : (
-          <ul className="mt-3 flex flex-col gap-2">
-            {job.requirements.map((requirement) => {
-              const result = resultByRequirement.get(requirement.id);
-              return (
-                <li key={requirement.id} className="flex flex-wrap items-center gap-3 text-sm text-ink">
-                  <span>{requirement.requirement_text}</span>
-                  {result ? (
-                    <StatusBadge status={result.knowledge_status} />
-                  ) : (
-                    <span className="text-xs text-ink-soft">not compared yet</span>
-                  )}
-                  {requirement.skill_id !== null ? (
-                    <Link href={`/skills/${requirement.skill_id}`} className="text-ink-soft underline">
-                      {requirement.skill_name}
-                    </Link>
-                  ) : (
-                    <span className="text-ink-soft">not mapped to a skill</span>
-                  )}
+        <Card>
+          <SectionHeading
+            title="Requirements"
+            hint={
+              <>
+                {lastCompared
+                  ? `Last compared ${new Date(lastCompared).toLocaleString()}. Proved a skill since? Compare again to update.`
+                  : "Not compared yet."}
+                <span className="block text-xs">Read with {readerLabel(reader)}.</span>
+              </>
+            }
+            actions={
+              <>
+                <Button
+                  onClick={handleLookForNew}
+                  disabled={comparing}
+                  title="Re-read this posting for skills you've saved since it was analyzed"
+                >
+                  Look for new skills
+                </Button>
+                {job.requirements.length > 0 && (
+                  <Button variant="primary" onClick={handleCompareAgain} disabled={comparing}>
+                    {comparing ? "Working…" : "Compare again"}
+                  </Button>
+                )}
+              </>
+            }
+          />
+          {compareError && <p className="mt-3 text-sm text-not-verified">{compareError}</p>}
+          {lookMessage && (
+            <p className="mt-3 rounded-md bg-accent-soft px-3 py-2 text-sm text-ink">{lookMessage}</p>
+          )}
+
+          {job.requirements.length === 0 ? (
+            <div className="mt-4">
+              <EmptyState>
+                No requirements yet. They come from skills (and nicknames) you&apos;ve saved on the{" "}
+                <Link href="/skills" className="underline">
+                  Skills
+                </Link>{" "}
+                page. Save the ones this posting mentions, then click &ldquo;Look for new skills&rdquo;.
+              </EmptyState>
+            </div>
+          ) : (
+            <ul className="mt-4 flex flex-col gap-2">
+              {job.requirements.map((requirement) => {
+                const result = resultByRequirement.get(requirement.id);
+                return (
+                  <li
+                    key={requirement.id}
+                    className="flex flex-wrap items-center gap-3 rounded-md border border-line px-3 py-2 text-sm text-ink"
+                  >
+                    <span className="font-medium">{requirement.requirement_text}</span>
+                    {result ? (
+                      <StatusBadge status={result.knowledge_status} />
+                    ) : (
+                      <span className="text-xs text-ink-soft">not compared yet</span>
+                    )}
+                    {requirement.skill_id !== null ? (
+                      <Link href={`/skills/${requirement.skill_id}`} className="text-ink-soft underline">
+                        {requirement.skill_name}
+                      </Link>
+                    ) : (
+                      <span className="text-ink-soft">not mapped to a skill</span>
+                    )}
+                    <Button
+                      size="sm"
+                      disabled={comparing}
+                      className="ml-auto"
+                      onClick={() =>
+                        handleRemoveRequirement(
+                          requirement.id,
+                          requirement.skill_name ?? requirement.requirement_text,
+                        )
+                      }
+                    >
+                      Remove
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          <NotInSkillsYet requirements={skillless} busy={comparing} onAdd={handleAddSkill} />
+
+          {dismissed.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-ground/60 px-4 py-3 text-sm text-ink-soft">
+              <span>Removed from this job:</span>
+              {dismissed.map((skill) => (
+                <span
+                  key={skill.id}
+                  className="flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-0.5 text-ink"
+                >
+                  {skill.name}
                   <button
                     type="button"
                     disabled={comparing}
-                    onClick={() =>
-                      handleRemoveRequirement(
-                        requirement.id,
-                        requirement.skill_name ?? requirement.requirement_text,
-                      )
-                    }
-                    className="ml-auto rounded border border-line px-2 py-0.5 text-xs text-ink-soft disabled:opacity-50"
+                    onClick={() => handleAllowAgain(skill)}
+                    className="text-xs text-accent underline disabled:opacity-50"
                   >
-                    Remove
+                    Allow again
                   </button>
-                </li>
-              );
-            })}
-          </ul>
+                </span>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {job.requirements.length > 0 && (
+          <Card>
+            <SectionHeading
+              title="Gaps"
+              hint="Requirements you can't fully prove yet, with CV status and ways to learn."
+            />
+            <GapList gaps={gaps} />
+          </Card>
         )}
 
-        <NotInSkillsYet requirements={skillless} busy={comparing} onAdd={handleAddSkill} />
+        <Card>
+          <details>
+            <summary className="cursor-pointer text-sm font-medium text-ink">Original posting text</summary>
+            <p className="mt-3 whitespace-pre-wrap rounded-md bg-ground/60 p-3 text-sm text-ink">
+              {job.raw_text}
+            </p>
+          </details>
+        </Card>
 
-        {dismissed.length > 0 && (
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-sm text-ink-soft">
-            <span>Removed from this job:</span>
-            {dismissed.map((skill) => (
-              <span key={skill.id} className="flex items-center gap-1 rounded border border-line px-2 py-0.5">
-                {skill.name}
-                <button
-                  type="button"
-                  disabled={comparing}
-                  onClick={() => handleAllowAgain(skill)}
-                  className="text-xs text-ink underline disabled:opacity-50"
-                >
-                  Allow again
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {job.requirements.length > 0 && (
-        <section className="mt-8">
-          <h2 className="font-display text-lg text-ink">Gaps</h2>
-          <GapList gaps={gaps} />
+        <section className="rounded-lg border border-not-verified/40 bg-surface p-5 print:hidden">
+          <h2 className="font-display text-lg text-not-verified">Danger zone</h2>
+          <h3 className="mt-3 font-medium text-ink">Delete this job</h3>
+          <p className="mt-1 text-sm text-ink-soft">
+            Removes the job with its requirements and comparison history. Your skills, claims,
+            evidence and CV marks stay exactly as they are.
+          </p>
+          <Button variant="danger" onClick={handleDelete} className="mt-3">
+            Delete job
+          </Button>
+          {deleteError && <p className="mt-2 text-sm text-not-verified">{deleteError}</p>}
         </section>
-      )}
-
-      <details className="mt-8">
-        <summary className="cursor-pointer text-sm text-ink-soft">Original posting text</summary>
-        <p className="mt-2 whitespace-pre-wrap rounded border border-line bg-surface p-3 text-sm text-ink">
-          {job.raw_text}
-        </p>
-      </details>
-
-      <section className="mt-12 border-t border-line pt-6 print:hidden">
-        <h2 className="font-display text-lg text-ink">Delete this job</h2>
-        <p className="mt-1 text-sm text-ink-soft">
-          Removes the job with its requirements and comparison history. Your skills, claims,
-          evidence and CV marks stay exactly as they are.
-        </p>
-        <button
-          type="button"
-          onClick={handleDelete}
-          className="mt-3 rounded border border-not-verified px-3 py-1.5 text-sm text-not-verified"
-        >
-          Delete job
-        </button>
-        {deleteError && <p className="mt-2 text-sm text-not-verified">{deleteError}</p>}
-      </section>
-    </main>
+      </div>
+    </Page>
   );
 }

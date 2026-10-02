@@ -39,13 +39,13 @@ export default function NotInSkillsYet({
   if (requirements.length === 0) return null;
 
   return (
-    <div className="mt-4 rounded border border-line px-3 py-2 text-sm">
+    <div className="mt-4 rounded-lg border border-warm/40 bg-warm-soft/50 px-4 py-3 text-sm">
       <p className="text-ink">Mentioned in this posting, not in your skills yet:</p>
       <ul className="mt-2 flex flex-wrap gap-2">
         {requirements.map((requirement) => (
           <li
             key={requirement.id}
-            className="flex items-center gap-2 rounded border border-line px-2 py-0.5 text-ink"
+            className="flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-0.5 text-ink"
           >
             {requirement.requirement_text}
             <button

@@ -22,7 +22,11 @@ export default function GapList({ gaps }: { gaps: Gap[] }) {
   const cvStatuses = useCvStatuses();
 
   if (gaps.length === 0) {
-    return <p className="mt-2 text-ink-soft">No gaps — every requirement is verified.</p>;
+    return (
+      <p className="mt-3 rounded-md bg-verified-bg px-3 py-2 text-sm text-verified">
+        No gaps — every requirement is verified.
+      </p>
+    );
   }
 
   return (
@@ -34,9 +38,12 @@ export default function GapList({ gaps }: { gaps: Gap[] }) {
         const cv = skillId === null ? undefined : cvStatuses[skillId];
         const cvStatus = cv?.cv_status ?? "not_present";
         return (
-          <li key={gap.requirement.id} className="flex flex-col gap-1 text-sm text-ink">
+          <li
+            key={gap.requirement.id}
+            className="flex flex-col gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-ink"
+          >
             <span className="flex flex-wrap items-center gap-3">
-              <span>{gap.requirement.requirement_text}</span>
+              <span className="font-medium">{gap.requirement.requirement_text}</span>
               <StatusBadge status={gap.result.knowledge_status} />
               {skillId !== null && (
                 <span className={`rounded px-2 py-0.5 font-mono text-xs ${cvBadgeClasses(cvStatus)}`}>
