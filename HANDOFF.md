@@ -171,6 +171,7 @@ career-ai/
     │   │   │   ├── job_description_service.py ← delete_job_description(), delete_requirement() (each with its own history only)
     │   │   │   ├── learning_path_service.py ← learning_paths() (4 steps, done/current/todo, read-only)
     │   │   │   ├── export_service.py ← export_all() (read-only backup of one user's data + shared taxonomy)
+    │   │   │   ├── import_service.py ← parse()/check()/preview()/restore() (restore a v1 export into an EMPTY app)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
     │   ├── db/
@@ -237,6 +238,7 @@ career-ai/
         ├── test_requirement_delete_api.py
         ├── test_ollama_extractor.py
         ├── test_export_api.py
+        ├── test_import_api.py
         └── conftest.py   ← autouse: unsets OLLAMA_MODEL/OLLAMA_BASE_URL for every test
 ```
 
@@ -1908,9 +1910,70 @@ Added 2026-10-02. All user-entered data lives only in local PostgreSQL. This giv
     - All table counts were unchanged afterwards.
     - The file was saved only to the session scratchpad (2.4 KB).
 - **Not done:**
-  - import/restore (writes data; needs its own design)
+  - import/restore (writes data; needs its own design; done in task 57)
   - CSV or PDF
   - scheduled backups
+
+### Restore from backup (import)
+
+Added 2026-10-02.
+
+**Key decision: restore only into an empty app.** That means no skills at all and none of the user's claims, evidence, profile, jobs, CV marks or progress (`app_is_empty`). Merging would mean guessing which "Python" or which claim status wins.
+
+- **`import_service`, three phases:**
+  1. **`parse(raw)`:**
+     - a 5 MB cap (`MAX_IMPORT_BYTES`)
+     - UTF-8 JSON
+     - `app == "Career AI"` and `format_version == 1`
+     - strict Pydantic models mirroring export v1 (`extra="forbid"`, so unknown fields are refused, and enums, dates and datetimes are typed)
+  2. **`check(file)`** collects **all** problems:
+     - duplicate ids per section
+     - names and nicknames unique and non-blank in one namespace (`normalize_text`)
+     - every cross-reference inside the file: claim→skill/evidence, evidence→project/work/education, requirement→its own job and skill, result→a requirement of the same job, a claim, cited evidence, and removed skills
+     - **VERIFIED/PARTIAL claims need ≥1 evidence id**
+     - one claim per skill
+     - evidence has at most one source
+     - http(s) links for evidence, projects and saved links (`require_web_link`)
+     - required text present
+     - end dates not before start dates
+     - one CV mark and one progress row per skill
+     - no duplicate saved links
+  3. **`restore(db, user, raw)`:**
+     - parse, then check, raising `ImportFileError` (422) with up to 20 problems, then `AppNotEmptyError` (409)
+     - it inserts in foreign-key order with **new ids**, and every link is remapped through old→new maps (the file's ids are never reused)
+     - values, **including timestamps**, are restored exactly
+     - flush only; the route commits once, so it's all or nothing
+- **`preview(db, user, raw)`** returns `counts`, `problems` and `app_empty`, and never writes.
+- **API** (`app/api/import_backup.py`, multipart `file`, reads at most the cap + 1 bytes):
+  - `POST /import/preview` returns `{counts, problems, app_empty}`
+  - `POST /import` returns `{counts}`, or 422/409
+- **Frontend:** new `components/RestoreFromBackup.tsx` on My Profile, under Download my data:
+  1. choose a file, which runs the preview automatically
+  2. see count chips, plus a red problem list or a warm "this app already has data" note
+  3. Restore, enabled only when valid and the app is empty, with a confirm
+  4. "✓ Restored" with the counts and a Dashboard link
+- **Verified:**
+  - **Tests:** `tests/test_import_api.py` has 19, using two in-memory DBs:
+    - **round trip:** fill through the API, export, restore into the empty DB, export again. A resolver replaces every id with what it points at, and the two exports are identical, timestamps included.
+    - the restored app works: a compare runs, and the removed-requirement note still blocks re-adding
+    - restoring into a non-empty app gives 409, with row counts unchanged
+    - **11 bad-file cases** give 422 with nothing written: wrong version, not Career AI, a broken link, verified without evidence, two sources, a duplicate nickname, `javascript:` link, bad dates, a wrong enum, an unknown field, a missing skill
+    - not JSON, and oversized
+    - preview reports counts and writes nothing, lists every problem, and reports a non-empty app
+
+    Row-count comparisons exclude `users`, because `get_current_user` creates the built-in user on any request. Suite: **457 passed**.
+  - **Mutation check:** dropping the "verified needs evidence" rule made 2 tests fail. The file was restored byte-identical.
+  - Build is clean, and eslint reports 0.
+  - **Live check** on :8011 against the user's real database:
+    - The real export previewed clean (`problems: []`, `app_empty: false`).
+    - `POST /import` returned **409**, and a corrupted copy returned **422** ("Claim 1 links missing evidence 999").
+    - All table counts were unchanged.
+    - Separately, the real export was **restored into a throwaway in-memory SQLite** through the service: 4 skills, 1 nickname, 1 claim, 1 piece of evidence, 1 job, 3 requirements and 3 results came back, with the same names, status, evidence title and requirement texts.
+- **Not done:**
+  - merging into a non-empty app
+  - other format versions
+  - partial restore
+  - a "reset app" button (restore needs an empty app; emptying it stays a deliberate manual step)
 
 ---
 

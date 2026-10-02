@@ -166,6 +166,24 @@ class DismissalNotFoundError(DomainError):
         super().__init__(f"Skill {skill_id} isn't removed from this job.")
 
 
+class ImportFileError(DomainError):
+    """A backup file isn't a valid Career AI export, or breaks one of the app's rules."""
+
+    def __init__(self, problems: list[str]) -> None:
+        self.problems = problems
+        super().__init__("This backup can't be restored: " + " ".join(problems))
+
+
+class AppNotEmptyError(DomainError):
+    """Restoring is only allowed into an app with no skills and none of your data."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Restore only works on an empty app (no skills and none of your data yet), so "
+            "nothing you already have is overwritten or merged by guesswork."
+        )
+
+
 class AliasNotFoundError(DomainError):
     """The skill has no alias matching this text."""
 

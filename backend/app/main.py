@@ -6,6 +6,7 @@ from app.api import (
     evidence,
     export,
     health,
+    import_backup,
     job_descriptions,
     learning_path,
     learning_progress,
@@ -44,3 +45,4 @@ app.include_router(learning_path.router)
 app.include_router(cv.router)
 app.include_router(profile.router)
 app.include_router(export.router)
+app.include_router(import_backup.router)

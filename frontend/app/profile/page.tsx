@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import { Button, Card, EmptyState, Page, SectionHeading, inputClasses } from "@/components/ui";
 import DownloadMyData from "@/components/DownloadMyData";
+import RestoreFromBackup from "@/components/RestoreFromBackup";
 import { dateRange, educationLabel, projectLabel, workLabel } from "@/lib/profile";
 import type { Education, Project, WorkExperience } from "@/lib/types";
 
@@ -260,6 +261,7 @@ export default function ProfilePage() {
         />
 
         <DownloadMyData />
+        <RestoreFromBackup />
       </div>
     </Page>
   );
