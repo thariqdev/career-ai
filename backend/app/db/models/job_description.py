@@ -37,6 +37,8 @@ class JobDescription(Base):
     )
     applied_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     application_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The next interview (task 60): only while applied or interviewing; set by the user.
+    next_interview_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

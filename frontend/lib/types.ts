@@ -58,6 +58,7 @@ export type JobDescription = {
   application_status: ApplicationStatus;
   applied_on: string | null; // YYYY-MM-DD
   application_notes: string | null;
+  next_interview_at: string | null; // ISO time (stored as UTC)
   requirements: JobRequirement[];
 };
 

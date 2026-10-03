@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { apiPatch, ApiError } from "@/lib/api";
 import { APPLICATION_LABEL, APPLICATION_STATUSES, localToday } from "@/lib/applications";
+import { fromLocalInput, toLocalInput } from "@/lib/interviews";
 import { Button, Pill, inputClasses } from "@/components/ui";
 import type { ApplicationStatus, JobDescription } from "@/lib/types";
 
@@ -21,6 +22,8 @@ export default function ApplicationEditor({
   const [status, setStatus] = useState<ApplicationStatus>(job.application_status);
   const [appliedOn, setAppliedOn] = useState(job.applied_on ?? "");
   const [notes, setNotes] = useState(job.application_notes ?? "");
+  const [interview, setInterview] = useState(toLocalInput(job.next_interview_at));
+  const canInterview = status === "applied" || status === "interviewing";
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -31,13 +34,19 @@ export default function ApplicationEditor({
     setSaving(true);
     try {
       // An empty date is left out (not sent as null), so "applied" fills in today.
-      const body: Record<string, unknown> = { status, notes };
+      // The interview time goes as UTC; it's only kept while applied or interviewing.
+      const body: Record<string, unknown> = {
+        status,
+        notes,
+        next_interview_at: canInterview ? fromLocalInput(interview) : null,
+      };
       if (appliedOn !== "") body.applied_on = appliedOn;
       else if (status === "saved" || job.applied_on !== null) body.applied_on = null;
       const updated = await apiPatch<JobDescription>(`/job-descriptions/${job.id}/application`, body);
       setStatus(updated.application_status);
       setAppliedOn(updated.applied_on ?? "");
       setNotes(updated.application_notes ?? "");
+      setInterview(toLocalInput(updated.next_interview_at));
       setSaved(true);
       onSaved(updated);
     } catch (err) {
@@ -58,6 +67,7 @@ export default function ApplicationEditor({
               setStatus(option);
               setSaved(false);
               if (option === "saved") setAppliedOn("");
+              if (option !== "applied" && option !== "interviewing") setInterview("");
             }}
           >
             {APPLICATION_LABEL[option]}
@@ -78,6 +88,33 @@ export default function ApplicationEditor({
             }}
             className={`${inputClasses} disabled:opacity-50`}
           />
+        </label>
+        <label className="flex flex-col gap-1 text-sm text-ink-soft">
+          Next interview
+          <span className="flex gap-1">
+            <input
+              type="datetime-local"
+              value={interview}
+              disabled={!canInterview}
+              title={canInterview ? undefined : "Set the status to Applied or Interviewing first"}
+              onChange={(e) => {
+                setInterview(e.target.value);
+                setSaved(false);
+              }}
+              className={`${inputClasses} disabled:opacity-50`}
+            />
+            {interview !== "" && (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setInterview("");
+                  setSaved(false);
+                }}
+              >
+                Clear
+              </Button>
+            )}
+          </span>
         </label>
         <label className="flex min-w-[16rem] flex-1 flex-col gap-1 text-sm text-ink-soft">
           Note

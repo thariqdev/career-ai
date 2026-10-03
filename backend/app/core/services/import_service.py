@@ -22,7 +22,7 @@ leaves nothing behind.
 import json
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
@@ -165,6 +165,7 @@ class JobIn(_Strict):
     application_status: ApplicationStatus = ApplicationStatus.SAVED
     applied_on: date | None = None
     application_notes: str | None = None
+    next_interview_at: datetime | None = None  # added in task 60
     requirements: list[RequirementIn]
     comparison_results: list[ResultIn]
     removed_skill_ids: list[int]
@@ -338,6 +339,11 @@ def check(file: ExportFile) -> list[str]:
     for job in file.job_descriptions:
         if job.applied_on is not None and job.application_status == ApplicationStatus.SAVED:
             problems.append(f"Job {job.id} is saved (not applied to) but has an applied-on date.")
+        if job.next_interview_at is not None and job.application_status not in (
+            ApplicationStatus.APPLIED,
+            ApplicationStatus.INTERVIEWING,
+        ):
+            problems.append(f"Job {job.id} has an interview time but isn't applied or interviewing.")
         requirement_ids = {r.id for r in job.requirements}
         for requirement in job.requirements:
             if requirement.job_description_id != job.id:
@@ -401,6 +407,15 @@ def counts(file: ExportFile) -> dict[str, int]:
         "learning_progress": len(file.learning_progress),
         "learning_resources": len(file.learning_resources),
     }
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """A backup time as UTC (a time without an offset is read as UTC, as exported)."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def app_is_empty(db: Session, user: User) -> bool:
@@ -514,6 +529,7 @@ def restore(db: Session, user: User, raw: bytes) -> dict[str, int]:
                 raw_text=j.raw_text, created_at=j.created_at,
                 application_status=j.application_status, applied_on=j.applied_on,
                 application_notes=j.application_notes,
+                next_interview_at=_as_utc(j.next_interview_at),
             )
         )
         requirement = {

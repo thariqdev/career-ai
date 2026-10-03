@@ -69,6 +69,8 @@ class ApplicationUpdate(BaseModel):
     status: ApplicationStatus | None = None
     applied_on: date | None = None
     notes: str | None = None
+    # Must include a time zone (e.g. "2026-10-05T09:30:00Z"); null clears it.
+    next_interview_at: datetime | None = None
 
 
 class JobRequirementResponse(BaseModel):
@@ -116,6 +118,7 @@ class JobDescriptionResponse(BaseModel):
     application_status: ApplicationStatus
     applied_on: date | None
     application_notes: str | None
+    next_interview_at: datetime | None
     requirements: list[JobRequirementResponse]
 
 

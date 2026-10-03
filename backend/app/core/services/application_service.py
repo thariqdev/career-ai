@@ -6,13 +6,17 @@ apply; `notes: null` (or blank) clears the note. Rules, checked on the final sta
 - a job that is "saved" (not applied to) has no applied-on date: sending one with
   "saved" is refused, and moving back to "saved" clears it;
 - moving to "applied" without an applied-on date (and without sending one) records today,
-  since "I applied" happened now. Any other status never fills in a date by itself.
+  since "I applied" happened now. Any other status never fills in a date by itself;
+- a next-interview time is only kept while the job is "applied" or "interviewing":
+  sending one for any other status is refused, and moving to another status clears it.
+  It must include a time zone and is stored as UTC. Setting it never changes the status
+  by itself.
 
 Same conventions as the other services: plain functions taking a Session, no HTTP
 knowledge, flush but never commit.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -28,6 +32,23 @@ def update_application(
     today = today or date.today()
     status = changes.get("status") or job.application_status
     applied_on = changes["applied_on"] if "applied_on" in changes else job.applied_on
+    interview_at: datetime | None = (
+        changes["next_interview_at"] if "next_interview_at" in changes else job.next_interview_at
+    )
+    can_interview = status in (ApplicationStatus.APPLIED, ApplicationStatus.INTERVIEWING)
+
+    sent_interview = changes.get("next_interview_at")
+    if sent_interview is not None:
+        if sent_interview.tzinfo is None:
+            raise ApplicationDateError("The interview time needs a time zone.")
+        if not can_interview:
+            raise ApplicationDateError(
+                "An interview time can only be set while the job is \"applied\" or \"interviewing\"."
+            )
+        # Stored as UTC, so every database keeps the same moment (SQLite drops offsets).
+        interview_at = sent_interview.astimezone(timezone.utc)
+    if not can_interview:
+        interview_at = None
 
     if applied_on is not None and applied_on > today:
         raise ApplicationDateError("The applied-on date can't be in the future.")
@@ -50,5 +71,6 @@ def update_application(
         job.application_notes = note.strip() if note and note.strip() else None
     job.application_status = status
     job.applied_on = applied_on
+    job.next_interview_at = interview_at
     db.flush()
     return job

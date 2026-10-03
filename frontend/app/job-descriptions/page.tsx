@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
+import { shortDateTime } from "@/lib/interviews";
 import {
   ACTIVE_STATUSES,
   APPLICATION_CLASSES,
@@ -40,12 +41,18 @@ type FilterKey = keyof typeof FILTERS;
 function PastJobs({ reloadKey }: { reloadKey: number }) {
   const [jobs, setJobs] = useState<JobDescription[] | null>(null);
   const [failed, setFailed] = useState(false);
+  // When the list was loaded: "upcoming" is judged against this, not read during render.
+  const [loadedAt, setLoadedAt] = useState(0);
   const [filter, setFilter] = useState<FilterKey>("all");
 
   useEffect(() => {
     let active = true;
     apiGet<JobDescription[]>("/job-descriptions")
-      .then((list) => active && setJobs(list))
+      .then((list) => {
+        if (!active) return;
+        setJobs(list);
+        setLoadedAt(Date.now());
+      })
       .catch(() => active && setFailed(true));
     return () => {
       active = false;
@@ -90,6 +97,11 @@ function PastJobs({ reloadKey }: { reloadKey: number }) {
                       {APPLICATION_LABEL[job.application_status]}
                       {job.applied_on ? ` · ${job.applied_on}` : ""}
                     </span>
+                    {job.next_interview_at && new Date(job.next_interview_at).getTime() >= loadedAt && (
+                      <span className="text-xs text-accent" title="Next interview">
+                        📅 {shortDateTime(new Date(job.next_interview_at))}
+                      </span>
+                    )}
                     {job.requirements.length} requirement{job.requirements.length === 1 ? "" : "s"}
                     <span className="text-accent">Open →</span>
                   </span>

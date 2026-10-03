@@ -8,6 +8,7 @@ import LearnLinks from "@/components/LearnLinks";
 import { ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
 import { APPLICATION_CLASSES, APPLICATION_LABEL, APPLICATION_STATUSES } from "@/lib/applications";
 import { isOpen, rankSkillsToLearn, type SkillToLearn } from "@/lib/ranking";
+import { COMING_UP_DAYS, countdown, shortDateTime, upcomingInterviews } from "@/lib/interviews";
 import { PROGRESS_LABEL, useLearningResources } from "@/lib/learning";
 import type {
   CVStatusResponse,
@@ -26,6 +27,7 @@ const MAX_SKILLS_TO_LEARN = 8;
 
 type Loaded = {
   status: "loaded";
+  loadedAt: number; // when the data was fetched: the "now" for upcoming interviews
   verifiedCount: number;
   totalGaps: number;
   jobDescriptions: JobDescription[];
@@ -72,6 +74,7 @@ async function fetchDashboard(): Promise<Loaded> {
 
   return {
     status: "loaded",
+    loadedAt: Date.now(),
     verifiedCount: userSkills.filter((us) => us.status === "verified").length,
     // Only jobs still open (not offer/rejected/withdrawn) count as gaps to close.
     totalGaps: gapsPerJob.reduce(
@@ -164,6 +167,46 @@ function SkillsToLearn({
   );
 }
 
+// Interviews in the next two weeks, soonest first, each with its prep sheet. Hidden
+// when there are none. "Now" is when the Dashboard loaded (never read during render).
+function ComingUp({ jobs, loadedAt }: { jobs: JobDescription[]; loadedAt: number }) {
+  const now = new Date(loadedAt);
+  const upcoming = upcomingInterviews(jobs, now);
+  if (upcoming.length === 0) return null;
+  return (
+    <section className="mt-6">
+      <Card className="border-accent/40">
+        <SectionHeading title="Coming up" hint={`Interviews in the next ${COMING_UP_DAYS} days.`} />
+        <ul className="mt-3 flex flex-col gap-2">
+          {upcoming.map(({ job, at }) => (
+            <li
+              key={job.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-line px-3 py-2 text-sm"
+            >
+              <span>
+                <span className="mr-2 rounded bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">
+                  {countdown(at, now)}
+                </span>
+                <Link href={`/job-descriptions/${job.id}`} className="font-medium text-ink hover:underline">
+                  {job.title ?? "Untitled job"}
+                </Link>
+                {job.company && <span className="text-ink-soft"> · {job.company}</span>}
+                <span className="block text-xs text-ink-soft sm:inline">
+                  <span className="hidden sm:inline"> · </span>
+                  {shortDateTime(at)}
+                </span>
+              </span>
+              <ButtonLink href={`/job-descriptions/${job.id}/prep`} variant="primary">
+                Interview prep →
+              </ButtonLink>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    </section>
+  );
+}
+
 function StatTile({ value, label, href }: { value: number; label: string; href: string }) {
   return (
     <Link
@@ -233,6 +276,8 @@ export default function DashboardPage() {
           href="/job-descriptions"
         />
       </div>
+
+      <ComingUp jobs={state.jobDescriptions} loadedAt={state.loadedAt} />
 
       {state.jobDescriptions.some((j) => j.application_status !== "saved") && (
         <section className="mt-6">

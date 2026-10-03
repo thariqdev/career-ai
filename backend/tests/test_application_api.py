@@ -219,3 +219,125 @@ def test_a_backup_with_a_dated_saved_job_is_refused(client: TestClient) -> None:
     body = client.post("/import/preview", files=files).json()
 
     assert any("saved (not applied to) but has an applied-on date" in p for p in body["problems"])
+
+
+# --- next interview (task 60) -----------------------------------------------------------
+
+INTERVIEW = "2026-10-06T09:30:00+05:30"
+
+
+def _interview(body: dict) -> str | None:
+    # SQLite drops the offset when storing; compare the moment itself, as UTC.
+    value = body["next_interview_at"]
+    if value is None:
+        return None
+    from datetime import datetime, timezone
+
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
+INTERVIEW_UTC = "2026-10-06T04:00:00+00:00"
+
+
+def test_interview_time_is_set_changed_and_cleared(client: TestClient) -> None:
+    job_id = _job(client)
+    _patch(client, job_id, {"status": "applied"})
+
+    body = _patch(client, job_id, {"next_interview_at": INTERVIEW}).json()
+    assert _interview(body) == INTERVIEW_UTC
+
+    body = _patch(client, job_id, {"next_interview_at": "2026-10-07T10:00:00Z"}).json()
+    assert _interview(body) == "2026-10-07T10:00:00+00:00"
+
+    body = _patch(client, job_id, {"next_interview_at": None}).json()
+    assert body["next_interview_at"] is None
+
+
+def test_setting_an_interview_never_changes_the_status(client: TestClient) -> None:
+    job_id = _job(client)
+    _patch(client, job_id, {"status": "applied"})
+
+    body = _patch(client, job_id, {"next_interview_at": INTERVIEW}).json()
+
+    assert body["application_status"] == "applied"
+
+
+def test_other_fields_keep_the_interview(client: TestClient) -> None:
+    job_id = _job(client)
+    _patch(client, job_id, {"status": "applied", "next_interview_at": INTERVIEW})
+
+    body = _patch(client, job_id, {"status": "interviewing", "notes": "Round 2"}).json()
+
+    assert _interview(body) == INTERVIEW_UTC
+
+
+@pytest.mark.parametrize("status", ["saved", "offer", "rejected", "withdrawn"])
+def test_an_interview_on_a_saved_or_finished_job_is_refused(client: TestClient, status: str) -> None:
+    job_id = _job(client)
+
+    response = _patch(client, job_id, {"status": status, "next_interview_at": INTERVIEW})
+
+    assert response.status_code == 422
+    assert "applied" in response.json()["detail"]
+    assert client.get(f"/job-descriptions/{job_id}").json()["application_status"] == "saved"
+
+
+@pytest.mark.parametrize("status", ["saved", "offer", "rejected", "withdrawn"])
+def test_closing_or_unapplying_clears_the_interview(client: TestClient, status: str) -> None:
+    job_id = _job(client)
+    _patch(client, job_id, {"status": "interviewing", "next_interview_at": INTERVIEW})
+
+    body = _patch(client, job_id, {"status": status}).json()
+
+    assert body["next_interview_at"] is None
+
+
+def test_an_interview_time_without_a_time_zone_is_refused(client: TestClient) -> None:
+    job_id = _job(client)
+    _patch(client, job_id, {"status": "applied"})
+
+    response = _patch(client, job_id, {"next_interview_at": "2026-10-06T09:30:00"})
+
+    assert response.status_code == 422
+    assert "time zone" in response.json()["detail"]
+
+
+def test_backup_keeps_the_interview_and_older_files_restore(client: TestClient) -> None:
+    job_id = _job(client)
+    _patch(client, job_id, {"status": "interviewing", "next_interview_at": INTERVIEW})
+    backup = client.get("/export").json()
+    assert _interview(backup["job_descriptions"][0]) == INTERVIEW_UTC
+    older = json.loads(json.dumps(backup))
+    del older["job_descriptions"][0]["next_interview_at"]
+
+    for data, expected in ((backup, INTERVIEW_UTC), (older, None)):
+        empty = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        Base.metadata.create_all(empty)
+
+        def override_get_db() -> Iterator[Session]:
+            db = Session(empty, autoflush=False)
+            try:
+                yield db
+            finally:
+                db.close()
+
+        app.dependency_overrides[get_db] = override_get_db
+        files = {"file": ("backup.json", json.dumps(data).encode(), "application/json")}
+        assert client.post("/import", files=files).status_code == 200
+        [job] = client.get("/job-descriptions").json()
+        assert _interview(job) == expected
+        empty.dispose()
+
+
+def test_a_backup_with_an_interview_on_a_saved_job_is_flagged(client: TestClient) -> None:
+    _job(client)
+    backup = client.get("/export").json()
+    backup["job_descriptions"][0]["next_interview_at"] = INTERVIEW
+
+    files = {"file": ("backup.json", json.dumps(backup).encode(), "application/json")}
+    body = client.post("/import/preview", files=files).json()
+
+    assert any("interview time but isn't applied or interviewing" in p for p in body["problems"])
