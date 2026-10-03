@@ -2038,7 +2038,39 @@ Added 2026-10-02.
   - reminders
   - contacts
   - a status history
-  - ranking gaps by live applications
+  - ranking gaps by live applications (done in task 59)
+
+### Skills to learn, ranked by application status
+
+Added 2026-10-03. This is frontend only; the backend already sends `application_status` on every job.
+
+- **New `frontend/lib/ranking.ts`** is a pure function with **type-only imports**, so Node can load it directly.
+  - `ACTIVE_STATUSES` is applied and interviewing. `lib/applications.ts` now re-exports it from here, so there's one definition.
+  - `FINISHED_STATUSES` is offer, rejected and withdrawn. `isOpen(status)` means not finished.
+  - `rankSkillsToLearn(jobs: {status, gaps}[], limit)` **skips finished jobs** and counts each skill once per open job (`jobs`) and per active job (`activeJobs`). It sorts by **activeJobs desc, then jobs desc, then name**. Unmapped gaps are skipped.
+- **Dashboard (`app/page.tsx`):**
+  - The old inline `rankSkillsToLearn` is replaced by the lib function, fed `jobDescriptions[i].application_status` with `gapsPerJob[i]`.
+  - **"Open gaps (open jobs)"** now sums gaps only for open jobs.
+  - A skill card shows "needed by N jobs · M you've applied to" and a warm **"for an application"** tag when M > 0.
+  - The section hint explains the order.
+- **First frontend test runner, with no new packages:**
+  - `npm test` runs `node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON "tests/*.test.mjs"`. Node 24 strips types when it imports `../lib/ranking.ts`.
+  - `tests/ranking.test.mjs` has 6 checks:
+    - active beats more saved
+    - interviewing counts as active
+    - finished jobs rank nothing
+    - once per job, and unmapped gaps are skipped
+    - name tiebreak and limit
+    - empty input
+  - **The frontend verification step is now `npm test` + `npm run build` + `npx eslint .`.**
+- **Verified:**
+  - `npm test` passes 6/6.
+  - **Mutation check:** removing the finished-jobs skip made "finished jobs … don't rank anything" fail. The file was restored byte-identical.
+  - Build is clean, and eslint reports 0. Backend: 472 passed, untouched.
+  - **Smoke test:** :3011 returned 200 for `/`, `/job-descriptions`, `/skills` and `/profile`.
+- **Not done:**
+  - interview dates or reminders
+  - weighting by required vs nice-to-have
 
 ---
 

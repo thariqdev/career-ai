@@ -7,6 +7,7 @@ import GapList from "@/components/GapList";
 import LearnLinks from "@/components/LearnLinks";
 import { ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
 import { APPLICATION_CLASSES, APPLICATION_LABEL, APPLICATION_STATUSES } from "@/lib/applications";
+import { isOpen, rankSkillsToLearn, type SkillToLearn } from "@/lib/ranking";
 import { PROGRESS_LABEL, useLearningResources } from "@/lib/learning";
 import type {
   CVStatusResponse,
@@ -23,8 +24,6 @@ import type {
 const MAX_RECOMMENDATIONS = 5;
 const MAX_SKILLS_TO_LEARN = 8;
 
-type SkillToLearn = { skillId: number; name: string; jobs: number };
-
 type Loaded = {
   status: "loaded";
   verifiedCount: number;
@@ -36,26 +35,6 @@ type Loaded = {
   nextStepBySkill: Record<number, string | null>;
   recommendations: string[];
 };
-
-// Each skill counted once per job description it's a gap in, so "needed by N
-// jobs" means N different postings, not N requirement lines. Gaps not mapped to
-// a skill are left out: there's no skill to learn or search for.
-function rankSkillsToLearn(gapsPerJob: Gap[][]): SkillToLearn[] {
-  const bySkill = new Map<number, SkillToLearn>();
-  for (const gaps of gapsPerJob) {
-    const seenInThisJob = new Set<number>();
-    for (const gap of gaps) {
-      const { skill_id: skillId, skill_name: name } = gap.requirement;
-      if (skillId === null || name === null || seenInThisJob.has(skillId)) continue;
-      seenInThisJob.add(skillId);
-      const jobs = (bySkill.get(skillId)?.jobs ?? 0) + 1;
-      bySkill.set(skillId, { skillId, name, jobs });
-    }
-  }
-  return [...bySkill.values()]
-    .sort((a, b) => b.jobs - a.jobs || a.name.localeCompare(b.name))
-    .slice(0, MAX_SKILLS_TO_LEARN);
-}
 
 async function fetchDashboard(): Promise<Loaded> {
   // Independent requests, in parallel. GET /job-descriptions is already newest-first,
@@ -76,8 +55,12 @@ async function fetchDashboard(): Promise<Loaded> {
   const progressBySkill: Record<number, LearningProgressStatus> = {};
   for (const p of allProgress) progressBySkill[p.skill_id] = p.status;
 
-  // One request for every listed skill's learning path (not one per skill).
-  const skillsToLearn = rankSkillsToLearn(gapsPerJob);
+  // Ranked by where each application stands: active jobs first, finished ones ignored
+  // (lib/ranking.ts). One request for every listed skill's learning path.
+  const skillsToLearn = rankSkillsToLearn(
+    jobDescriptions.map((jd, i) => ({ status: jd.application_status, gaps: gapsPerJob[i] })),
+    MAX_SKILLS_TO_LEARN,
+  );
   const paths =
     skillsToLearn.length === 0
       ? []
@@ -90,7 +73,11 @@ async function fetchDashboard(): Promise<Loaded> {
   return {
     status: "loaded",
     verifiedCount: userSkills.filter((us) => us.status === "verified").length,
-    totalGaps: gapsPerJob.reduce((sum, gaps) => sum + gaps.length, 0),
+    // Only jobs still open (not offer/rejected/withdrawn) count as gaps to close.
+    totalGaps: gapsPerJob.reduce(
+      (sum, gaps, i) => sum + (isOpen(jobDescriptions[i].application_status) ? gaps.length : 0),
+      0,
+    ),
     jobDescriptions,
     mostRecentGaps: gapsPerJob[0] ?? [],
     skillsToLearn,
@@ -140,7 +127,13 @@ function SkillsToLearn({
                 </Link>
                 <p className="text-xs text-ink-soft">
                   needed by {item.jobs} {item.jobs === 1 ? "job" : "jobs"}
+                  {item.activeJobs > 0 && ` · ${item.activeJobs} you've applied to`}
                 </p>
+                {item.activeJobs > 0 && (
+                  <span className="mt-1 inline-block rounded bg-warm-soft px-2 py-0.5 text-xs font-medium text-warm">
+                    for an application
+                  </span>
+                )}
               </div>
               {progressBySkill[item.skillId] && (
                 <span className="rounded bg-accent-soft px-2 py-0.5 font-mono text-xs text-accent">
@@ -233,7 +226,7 @@ export default function DashboardPage() {
 
       <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatTile value={state.verifiedCount} label="Verified skills" href="/skills" />
-        <StatTile value={state.totalGaps} label="Open gaps" href="/job-descriptions" />
+        <StatTile value={state.totalGaps} label="Open gaps (open jobs)" href="/job-descriptions" />
         <StatTile
           value={state.jobDescriptions.length}
           label="Job descriptions analyzed"
@@ -263,7 +256,7 @@ export default function DashboardPage() {
       <section className="mt-10">
         <SectionHeading
           title="Skills to learn"
-          hint="Ranked by how many of your saved jobs ask for them."
+          hint="Skills your live applications need come first, then the ones most open jobs ask for. Closed jobs aren't counted."
         />
         <SkillsToLearn
           items={state.skillsToLearn}

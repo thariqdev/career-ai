@@ -1,4 +1,7 @@
 import type { ApplicationStatus } from "@/lib/types";
+import { ACTIVE_STATUSES } from "@/lib/ranking";
+
+export { ACTIVE_STATUSES };
 
 /** Display order and labels for a job's application status (backend ApplicationStatus). */
 export const APPLICATION_STATUSES: ApplicationStatus[] = [
@@ -29,8 +32,6 @@ export const APPLICATION_CLASSES: Record<ApplicationStatus, string> = {
   withdrawn: "bg-provisional-bg text-provisional",
 };
 
-/** "Active" means still in play: applied or interviewing. */
-export const ACTIVE_STATUSES: ApplicationStatus[] = ["applied", "interviewing"];
 export const CLOSED_STATUSES: ApplicationStatus[] = ["rejected", "withdrawn"];
 
 /** Today as YYYY-MM-DD in the user's own time zone (not UTC). */
