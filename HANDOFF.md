@@ -2121,8 +2121,42 @@ Added 2026-10-03.
   - **Smoke test:** :3011 returned 200 for `/`, `/job-descriptions` and `/job-descriptions/1`.
 - **Not done:**
   - multiple rounds
-  - .ics export or notifications
+  - .ics export or notifications (.ics: done in task 61)
   - a time-zone setting
+
+### "Add to calendar" (.ics) for interviews
+
+Added 2026-10-05. This is frontend only: the browser builds the file and nothing is sent anywhere.
+
+- **New `lib/calendar.ts`** is pure, with no runtime imports. It follows RFC 5545:
+  - `buildInterviewIcs({jobId, title, company, at, notes, prepUrl, now})` writes a VCALENDAR with one VEVENT:
+    - UID `career-ai-job-<id>-<start>@career-ai.local`
+    - DTSTAMP, DTSTART and DTEND in **UTC "Z"**, lasting 60 minutes, since only a start time is stored
+    - SUMMARY "Interview: <title> at <company>"
+    - DESCRIPTION: the note plus the prep-sheet link
+    - URL: the prep link
+  - It has **two VALARMs**: an absolute one at **6 pm local the day before** ("time to prep"), and `-PT1H`.
+  - `escapeText` escapes the backslash first, then `;`, `,` and new lines.
+  - `foldLine` keeps lines to at most 75 **bytes**, never splitting a UTF-8 character, with continuation lines starting with a space.
+  - Lines end in CRLF.
+  - `icsFileName` gives a slug like `interview-backend-engineer-acme.ics`.
+- **New `components/AddToCalendar.tsx`** is a "📅 Add to calendar" button (hidden without an interview time). It builds the file in the click handler (with `window.location.origin` for the prep link and the current time) and downloads it as a `text/calendar` Blob.
+  - It's shown in each Dashboard "Coming up" row, and in the `ApplicationEditor` for the **saved** interview time.
+- **Verified:**
+  - `npm test`: 16/16, including 5 new calendar checks:
+    - structure, CRLF and UTC times
+    - both alarms (the evening before, computed in local time)
+    - escaping in the title and note
+    - 75-byte folding, including 2-byte characters, that unfolds back exactly
+    - a missing title or company, and the file name
+  - **Mutation check:** making `escapeText` return its input unchanged failed the escaping check. The file was restored byte-identical.
+  - Build is clean, and eslint reports 0. Backend: 486 passed, untouched.
+  - **Smoke test:** :3011 returned 200 for `/` and `/job-descriptions/1`.
+  - **Importing into a real calendar app is the user's check.**
+- **Not done:**
+  - account sync (Google or Outlook)
+  - updating an already-imported event
+  - multiple rounds
 
 ---
 

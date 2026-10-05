@@ -9,6 +9,7 @@ import { ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components
 import { APPLICATION_CLASSES, APPLICATION_LABEL, APPLICATION_STATUSES } from "@/lib/applications";
 import { isOpen, rankSkillsToLearn, type SkillToLearn } from "@/lib/ranking";
 import { COMING_UP_DAYS, countdown, shortDateTime, upcomingInterviews } from "@/lib/interviews";
+import AddToCalendar from "@/components/AddToCalendar";
 import { PROGRESS_LABEL, useLearningResources } from "@/lib/learning";
 import type {
   CVStatusResponse,
@@ -196,9 +197,12 @@ function ComingUp({ jobs, loadedAt }: { jobs: JobDescription[]; loadedAt: number
                   {shortDateTime(at)}
                 </span>
               </span>
-              <ButtonLink href={`/job-descriptions/${job.id}/prep`} variant="primary">
-                Interview prep →
-              </ButtonLink>
+              <span className="flex flex-wrap gap-2">
+                <AddToCalendar job={job} />
+                <ButtonLink href={`/job-descriptions/${job.id}/prep`} variant="primary">
+                  Interview prep →
+                </ButtonLink>
+              </span>
             </li>
           ))}
         </ul>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { apiPatch, ApiError } from "@/lib/api";
 import { APPLICATION_LABEL, APPLICATION_STATUSES, localToday } from "@/lib/applications";
 import { fromLocalInput, toLocalInput } from "@/lib/interviews";
+import AddToCalendar from "@/components/AddToCalendar";
 import { Button, Pill, inputClasses } from "@/components/ui";
 import type { ApplicationStatus, JobDescription } from "@/lib/types";
 
@@ -132,6 +133,12 @@ export default function ApplicationEditor({
           {saving ? "Saving…" : "Save"}
         </Button>
       </div>
+      {/* Uses the saved interview time (the job prop), not unsaved edits in the form. */}
+      {job.next_interview_at !== null && (
+        <div>
+          <AddToCalendar job={job} size="sm" />
+        </div>
+      )}
       {saved && <p className="text-sm text-verified">✓ Saved.</p>}
       {error && <p className="text-sm text-not-verified">{error}</p>}
     </div>
