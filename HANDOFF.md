@@ -2381,6 +2381,7 @@ Added 2026-10-10 at the user's request. Their workflow is: start empty → uploa
   - `Button` now takes `ComponentPropsWithRef<"button">` so the modal can focus it (React 19 passes `ref` as a prop).
   - All 9 `window.confirm` calls were replaced: profile remove, job delete, paid-reader consent, requirement remove, skill delete, claim remove, evidence delete, merge, restore.
   - **`eslint.config.mjs` adds `"no-alert": "error"`**, so alert/confirm/prompt can't come back. This was checked by reinserting one: it's flagged.
+- **Pointer cursor (64f):** `app/globals.css` has an `@layer base` rule. It gives `cursor: pointer` to enabled buttons, `[role=button]`, `a[href]`, selects, `summary`, checkbox labels, checkbox/radio/file inputs, date-picker icons and `::file-selector-button`, and `cursor: not-allowed` to disabled controls. Tailwind v4's preflight resets buttons to the default cursor. Because it's in the base layer, utility classes can still override it.
 
 ---
 

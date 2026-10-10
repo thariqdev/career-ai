@@ -44,3 +44,32 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
 }
+
+/*
+ * Everything clickable shows the pointer hand. Tailwind v4's reset gives buttons the
+ * default arrow, so this sets it once for the whole app. It's in the base layer, so a
+ * utility class (e.g. cursor-not-allowed) can still override it on a single element.
+ */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  select:not(:disabled),
+  summary,
+  label:has(> input[type="checkbox"]:not(:disabled)),
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="file"]:not(:disabled),
+  input[type="date"]:not(:disabled)::-webkit-calendar-picker-indicator,
+  input[type="datetime-local"]:not(:disabled)::-webkit-calendar-picker-indicator,
+  ::file-selector-button {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  select:disabled,
+  input:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+  }
+}
