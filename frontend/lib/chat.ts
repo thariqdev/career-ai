@@ -18,6 +18,7 @@ export type ChatMessage = {
   retrieval?: "bm25" | "vector" | "hybrid";
   note?: string | null;
   searched?: number;
+  writtenBy?: "ai" | "notes"; // an AI wrote it from the notes, or it IS the notes
 };
 
 /** One line of the /assistant/ask/stream response (NDJSON). */
@@ -30,7 +31,8 @@ export type StreamEvent =
       searched: number;
     }
   | { type: "delta"; text: string }
-  | { type: "done" };
+  | { type: "replace"; text: string } // the checks changed the answer: show this instead
+  | { type: "done"; written_by: "ai" | "notes"; note: string | null };
 
 /**
  * Network chunks don't line up with lines: a chunk can end halfway through a JSON line.
@@ -87,6 +89,16 @@ export function pageTarget(pathname: string): { kind: "job" | "skill"; id: numbe
   const skill = pathname.match(/^\/skills\/(\d+)(?:\/|$)/);
   if (skill) return { kind: "skill", id: Number(skill[1]) };
   return null;
+}
+
+export const MAX_HISTORY = 4;
+
+/** The last few finished turns, sent with a question so follow-ups ("how do I learn it?") work. */
+export function historyFor(messages: ChatMessage[]): { role: ChatRole; text: string }[] {
+  return messages
+    .filter((m) => m.status === "done" && m.text.trim() !== "")
+    .slice(-MAX_HISTORY)
+    .map((m) => ({ role: m.role, text: m.text }));
 }
 
 export const MAX_STORED_MESSAGES = 50;

@@ -302,9 +302,9 @@ JSON object per line) over a normal HTTP response:
   (`parseNdjson`, tested).
 - **Stop** cancels the request with an `AbortController`.
 
-Today the pieces are the extractive answer split into words. In stage 67 they'll be the
-model's real tokens, and **the UI won't need to change**. That's why the plumbing was
-built first.
+Without a model the pieces are the extractive answer split into words. With one (stage
+67) they're the model's real tokens, and **the UI barely changed**: it only learned the
+`replace` event and the "who wrote it" label. That's why the plumbing was built first.
 
 ### Citations you can click
 
@@ -330,10 +330,103 @@ job's or skill's page, the suggestions are about *that* job or skill.
 - *How do you show a RAG answer is grounded?* Inline citations linked to the source
   documents.
 
-## Stage 67: generation with grounding
+## Stage 67: generation with grounding (built ✅; real-model checks pending Ollama)
 
-*Needs Ollama with `llama3.2`.* The model writes a natural answer **using only the
-retrieved notes**, cites them as [1] [2], and says when the notes don't cover the question.
+*Turn it on:* `ollama pull llama3.2`, then `OLLAMA_CHAT_MODEL=llama3.2` in `backend/.env`.
+Without it, nothing breaks: the answer is the notes themselves, as before.
+
+The **G** in RAG: a language model reads the retrieved notes and writes a short, natural
+answer that cites them. Calling a model is the easy part. **Keeping it honest** is the real
+work, so the code (`backend/app/rag/generate.py`) has four defences.
+
+### 1. Prompt engineering: the rules come first
+
+Every request starts with a **system prompt**, standing instructions the model reads
+before anything else. Ours has five rules:
+
+1. Use **only** the numbered notes. Never invent skills, jobs, dates or proof.
+2. Cite every fact like **[1]**.
+3. If the notes don't answer, say *"I couldn't find that in your data."* Don't guess.
+4. Never call a skill verified unless a note says so.
+5. Be brief and practical.
+
+Rule 4 is the project's core rule (**never invent experience**) written for the model.
+
+### 2. The context window: show it only what it needs
+
+A model's **context window** is its working memory: everything it can see at once. Small
+local models have small ones, and they get *worse* when stuffed with text. So the model
+sees exactly this, and nothing else:
+
+```
+system:    the rules
+user:      (previous question)           <- the last 2 turns, each cut to 600 characters
+assistant: (previous answer)
+user:      Notes from my Career AI data:
+           [1] (gap) Kubernetes gap: Gap: Kubernetes is missing for the job Backend.
+           [2] (skill) Python: Skill: Python. Your status: verified ...
+           Question: What am I missing?
+```
+
+The notes have a size budget (`MAX_CONTEXT_CHARS = 6000`). They're kept in rank order, so
+if anything is cut, it's the weakest note, and the best one is always kept. The model never
+sees the database: **PostgreSQL stays the source of truth, and the model only ever sees
+a few retrieved notes.**
+
+**Follow-ups:** "How do I learn it?" has nothing to search for. So the *search* text adds
+the previous question ("Do I have a Kubernetes gap?"), while the model still sees the real
+question. Tested: `test_history_reaches_the_model_and_helps_find_follow_ups`.
+
+### 3. Temperature: boring on purpose
+
+**Temperature** controls randomness when the model picks each next token. High means
+creative and varied; low means predictable. We use **0.2**: for answers about *your* data
+we want the same faithful answer every time, not creativity.
+
+### 4. Check the answer after it's written
+
+The model's text is checked before it's trusted:
+
+- **Invalid citations are removed.** "[9]" when there were 4 notes points at nothing.
+- **An answer that cites nothing is not trusted.** No citation means no evidence that it
+  used the notes, so the reply **falls back to the notes themselves**, with a note
+  explaining why.
+- **If the model fails** (Ollama is off, or the model isn't pulled), the reply also falls
+  back to the notes, with the reason.
+- **If no note matches the question, the model is never called.** The safest
+  hallucination is the one that can't happen.
+
+Because the text streams *while* it's written, a correction arrives as a `replace` event
+(the final text), and `done` says who wrote it: `"ai"` or `"notes"`. The chat shows
+**"Written by AI from your notes"** or **"From your notes"** under each answer.
+
+**Proof the checks matter (mutation test):** disabling the "cites nothing" check made 2
+tests fail. The tests really guard the behaviour.
+
+### Why a local model?
+
+Ollama runs the model **on this computer**: it's free, and your career data never leaves
+the machine. The design doesn't depend on it, though. Anything with a `stream(messages)`
+method can be the model (`ChatModel` in `generate.py`), which is how the tests use a
+**fake model** that returns fixed words and records what it was sent.
+
+### Interview questions you can now answer
+
+- *How do you reduce hallucination in RAG?* Ground the prompt (only retrieved context,
+  explicit rules), use low temperature, require citations and validate them, fall back
+  when the answer isn't grounded, and don't call the model when retrieval finds nothing.
+- *What is a context window, and how do you manage it?* The model's working memory, in
+  tokens. Budget the retrieved context, keep the best-ranked chunks first, and cap the
+  chat history.
+- *What does temperature do?* It scales the randomness of token sampling. Use low for
+  factual and grounded tasks, higher for creative ones.
+- *How do you handle follow-up questions in RAG?* Rewrite or expand the retrieval query
+  with recent turns (we add the previous question), and pass a short history to the model.
+- *How do you test LLM code without calling the model?* Put the model behind an interface
+  and use a fake that returns fixed tokens. Test the prompt, the checks and the fallbacks
+  deterministically.
+- *How do you stream and still validate?* Stream tokens for speed, validate at the end,
+  and send a correction (our `replace` event) when the checks change the answer.
 
 ## Stage 68: evaluating generation
 

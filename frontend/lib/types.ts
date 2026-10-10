@@ -311,5 +311,6 @@ export type AssistantAnswer = {
   sources: AssistantSource[];
   searched: number;
   retrieval: "bm25" | "vector" | "hybrid"; // keyword, meaning, or both (fused)
-  note: string | null; // e.g. why meaning search wasn't used
+  note: string | null; // e.g. why meaning search or the AI writer wasn't used
+  written_by: "ai" | "notes"; // an AI wrote it from the notes, or it IS the notes
 };

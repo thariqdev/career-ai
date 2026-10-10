@@ -2496,8 +2496,29 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
     - **Smoke test:** :3011 returned 200 for `/`, `/assistant`, `/skills` and `/job-descriptions/1`, and the widget button is in the server HTML.
 - **Next:**
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
-  - 67: grounded generation with `llama3.2`
-  - 68: evaluation
+  - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
+  - 68: evaluating generation (faithfulness)
+- **Stage 67 (grounded generation):**
+  - **`app/rag/generate.py`:**
+    - `SYSTEM_PROMPT` (5 rules), `fit_notes` (rank-order budget `MAX_CONTEXT_CHARS = 6000`, always at least 1), `build_messages` (system, then the last `MAX_HISTORY_MESSAGES = 4` turns cut to 600 characters, then the user message "Notes from my Career AI data: [n] (kind) title: text … Question: …")
+    - `clean_citations` / `cited_numbers` (only 1..n are valid)
+    - `OllamaChat` streams `/api/chat` (`stream: True`, `temperature 0.2`, timeout 120 s). A non-200 status, non-JSON, an `error` field or `httpx.HTTPError` raise `GenerationUnavailableError`.
+  - **`app/rag/assistant.py`** is split into two phases:
+    - `prepare()` does all DB work. Its search text is the question plus the previous user turn.
+    - `answer_events(prepared, history, chat)` does no DB work and yields `meta` → `delta`… → optional `replace` → `done {written_by, note}`.
+      - No sources or no chat model: extractive deltas.
+      - Model unavailable: replace with the extractive answer, plus a note.
+      - Nothing validly cited: replace with the extractive answer, plus `UNCITED_NOTE`.
+      - Invalid citations stripped: replace with the cleaned text.
+    - `ask()` collects the events.
+    - `configured_chat()` reads `OLLAMA_CHAT_MODEL` (and honours `OLLAMA_BASE_URL`).
+  - **API:** `AskRequest.history: list[TurnIn]` (max 20, each text max 4000); `AskResponse.written_by`. `/ask/stream` runs `prepare()` before streaming. Tests monkeypatch `app.rag.assistant.configured_chat`, and conftest unsets `OLLAMA_CHAT_MODEL`.
+  - **Frontend:**
+    - `StreamEvent` gains `replace` and `done {written_by, note}`.
+    - `historyFor(messages)` sends the last 4 `done` messages (tested).
+    - The store applies `replace` and `done`.
+    - ChatPanel labels each answer "Written by AI from your notes" or "From your notes".
+  - **Tests:** `tests/test_rag_generate.py` (18, using `FakeChat` and `httpx.MockTransport`). Mutation: removing the uncited fallback fails 2 tests.
 
 ---
 

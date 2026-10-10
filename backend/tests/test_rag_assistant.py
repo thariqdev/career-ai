@@ -255,7 +255,8 @@ def test_the_stream_sends_meta_then_deltas_then_done(client: TestClient, filled:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/x-ndjson")
     events = [json.loads(line) for line in response.text.splitlines()]
-    assert events[0]["type"] == "meta" and events[-1] == {"type": "done"}
+    assert events[0]["type"] == "meta"
+    assert events[-1] == {"type": "done", "written_by": "notes", "note": None}  # no chat model set
     assert events[0]["sources"] == whole["sources"]
     assert (events[0]["retrieval"], events[0]["searched"]) == (whole["retrieval"], whole["searched"])
     deltas = [e["text"] for e in events if e["type"] == "delta"]

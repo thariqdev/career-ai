@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { forStorage, pageTarget, parseNdjson, splitCitations, suggestionsFor } from "../lib/chat.ts";
+import { forStorage, historyFor, pageTarget, parseNdjson, splitCitations, suggestionsFor } from "../lib/chat.ts";
 
 test("NDJSON: complete lines are parsed, a half line is kept for the next chunk", () => {
   const first = parseNdjson('{"type":"delta","text":"Hel"}\n{"type":"del');
@@ -48,4 +48,19 @@ test("stored history keeps the newest 50 and never a half-written answer", () =>
   assert.equal(kept.length, 50);
   assert.equal(kept[0].text, "m10");
   assert.equal(kept.at(-1).status, "stopped");
+});
+
+test("follow-ups send the last 4 finished turns, never a half-written or failed one", () => {
+  const messages = [
+    ...Array.from({ length: 6 }, (_, i) => ({ id: String(i), role: i % 2 ? "assistant" : "user", text: `t${i}`, at: "", status: "done" })),
+    { id: "e", role: "assistant", text: "Could not reach the backend.", at: "", status: "error" },
+    { id: "s", role: "assistant", text: "half", at: "", status: "stopped" },
+  ];
+  assert.deepEqual(historyFor(messages), [
+    { role: "user", text: "t2" },
+    { role: "assistant", text: "t3" },
+    { role: "user", text: "t4" },
+    { role: "assistant", text: "t5" },
+  ]);
+  assert.deepEqual(historyFor([]), []);
 });

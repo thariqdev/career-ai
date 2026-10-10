@@ -211,7 +211,8 @@ function AssistantBubble({
       {sources.length > 0 && message.status !== "error" && (
         <div className="flex flex-col gap-1">
           <p className="text-[11px] text-ink-soft">
-            Sources · searched {message.searched} notes with {RETRIEVAL_LABEL[message.retrieval ?? "bm25"]}
+            {message.writtenBy === "ai" ? "Written by AI from your notes" : "From your notes"} · searched{" "}
+            {message.searched} notes with {RETRIEVAL_LABEL[message.retrieval ?? "bm25"]}
           </p>
           <ul className="flex flex-wrap gap-1.5">
             {sources.map((source) => (

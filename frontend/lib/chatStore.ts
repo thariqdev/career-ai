@@ -13,7 +13,7 @@
 
 import { useSyncExternalStore } from "react";
 import { apiStream, ApiError } from "@/lib/api";
-import { forStorage, type ChatMessage, type StreamEvent } from "@/lib/chat";
+import { forStorage, historyFor, type ChatMessage, type StreamEvent } from "@/lib/chat";
 
 const STORAGE_KEY = "career-ai-chat-v1";
 const EMPTY: ChatMessage[] = [];
@@ -74,6 +74,7 @@ export async function send(question: string): Promise<void> {
   if (text === "" || controller !== null) return;
   const now = new Date().toISOString();
   const answerId = newId();
+  const history = historyFor(messages); // before this question is added
   set([
     ...messages,
     { id: newId(), role: "user", text, at: now, status: "done" },
@@ -83,14 +84,22 @@ export async function send(question: string): Promise<void> {
   try {
     await apiStream<StreamEvent>(
       "/assistant/ask/stream",
-      { question: text },
+      { question: text, history },
       (event) => {
         if (event.type === "meta") {
           update(answerId, (m) => ({ ...m, sources: event.sources, retrieval: event.retrieval, note: event.note, searched: event.searched }));
         } else if (event.type === "delta") {
           update(answerId, (m) => ({ ...m, text: m.text + event.text }));
+        } else if (event.type === "replace") {
+          update(answerId, (m) => ({ ...m, text: event.text }));
         } else {
-          update(answerId, (m) => ({ ...m, status: "done", at: new Date().toISOString() }));
+          update(answerId, (m) => ({
+            ...m,
+            status: "done",
+            writtenBy: event.written_by,
+            note: event.note,
+            at: new Date().toISOString(),
+          }));
         }
       },
       controller.signal,
