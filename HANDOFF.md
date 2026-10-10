@@ -2371,6 +2371,16 @@ Added 2026-10-10 at the user's request. Their workflow is: start empty → uploa
   - `jobLabel(job)` (title, else the first 60 characters of the posting, else "Untitled job") replaces the "Untitled job" fallbacks on the list, the job page, the Dashboard and the paste result.
   - Tests: 3 backend (same text twice → 409, different text OK, another user's identical text OK) and `tests/jobs.test.mjs` (2). Two older test setups that posted the same text twice now use distinct texts.
   - Suite: 537 backend, 24 frontend.
+- **Confirmation modal instead of browser pop-ups (64e):**
+  - New `components/ConfirmDialog.tsx`: `ConfirmProvider`, wrapped around the app in `app/layout.tsx`, and `useConfirm()`, which returns `confirm({title, message, confirmLabel, cancelLabel, danger}) => Promise<boolean>`.
+  - It renders an `alertdialog` card over a dimmed backdrop:
+    - Esc, Cancel and a click outside resolve false.
+    - Tab is trapped between the two buttons.
+    - Focus starts on **Cancel** when `danger` (otherwise on the confirm button) and returns to the trigger afterwards.
+    - A danger confirm is a solid red button.
+  - `Button` now takes `ComponentPropsWithRef<"button">` so the modal can focus it (React 19 passes `ref` as a prop).
+  - All 9 `window.confirm` calls were replaced: profile remove, job delete, paid-reader consent, requirement remove, skill delete, claim remove, evidence delete, merge, restore.
+  - **`eslint.config.mjs` adds `"no-alert": "error"`**, so alert/confirm/prompt can't come back. This was checked by reinserting one: it's flagged.
 
 ---
 

@@ -5,6 +5,8 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+  // No browser pop-ups (alert/confirm/prompt): use the app's modal (components/ConfirmDialog).
+  { rules: { "no-alert": "error" } },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
 import type { Skill } from "@/lib/types";
 import { Button, inputClasses } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 // Look-alikes of this skill ("pytho n" -> Python), excluding itself. Never throws:
 // the hint is optional, so a failed check just shows no suggestion.
@@ -34,6 +35,7 @@ export default function MergeSkillControl({
   const [chosen, setChosen] = useState<string>("");
   const [merging, setMerging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   // Fetch first, then set state only in the promise callback (react-hooks/set-state-in-effect).
   // Keyed on id and name, so a page refresh (a new but equal skill object) doesn't refetch.
@@ -53,11 +55,12 @@ export default function MergeSkillControl({
 
   async function handleMerge() {
     if (target === null) return;
-    const confirmed = window.confirm(
-      `Merge "${skill.name}" into "${target.name}"? Everything attached to "${skill.name}" ` +
-        `moves to "${target.name}", "${skill.name}" becomes one of its nicknames, and ` +
-        `"${skill.name}" is removed. This can't be undone.`,
-    );
+    const confirmed = await confirm({
+      title: `Merge "${skill.name}" into "${target.name}"?`,
+      message: `Everything attached to "${skill.name}" moves to "${target.name}", "${skill.name}" becomes one of its nicknames, and "${skill.name}" is removed. This can't be undone.`,
+      confirmLabel: "Merge",
+      danger: true,
+    });
     if (!confirmed) return;
     setError(null);
     setMerging(true);

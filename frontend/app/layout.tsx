@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
 import "./globals.css";
 
 // next/font/google, not a manual <link> tag: Next.js downloads and self-hosts the
@@ -41,8 +42,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col bg-ground text-ink">
-        <AppHeader />
-        {children}
+        {/* Every "Are you sure?" in the app is this modal, never the browser's confirm(). */}
+        <ConfirmProvider>
+          <AppHeader />
+          {children}
+        </ConfirmProvider>
       </body>
     </html>
   );

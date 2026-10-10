@@ -9,6 +9,7 @@ import NotInSkillsYet from "@/components/NotInSkillsYet";
 import SkillSuggestions from "@/components/SkillSuggestions";
 import JobMatchSummary from "@/components/JobMatchSummary";
 import { jobLabel } from "@/lib/jobs";
+import { useConfirm } from "@/components/ConfirmDialog";
 import ApplicationEditor from "@/components/ApplicationEditor";
 import StatusBadge from "@/components/StatusBadge";
 import { Button, ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
@@ -88,16 +89,17 @@ export default function JobDescriptionPage() {
   const [lookMessage, setLookMessage] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const router = useRouter();
+  const confirm = useConfirm();
 
   async function handleDelete() {
-    if (
-      !window.confirm(
-        "Delete this job? Its requirements and comparison history go with it. " +
-          "Your skills, claims and evidence are not affected.",
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Delete this job?",
+      message:
+        "Its requirements and comparison history go with it. Your skills, claims and evidence are not affected. This can't be undone.",
+      confirmLabel: "Delete job",
+      danger: true,
+    });
+    if (!ok) return;
     setDeleteError(null);
     try {
       await apiDelete(`/job-descriptions/${jobId}`);
@@ -144,7 +146,11 @@ export default function JobDescriptionPage() {
       const extractor = await apiGet<ExtractorInfo>("/job-descriptions/extractor");
       if (
         extractor.paid &&
-        !window.confirm("This uses the paid Claude API and will cost money. Continue?")
+        !(await confirm({
+          title: "Use the paid Claude reader?",
+          message: "Looking for new skills with Claude calls a paid API and will cost money.",
+          confirmLabel: "Yes, use Claude",
+        }))
       ) {
         return;
       }
@@ -170,14 +176,14 @@ export default function JobDescriptionPage() {
   // and everything outside it, stays. Its skill is remembered as "not for this job",
   // so re-reading the posting skips it until "Allow again".
   async function handleRemoveRequirement(requirementId: number, label: string) {
-    if (
-      !window.confirm(
-        `Remove the requirement "${label}" from this job? Its comparison results go with it, ` +
-          "and \"Look for new skills\" won't add it back unless you allow it again.",
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Remove "${label}" from this job?`,
+      message:
+        "Its comparison results go with it, and \"Look for new skills\" won't add it back unless you allow it again.",
+      confirmLabel: "Remove requirement",
+      danger: true,
+    });
+    if (!ok) return;
     setCompareError(null);
     setLookMessage(null);
     setComparing(true);

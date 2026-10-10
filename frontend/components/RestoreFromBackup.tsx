@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { apiPostForm, ApiError } from "@/lib/api";
 import { Button, Card, SectionHeading } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmDialog";
 
 type Preview = { counts: Record<string, number>; problems: string[]; app_empty: boolean };
 
@@ -55,6 +56,7 @@ function CountList({ counts }: { counts: Record<string, number> }) {
 export default function RestoreFromBackup() {
   const [state, setState] = useState<State>({ status: "idle" });
   const [error, setError] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   async function handleChoose(file: File | null) {
     setError(null);
@@ -73,7 +75,12 @@ export default function RestoreFromBackup() {
   }
 
   async function handleRestore(file: File, preview: Preview) {
-    if (!window.confirm("Restore this backup into Career AI?")) return;
+    const ok = await confirm({
+      title: "Restore this backup?",
+      message: "Everything in the file is added to Career AI. It only works on an empty app.",
+      confirmLabel: "Restore",
+    });
+    if (!ok) return;
     setError(null);
     setState({ status: "restoring", file, preview });
     try {

@@ -7,6 +7,7 @@ import { validateEntry } from "@/lib/draftValidation";
 import DownloadMyData from "@/components/DownloadMyData";
 import RestoreFromBackup from "@/components/RestoreFromBackup";
 import CvAutofill from "@/components/CvAutofill";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { dateRange, educationLabel, projectLabel, workLabel } from "@/lib/profile";
 import type { Education, Project, WorkExperience } from "@/lib/types";
 
@@ -51,6 +52,7 @@ function ProfileSection<T extends Item>({
   const [error, setError] = useState<string | null>(null);
   // The record being edited, or null when the form adds a new one.
   const [editing, setEditing] = useState<T | null>(null);
+  const confirm = useConfirm();
   // Problems found when the button is clicked, per box (shown under each box).
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -117,7 +119,13 @@ function ProfileSection<T extends Item>({
   }
 
   async function handleRemove(item: T) {
-    if (!window.confirm(`Remove "${label(item)}"?`)) return;
+    const ok = await confirm({
+      title: `Remove "${label(item)}"?`,
+      message: "It will be removed from your profile. Evidence that comes from it must be removed first.",
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
     setError(null);
     setBusy(true);
     try {

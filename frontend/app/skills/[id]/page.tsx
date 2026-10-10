@@ -12,6 +12,7 @@ import SkillNameEditor from "@/components/SkillNameEditor";
 import StatusBadge from "@/components/StatusBadge";
 import { Button, Card, EmptyState, FieldError, Page, Pill, SectionHeading, inputClasses, invalidClasses } from "@/components/ui";
 import { isWebAddress } from "@/lib/draftValidation";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
 import { MODE_LABEL } from "@/lib/learning";
 import { educationLabel, projectLabel, workLabel } from "@/lib/profile";
@@ -269,6 +270,7 @@ export default function SkillDetailPage() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [editingEvidenceId, setEditingEvidenceId] = useState<number | null>(null);
+  const confirm = useConfirm();
 
   // Refresh after an action. The page stays on screen until the new data arrives,
   // instead of flashing back to "Loading…".
@@ -311,7 +313,13 @@ export default function SkillDetailPage() {
 
   async function handleDeleteSkill() {
     if (state.status !== "loaded") return;
-    if (!window.confirm(`Delete "${state.skill.name}"? This can't be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete "${state.skill.name}"?`,
+      message: "The skill and its nicknames are removed. This can't be undone.",
+      confirmLabel: "Delete skill",
+      danger: true,
+    });
+    if (!ok) return;
     setDeleteError(null);
     setBusy(true);
     try {
@@ -366,10 +374,13 @@ export default function SkillDetailPage() {
   // message names those jobs; the evidence itself is always kept.
   async function handleRemoveClaim() {
     if (state.status !== "loaded" || state.userSkill === null) return;
-    const confirmed = window.confirm(
-      `Remove your claim on "${state.skill.name}"? Its status and evidence links are removed; ` +
-        "your evidence itself stays on your profile, and the skill stays in your list.",
-    );
+    const confirmed = await confirm({
+      title: `Remove your claim on "${state.skill.name}"?`,
+      message:
+        "Its status and evidence links are removed. Your evidence itself stays on your profile, and the skill stays in your list.",
+      confirmLabel: "Remove claim",
+      danger: true,
+    });
     if (!confirmed) return;
     setStatusError(null);
     setBusy(true);
@@ -416,7 +427,13 @@ export default function SkillDetailPage() {
   }
 
   async function handleDeleteEvidence(item: Evidence) {
-    if (!window.confirm(`Delete the evidence "${item.title}"? This can't be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete the evidence "${item.title}"?`,
+      message: "This can't be undone.",
+      confirmLabel: "Delete evidence",
+      danger: true,
+    });
+    if (!ok) return;
     setLinkError(null);
     setBusy(true);
     try {
