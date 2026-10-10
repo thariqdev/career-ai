@@ -22,7 +22,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import SkillNameCollisionError
-from app.core.services import cv_import_service, cv_presence_service, skill_service, suggestion_service
+from app.core.services import (
+    cv_import_service,
+    cv_presence_service,
+    cv_profile_service,
+    skill_service,
+    suggestion_service,
+    user_service,
+)
 from app.db.models import User, UserSkill
 
 
@@ -32,6 +39,7 @@ class AdoptResult:
     marked_on_cv: list[str] = field(default_factory=list)  # newly marked "on my CV"
     claimed: list[str] = field(default_factory=list)  # newly claimed (provisional)
     already_done: list[str] = field(default_factory=list)  # nothing to change
+    name_saved: str | None = None  # your name, read from the CV (only when none was saved)
 
 
 def add_all_from_cv(db: Session, user: User, text: str) -> AdoptResult:
@@ -67,5 +75,12 @@ def add_all_from_cv(db: Session, user: User, text: str) -> AdoptResult:
             changed = True
         if not changed:
             result.already_done.append(skill.name)
+
+    # 3. Your name from the top of the CV, unless you've already saved one.
+    if not user.full_name:
+        name = cv_profile_service.read_name(text)
+        if name:
+            user_service.set_full_name(db, user, name)
+            result.name_saved = user.full_name
     db.flush()
     return result

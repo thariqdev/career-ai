@@ -31,6 +31,11 @@ Dates: a CV gives months or years, but profile dates are full dates, so "Mar 202
 becomes 2022-03-01 and "2019" becomes 2019-01-01 (always the first day of the period;
 the CV's own wording is kept in `dates_text` for the review screen). "Present",
 "Current" and similar mean no end date.
+
+Name: CVs start with the person's name, so `read_name` looks at the first few lines for
+one that looks like a name (2 to 4 words of letters, no digits, no email or link, not a
+heading or a job title). A line like "Jane Doe | jane@x.com | +1 555" gives "Jane Doe".
+Copied from the CV, never made up; None when no line qualifies.
 """
 
 import re
@@ -354,6 +359,7 @@ class ProjectDraft:
 
 @dataclass(frozen=True)
 class ProfileDrafts:
+    name: str | None  # the person's name from the top of the CV, if one was found
     characters: int
     sections_found: list[str]
     work_experiences: list[WorkDraft]
@@ -468,9 +474,43 @@ def read_drafts(db: Session, user: User, text: str) -> ProfileDrafts:
         )
 
     return ProfileDrafts(
+        name=read_name(text),
         characters=len(text),
         sections_found=[kind for kind in ("work", "education", "projects") if sections[kind]],
         work_experiences=work,
         educations=educations,
         projects=projects,
     )
+
+
+# --- the person's name ------------------------------------------------------------------
+
+_NAME_LINES = 5  # a name is at the very top of a CV
+_NAME_SPLIT = re.compile(r"\s*(?:\||•|·|–|—|\t|\s-\s|,)\s*")
+_NAME_WORD = re.compile(r"[^\W\d_][\w.'-]*")
+_NOT_A_NAME = re.compile(
+    r"\b(?:curriculum|vitae|resume|résumé|cv|address|phone|mobile|email|e-mail|linkedin|github"
+    r"|portfolio|street|road|city|india|usa)\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_name(part: str) -> bool:
+    words = part.split()
+    if not 2 <= len(words) <= 4 or len(part) > 50:
+        return False
+    if not all(_NAME_WORD.fullmatch(word) and "_" not in word for word in words):
+        return False
+    if _NOT_A_NAME.search(part) or _ROLE_WORDS.search(part) or _DEGREE_WORDS.search(part) or _SCHOOL_WORDS.search(part):
+        return False
+    return _heading_kind(part) is None
+
+
+def read_name(text: str) -> str | None:
+    """The person's name from the top of a CV, or None. Copied, never guessed."""
+    for line in _lines(text)[:_NAME_LINES]:
+        for part in _NAME_SPLIT.split(line.text):
+            part = part.strip(" .:")
+            if _looks_like_name(part):
+                return part.title() if part.isupper() else part
+    return None

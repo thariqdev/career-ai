@@ -7,6 +7,7 @@ import { validateEntry } from "@/lib/draftValidation";
 import DownloadMyData from "@/components/DownloadMyData";
 import RestoreFromBackup from "@/components/RestoreFromBackup";
 import CvAutofill from "@/components/CvAutofill";
+import YourName from "@/components/YourName";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { dateRange, educationLabel, projectLabel, workLabel } from "@/lib/profile";
 import type { Education, Project, WorkExperience } from "@/lib/types";
@@ -232,8 +233,8 @@ export default function ProfilePage() {
       </p>
 
       <div className="mt-6 flex flex-col gap-6">
+        <YourName reloadKey={reloadKey} />
         <CvAutofill onSaved={() => setReloadKey((k) => k + 1)} />
-
 
         <ProfileSection<Project>
           reloadKey={reloadKey}

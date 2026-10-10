@@ -41,7 +41,7 @@ from app.db.models.enums import LearningStatus, VerificationStatus
 @dataclass(frozen=True)
 class Chunk:
     id: str  # stable and unique, e.g. "skill:3", "gap:2:Kubernetes"
-    kind: str  # overview | skill | job | gap | evidence | project | work | education
+    kind: str  # overview | profile | skill | job | gap | evidence | project | work | education
     title: str
     text: str
     link: str  # the frontend page the fact comes from
@@ -222,4 +222,14 @@ def build_chunks(db: Session, user: User) -> list[Chunk]:
         f"Most needed missing skills to learn first: {_join(most_needed)}."
     )
     chunks.insert(0, Chunk("overview", "overview", "Your overview", overview, "/"))
+
+    # --- who you are, for "what is my name?" ----------------------------------------------------
+    if user.full_name:
+        about = f"Your name is {user.full_name}. This is your profile: who you are, about me."
+    else:
+        about = (
+            "Your name is not saved yet. Add your name on the Profile page, or add your CV "
+            "and it will be read from the top of it. This is your profile: who you are, about me."
+        )
+    chunks.insert(1, Chunk("profile", "profile", "Your name and profile", about, "/profile"))
     return chunks

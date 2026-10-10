@@ -180,7 +180,8 @@ export default function CVPage() {
                 <p className="mt-3 text-sm text-verified">
                   ✓ Added {adopted.added_skills.length} new skill{adopted.added_skills.length === 1 ? "" : "s"},
                   marked {adopted.marked_on_cv.length} on your CV and claimed {adopted.claimed.length}.
-                  {adopted.already_done.length > 0 && ` ${adopted.already_done.length} were already done.`}{" "}
+                  {adopted.already_done.length > 0 && ` ${adopted.already_done.length} were already done.`}
+                  {adopted.name_saved && ` Saved your name as ${adopted.name_saved} (change it on Profile).`}{" "}
                   See them on the{" "}
                   <Link href="/skills" className="underline">
                     Skills

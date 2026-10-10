@@ -202,6 +202,7 @@ type DraftCommon = {
   duplicate: boolean;
 };
 export type ProfileDrafts = {
+  name: string | null; // the person's name from the top of the CV, if found
   characters: number;
   sections_found: string[];
   work_experiences: (DraftCommon & { company: string | null; role: string | null })[];
@@ -230,6 +231,7 @@ export type CVAdoptResult = {
   marked_on_cv: string[];
   claimed: string[];
   already_done: string[];
+  name_saved: string | null; // your name, read from the CV (only when none was saved)
 };
 
 // Matches backend SkillSuggestionResponse: a common skill the text mentions that

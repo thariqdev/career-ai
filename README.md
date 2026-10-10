@@ -228,7 +228,7 @@ Removing evidence keeps the "verified needs proof" rule true:
 | `DELETE /user-skills/{id}/evidence-links/{evidence_id}` | Unlink evidence from a skill (the evidence is kept). `409` if it's the last evidence of a `VERIFIED`/`PARTIAL` skill: change its status first |
 | `DELETE /evidence/{id}` | Delete evidence; `409` while it's linked to a skill or cited by a past comparison result |
 
-`GET /me` returns the single hardcoded user this system runs as (created automatically on first call).
+`GET /me` returns the single hardcoded user this system runs as (created automatically on first call). `PATCH /me` with `{"full_name": "..."}` saves your name (blank clears it). "Add all my CV skills" fills the name in from the top of the CV when none is saved yet (`name_saved` in its reply), and "Fill from my CV" on Profile shows it (`name`). The assistant answers "what is my name?" from it.
 
 Job-description endpoints (all scoped to that one user automatically — no `user_id` in any request):
 

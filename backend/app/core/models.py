@@ -412,6 +412,7 @@ class ProfileDraftsResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    name: str | None  # the person's name from the top of the CV, if found
     characters: int
     sections_found: list[str]
     work_experiences: list[WorkDraftResponse]
@@ -504,6 +505,7 @@ class CVAdoptResponse(BaseModel):
     marked_on_cv: list[str]
     claimed: list[str]
     already_done: list[str]
+    name_saved: str | None
 
 
 class MatchItemResponse(BaseModel):

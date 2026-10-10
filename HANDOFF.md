@@ -2498,6 +2498,15 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - 68: evaluating generation (faithfulness)
+- **Your name (fix after 67):** the assistant had no note about the user, and `users.full_name` was never set.
+  - `cv_profile_service.read_name(text)` checks the first 5 lines, split at `| • · – — tab " - " ,`, and takes the first part with 2 to 4 letter words that contains no digit, `@` or link, and no heading, role, degree, school or contact word. All-caps is title-cased. It's copied, never guessed.
+  - `ProfileDrafts.name`.
+  - `cv_adopt_service` sets the name only when `full_name` is empty, and reports `AdoptResult.name_saved`.
+  - `user_service.set_full_name` collapses spaces; blank becomes None; max 100.
+  - `PATCH /me {full_name}`.
+  - The chunker adds a `profile` chunk (index 1, link `/profile`): "Your name is X…", or, when unset, how to add it.
+  - **Frontend:** `components/YourName.tsx` (top of Profile, inline validation, refetches on `reloadKey`); CvAutofill has "Name on your CV: X [Use as my name]"; the CV page result mentions the saved name.
+  - **Tests:** `tests/test_user_name.py` (13).
 - **Stage 67 (grounded generation):**
   - **`app/rag/generate.py`:**
     - `SYSTEM_PROMPT` (5 rules), `fit_notes` (rank-order budget `MAX_CONTEXT_CHARS = 6000`, always at least 1), `build_messages` (system, then the last `MAX_HISTORY_MESSAGES = 4` turns cut to 600 characters, then the user message "Notes from my Career AI data: [n] (kind) title: text … Question: …")

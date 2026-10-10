@@ -32,3 +32,14 @@ def get_or_create_default_user(db: Session) -> User:
     db.add(user)
     db.flush()
     return user
+
+
+MAX_NAME_CHARS = 100
+
+
+def set_full_name(db: Session, user: User, name: str | None) -> User:
+    """Save the person's name (extra spaces removed); blank clears it. Flushes, no commit."""
+    cleaned = " ".join((name or "").split())[:MAX_NAME_CHARS]
+    user.full_name = cleaned or None
+    db.flush()
+    return user

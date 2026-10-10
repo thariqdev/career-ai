@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { apiPost, apiPostForm, ApiError } from "@/lib/api";
+import { apiPatch, apiPost, apiPostForm, ApiError } from "@/lib/api";
 import { Button, Card, EmptyState, SectionHeading, inputClasses } from "@/components/ui";
 import type { ProfileDrafts } from "@/lib/types";
 import { validateEntry, type FieldRule } from "@/lib/draftValidation";
@@ -95,6 +95,7 @@ export default function CvAutofill({ onSaved }: { onSaved: () => void }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [cvName, setCvName] = useState<string | null>(null); // the name at the top of the CV
 
   async function handleRead(event: FormEvent) {
     event.preventDefault();
@@ -105,7 +106,9 @@ export default function CvAutofill({ onSaved }: { onSaved: () => void }) {
       const form = new FormData();
       if (file) form.append("file", file);
       else form.append("text", pasted);
-      setDrafts(toDrafts(await apiPostForm<ProfileDrafts>("/profile/cv-drafts", form)));
+      const result = await apiPostForm<ProfileDrafts>("/profile/cv-drafts", form);
+      setCvName(result.name);
+      setDrafts(toDrafts(result));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reach the backend.");
     } finally {
@@ -128,6 +131,19 @@ export default function CvAutofill({ onSaved }: { onSaved: () => void }) {
       delete fieldErrors[key];
       return { values: { ...d.values, [key]: value }, fieldErrors, error: null };
     });
+  }
+
+  async function handleUseName() {
+    if (cvName === null) return;
+    setError(null);
+    try {
+      await apiPatch("/me", { full_name: cvName });
+      setMessage(`✓ Saved your name as ${cvName}.`);
+      setCvName(null);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not reach the backend.");
+    }
   }
 
   async function handleSave() {
@@ -219,6 +235,14 @@ export default function CvAutofill({ onSaved }: { onSaved: () => void }) {
         </form>
       ) : (
         <div className="mt-4 flex flex-col gap-5">
+          {cvName && (
+            <div className="flex flex-wrap items-center gap-2 text-sm text-ink">
+              <span>
+                Name on your CV: <span className="font-medium">{cvName}</span>
+              </span>
+              <Button onClick={handleUseName}>Use as my name</Button>
+            </div>
+          )}
           {drafts.length === 0 ? (
             <EmptyState>
               Nothing left to review. Headings like &ldquo;Experience&rdquo;, &ldquo;Education&rdquo; and
