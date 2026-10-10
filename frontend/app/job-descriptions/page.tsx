@@ -63,9 +63,9 @@ function PastJobs({ reloadKey }: { reloadKey: number }) {
 
   return (
     <section className="mt-10">
-      <SectionHeading title="Past job descriptions" hint="Newest first. Open one to revisit or compare again." />
+      <SectionHeading title="Pasted job descriptions" hint="Newest first. Open one to revisit or compare again." />
       <div className="mt-3">
-        {failed && <p className="text-sm text-not-verified">Could not load past job descriptions.</p>}
+        {failed && <p className="text-sm text-not-verified">Could not load your pasted job descriptions.</p>}
         {!failed && jobs === null && <p className="text-sm text-ink-soft">Loading…</p>}
         {jobs !== null && jobs.length === 0 && <EmptyState>None yet. Analyze one above.</EmptyState>}
         {jobs !== null && jobs.length > 0 && (
