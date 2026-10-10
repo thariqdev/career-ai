@@ -111,9 +111,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               </Button>
               <Button
                 ref={confirmRef}
-                variant={pending.danger ? "danger" : "primary"}
+                variant={pending.danger ? "dangerSolid" : "primary"}
                 onClick={() => close(true)}
-                className={pending.danger ? "bg-not-verified text-surface hover:bg-not-verified hover:opacity-90" : ""}
               >
                 {pending.confirmLabel ?? "Continue"}
               </Button>

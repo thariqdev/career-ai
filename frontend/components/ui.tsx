@@ -7,12 +7,14 @@
 import Link from "next/link";
 import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from "react";
 
-type Variant = "primary" | "plain" | "danger";
+type Variant = "primary" | "plain" | "danger" | "dangerSolid";
 
 const VARIANT_CLASSES: Record<Variant, string> = {
   primary: "bg-accent text-surface hover:opacity-90",
   plain: "border border-line bg-surface text-ink hover:bg-ground",
   danger: "border border-not-verified bg-surface text-not-verified hover:bg-not-verified-bg",
+  // The final "yes, delete" in a confirmation: filled red with white text.
+  dangerSolid: "border border-not-verified bg-not-verified text-surface hover:opacity-90",
 };
 
 type Size = "sm" | "md";

@@ -193,7 +193,7 @@ export default function SkillsPage() {
             <Button size="sm" onClick={createSkill} disabled={submitting}>
               Add anyway
             </Button>
-            <Button size="sm" onClick={() => setLookalikes(null)} className="border-transparent bg-transparent">
+            <Button size="sm" onClick={() => setLookalikes(null)}>
               Cancel
             </Button>
           </div>
