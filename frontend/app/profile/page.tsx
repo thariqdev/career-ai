@@ -5,6 +5,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import { Button, Card, EmptyState, Page, SectionHeading, inputClasses } from "@/components/ui";
 import DownloadMyData from "@/components/DownloadMyData";
 import RestoreFromBackup from "@/components/RestoreFromBackup";
+import CvAutofill from "@/components/CvAutofill";
 import { dateRange, educationLabel, projectLabel, workLabel } from "@/lib/profile";
 import type { Education, Project, WorkExperience } from "@/lib/types";
 
@@ -33,7 +34,9 @@ function ProfileSection<T extends Item>({
   fields,
   label,
   details,
+  reloadKey,
 }: {
+  reloadKey: number; // bumped after "Fill from my CV" saves, so the list refetches
   title: string;
   hint: string;
   path: string;
@@ -70,7 +73,7 @@ function ProfileSection<T extends Item>({
     return () => {
       active = false;
     };
-  }, [path]);
+  }, [path, reloadKey]);
 
   async function handleAdd(event: FormEvent) {
     event.preventDefault();
@@ -192,6 +195,7 @@ function ProfileSection<T extends Item>({
 }
 
 export default function ProfilePage() {
+  const [reloadKey, setReloadKey] = useState(0);
   return (
     <Page title="My Profile">
       <p className="mt-1 text-sm text-ink-soft">
@@ -200,8 +204,11 @@ export default function ProfilePage() {
       </p>
 
       <div className="mt-6 flex flex-col gap-6">
+        <CvAutofill onSaved={() => setReloadKey((k) => k + 1)} />
+
 
         <ProfileSection<Project>
+          reloadKey={reloadKey}
           title="Projects"
           hint="Things you've built: side projects, coursework, open source."
           path="/projects"
@@ -230,6 +237,7 @@ export default function ProfilePage() {
         />
 
         <ProfileSection<WorkExperience>
+          reloadKey={reloadKey}
           title="Work experience"
           hint="Jobs and internships. Leave the end date empty for your current job."
           path="/work-experiences"
@@ -245,6 +253,7 @@ export default function ProfilePage() {
         />
 
         <ProfileSection<Education>
+          reloadKey={reloadKey}
           title="Education"
           hint="Degrees, diplomas and courses."
           path="/educations"

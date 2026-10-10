@@ -193,6 +193,26 @@ export type CVSkillRef = { skill_id: number; skill_name: string };
 
 export type CVFoundSkill = CVSkillRef & { matched_text: string; on_cv: boolean };
 
+// Matches backend ProfileDraftsResponse: what "Fill from my CV" read (nothing saved yet).
+type DraftCommon = {
+  start_date: string | null;
+  end_date: string | null;
+  dates_text: string | null;
+  description: string | null;
+  duplicate: boolean;
+};
+export type ProfileDrafts = {
+  characters: number;
+  sections_found: string[];
+  work_experiences: (DraftCommon & { company: string | null; role: string | null })[];
+  educations: (DraftCommon & {
+    institution: string | null;
+    degree: string | null;
+    field_of_study: string | null;
+  })[];
+  projects: (DraftCommon & { name: string | null; url: string | null })[];
+};
+
 // Matches backend SkillSuggestionResponse: a common skill the text mentions that
 // isn't saved yet (only ever a suggestion).
 export type SkillSuggestion = { name: string; category: string; matched_text: string };

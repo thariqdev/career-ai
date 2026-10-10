@@ -175,6 +175,7 @@ career-ai/
     │   │   │   ├── export_service.py ← export_all() (read-only backup of one user's data + shared taxonomy)
     │   │   │   ├── application_service.py ← update_application() (status, applied-on date, note; PATCH rules)
     │   │   │   ├── suggestion_service.py ← suggest() (catalogue skills a text mentions that aren't saved; read-only)
+    │   │   │   ├── cv_profile_service.py ← read_drafts() (CV text -> draft projects/work/education; read-only)
     │   │   │   ├── import_service.py ← parse()/check()/preview()/restore() (restore a v1 export into an EMPTY app)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
@@ -245,6 +246,7 @@ career-ai/
         ├── test_import_api.py
         ├── test_application_api.py
         ├── test_suggestions_api.py
+        ├── test_cv_profile_api.py
         └── conftest.py   ← autouse: unsets OLLAMA_MODEL/OLLAMA_BASE_URL for every test
 ```
 
@@ -2210,6 +2212,56 @@ Added 2026-10-10, in answer to the user's question "why does my CV scan only sho
   - a user-editable catalogue
   - suggestions in the AI readers' results
   - skills outside tech
+
+---
+
+### "Fill from my CV" on My Profile (draft entries)
+
+Added 2026-10-10 at the user's request ("autofill like careers sites do"). It uses deterministic rules, with no AI. **The tradeoff is accepted openly:** a draft may put words in the wrong box, so nothing is saved before the user reviews, edits and ticks each entry.
+
+- **New `cv_profile_service.read_drafts(db, user, text)`** is read-only. It returns `ProfileDrafts(characters, sections_found, work_experiences, educations, projects)`. Each draft has `start_date`, `end_date`, `dates_text` (the CV's own wording), `description` and `duplicate`.
+  - **Lines:** bullets (•●▪◦‣∙·*-–— or "1.") are detected and stripped, and whitespace is collapsed.
+  - **Sections:** a non-bullet line of 4 words or fewer that matches a known heading (`_HEADINGS`) for work, education or projects starts a section. An "other" heading (skills, certifications, summary…) ends it.
+  - **Entries:**
+    - Each line containing a date range anchors an entry. `_RANGE` matches "Jan 2022 - Present", "Sept 2019 to 2020", "03/2021 to 06/2022" and "2017 - 2021", with present/current/now/ongoing/till date meaning open-ended.
+    - The **header** is up to 2 short non-bullet lines just above the anchor, plus the anchor line's text minus the dates. Lines up to the next entry's header are the **description**.
+    - **A section with no ranges** (typical for projects) splits at title-like lines: 6 words or fewer, no full stop, not just a link.
+  - **Fields:**
+    - The header is split on `| • · – — " - " , at @` into parts.
+    - **Work:** a role-keyword part is the role (engineer, developer, intern, analyst, manager…), and the other first part is the company.
+    - **Education:** a school-keyword part is the institution (university, college, institute…); a degree-keyword part is the degree (B.Tech, Bachelor, Diploma, MBA, HSC…), split on " in " into degree and field of study.
+    - **Projects:** the first part, with a trailing "(2021)" dropped, is the name, and the first http(s) link in the entry is the URL.
+  - **Dates:** profile columns are full dates, so a month or year becomes the **1st of that period** (`parse_date`: "Mar 2022" → 2022-03-01, "03/2021" → 2021-03-01, "2019" → 2019-01-01). The original wording stays in `dates_text`.
+  - **Honesty:** every text field is copied from the CV (whole lines, or parts split at separators), and a field that isn't found stays empty. Drafts are flagged `duplicate` when the profile already has the same company + role, the same institution, or the same project name (normalized).
+- **API:** `POST /profile/cv-drafts` (`app/api/profile.py`) takes a multipart `file` **or** `text`, with the same size and type rules and text extraction as the CV scan (`cv_import_service.extract_text` / `check_pasted_text`). It returns `ProfileDraftsResponse`, never stores the CV, and never writes.
+- **Frontend:** new `components/CvAutofill.tsx` sits at the top of My Profile.
+  - "Read my CV" (file or paste) shows the drafts grouped by kind.
+  - Each draft has a tick box and editable fields: the same fields as the add forms, with dates as date inputs. Duplicates start unticked.
+  - **"Save selected"** POSTs each ticked draft to the **normal** `/work-experiences`, `/educations` or `/projects` endpoints (so every `profile_service` rule applies). Refused drafts stay with the backend's message, for fixing.
+  - `onSaved` bumps a `reloadKey` that `ProfileSection` now takes as a prop (its fetch effect depends on it), so the lists refresh.
+- **Verified:**
+  - **Tests:** 21 new in `tests/test_cv_profile_api.py`:
+    - one-line headers ("Role | Company | Jan 2022 - Present", "Intern, Globex — Jun 2021 – Dec 2021")
+    - stacked headers with dateless projects (link and description handled)
+    - "Role at Company (Sept 2019 to 2020)" and varied headings
+    - no sections gives empty drafts
+    - 8 date formats
+    - **every draft word comes from the CV** (×2 layouts)
+    - reading saves nothing
+    - duplicates are flagged
+    - saving a draft goes through the normal rules (end before start gives 422)
+    - file upload
+    - bad input: none or blank gives 422, `.exe` gives 415
+
+    Suite: **518 passed**.
+  - **Mutation check:** disabling date-range anchoring made 7 tests fail. The file was restored byte-identical.
+  - Frontend: build is clean, eslint reports 0, and `npm test` is 16/16.
+  - **Live check** on :8011 (read-only): a ZZ sample CV gave role/company/start/open end; degree "B.E." + field "Computer Engineering" + the institute; and the project name and GitHub link. Profile table counts were unchanged.
+  - **The real test is the user's own CV.** Ask which fields it got wrong and tune `_HEADINGS` and the keyword lists.
+- **Not done:**
+  - AI-based reading (a possible later step through Ollama, behind the same review screen)
+  - name, contact or summary fields
+  - skills (handled on the CV page)
 
 ---
 

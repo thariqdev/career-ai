@@ -1,19 +1,21 @@
 """Profile endpoints: the user's projects, work experience and education.
 
 Add, list (most recent first), edit (PATCH: only the fields sent change) and remove
-for each kind. Routes stay thin: rules live in
+for each kind. POST /profile/cv-drafts reads a CV into DRAFT entries for the user to
+review; it saves nothing (saving uses the normal add endpoints and their rules). Routes stay thin: rules live in
 profile_service, and each write commits on success. Everything is user-scoped via
 get_current_user, and a record that doesn't exist or isn't yours is the same 404
 (never 403), as everywhere else in this API.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.models import (
     EducationCreate,
     EducationResponse,
     EducationUpdate,
+    ProfileDraftsResponse,
     ProjectCreate,
     ProjectResponse,
     ProjectUpdate,
@@ -21,11 +23,30 @@ from app.core.models import (
     WorkExperienceResponse,
     WorkExperienceUpdate,
 )
-from app.core.services import profile_service
+from app.core.services import cv_import_service, cv_profile_service, profile_service
 from app.db.models import Education, Project, User, WorkExperience
 from app.dependencies import get_current_user, get_db
 
 router = APIRouter(tags=["profile"])
+
+
+@router.post("/profile/cv-drafts", response_model=ProfileDraftsResponse)
+def read_cv_drafts(
+    file: UploadFile | None = File(None),
+    text: str | None = Form(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> cv_profile_service.ProfileDrafts:
+    """Draft projects, work and education from a CV (file or pasted text). Read-only;
+    the CV is never stored. Same size and file-type rules as the CV scan."""
+    if (file is None) == (text is None):
+        raise HTTPException(status_code=422, detail="Send either a CV file or pasted text.")
+    if file is not None:
+        content = file.file.read(cv_import_service.MAX_CV_BYTES + 1)
+        cv_text = cv_import_service.extract_text(file.filename or "", content)
+    else:
+        cv_text = cv_import_service.check_pasted_text(text)
+    return cv_profile_service.read_drafts(db, user, cv_text)
 
 
 def _owned(db: Session, model: type, record_id: int, user: User, label: str):

@@ -368,6 +368,57 @@ class WorkExperienceResponse(BaseModel):
     created_at: datetime
 
 
+class WorkDraftResponse(BaseModel):
+    """A draft read from a CV: copied words only, nothing saved yet."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    company: str | None
+    role: str | None
+    start_date: date | None
+    end_date: date | None
+    dates_text: str | None  # the CV's own wording, e.g. "Jan 2022 - Present"
+    description: str | None
+    duplicate: bool  # the profile already has this company + role
+
+
+class EducationDraftResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    institution: str | None
+    degree: str | None
+    field_of_study: str | None
+    start_date: date | None
+    end_date: date | None
+    dates_text: str | None
+    description: str | None
+    duplicate: bool
+
+
+class ProjectDraftResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    name: str | None
+    url: str | None
+    start_date: date | None
+    end_date: date | None
+    dates_text: str | None
+    description: str | None
+    duplicate: bool
+
+
+class ProfileDraftsResponse(BaseModel):
+    """What "Fill from my CV" found. The user reviews it; saving uses the normal endpoints."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    characters: int
+    sections_found: list[str]
+    work_experiences: list[WorkDraftResponse]
+    educations: list[EducationDraftResponse]
+    projects: list[ProjectDraftResponse]
+
+
 class EducationCreate(BaseModel):
     institution: str
     degree: str | None = None

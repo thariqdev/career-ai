@@ -201,6 +201,7 @@ Skills endpoints (skills are a shared taxonomy; there is no authentication yet):
 | `GET /learning-progress` | Every skill you've started or finished studying |
 | `GET /skills/{skill_id}/learning-path` | The four-step path for a skill (start learning, finish, prove it, get verified), each step `done` / `current` / `todo`, worked out only from what you've recorded |
 | `GET /learning-paths?skill_ids=1&skill_ids=2` | The same for several skills in one request (unknown ids are skipped) |
+| `POST /profile/cv-drafts` | Read a CV (multipart `file` or `text`) into **draft** projects, work experience and education for you to review on My Profile ("Fill from my CV"). Saves nothing and never stores the CV; saving uses the normal add endpoints |
 | `GET /export` | Download everything stored for you (skills, claims, evidence, profile, jobs and results, CV marks, learning progress and links) as one JSON file; read-only. Also on My Profile as "Download my data" |
 | `POST /import/preview` | Upload a backup file (multipart `file`): returns what it holds, every problem found, and whether this app is empty. Writes nothing |
 | `POST /import` | Restore a backup into an **empty** app, all or nothing: `422` for an invalid file (broken links, verified without evidence, bad links…), `409` if the app already has data. On My Profile as "Restore from backup" |
