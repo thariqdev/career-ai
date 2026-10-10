@@ -2,7 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { apiGet, apiPost, ApiError } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, ApiError } from "@/lib/api";
+import { useConfirm } from "@/components/ConfirmDialog";
 import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
 import JobMatchSummary from "@/components/JobMatchSummary";
@@ -42,9 +43,35 @@ type FilterKey = keyof typeof FILTERS;
 
 // The user's job descriptions, newest first (GET /job-descriptions already orders
 // them). Refetched whenever reloadKey changes, i.e. after each new analysis.
-function PastJobs({ reloadKey }: { reloadKey: number }) {
+function PastJobs({ reloadKey, onDeleted }: { reloadKey: number; onDeleted: (jobId: number) => void }) {
   const [jobs, setJobs] = useState<JobDescription[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<{ id: number; message: string } | null>(null);
+  const confirm = useConfirm();
+
+  // Same rule and wording as "Delete job" on the job's own page.
+  async function handleDelete(job: JobDescription) {
+    const ok = await confirm({
+      title: `Delete "${jobLabel(job, 40)}"?`,
+      message:
+        "Its requirements and comparison history go with it. Your skills, claims and evidence are not affected. This can't be undone.",
+      confirmLabel: "Delete job",
+      danger: true,
+    });
+    if (!ok) return;
+    setDeleteError(null);
+    setDeletingId(job.id);
+    try {
+      await apiDelete(`/job-descriptions/${job.id}`);
+      setJobs((prev) => (prev === null ? prev : prev.filter((j) => j.id !== job.id)));
+      onDeleted(job.id);
+    } catch (err) {
+      setDeleteError({ id: job.id, message: err instanceof ApiError ? err.message : "Could not delete the job." });
+    } finally {
+      setDeletingId(null);
+    }
+  }
   // When the list was loaded: "upcoming" is judged against this, not read during render.
   const [loadedAt, setLoadedAt] = useState(0);
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -85,10 +112,14 @@ function PastJobs({ reloadKey }: { reloadKey: number }) {
         {jobs !== null && jobs.length > 0 && (
           <ul className="flex flex-col gap-2">
             {jobs.filter(FILTERS[filter].match).map((job) => (
-              <li key={job.id}>
+              <li
+                key={job.id}
+                className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface pr-3 text-sm shadow-sm transition-colors hover:border-accent"
+              >
+                {/* The row opens the job; Delete sits beside the link (a button can't be inside one). */}
                 <Link
                   href={`/job-descriptions/${job.id}`}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm shadow-sm transition-colors hover:border-accent"
+                  className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 px-4 py-3"
                 >
                   <span>
                     <span className="font-medium text-ink">{jobLabel(job)}</span>
@@ -110,6 +141,18 @@ function PastJobs({ reloadKey }: { reloadKey: number }) {
                     <span className="text-accent">Open →</span>
                   </span>
                 </Link>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  disabled={deletingId !== null}
+                  onClick={() => handleDelete(job)}
+                  aria-label={`Delete ${jobLabel(job, 40)}`}
+                >
+                  {deletingId === job.id ? "Deleting…" : "Delete"}
+                </Button>
+                {deleteError?.id === job.id && (
+                  <p className="w-full px-4 pb-2 text-xs text-not-verified">{deleteError.message}</p>
+                )}
               </li>
             ))}
           </ul>
@@ -399,7 +442,14 @@ export default function JobDescriptionsPage() {
         </Card>
       )}
 
-      <PastJobs reloadKey={pastReloadKey} />
+      <PastJobs
+        reloadKey={pastReloadKey}
+        onDeleted={(jobId) => {
+          // The result card above shouldn't keep showing a job that no longer exists.
+          if (state.status === "done" && state.jobDescription.id === jobId) resetForm();
+          setDuplicateOf((prev) => (prev?.id === jobId ? null : prev));
+        }}
+      />
     </Page>
   );
 }
