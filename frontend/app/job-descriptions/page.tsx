@@ -19,6 +19,7 @@ import type {
   ExtractionResponse,
   Gap,
   JobDescription,
+  CVStatusResponse,
   JobMatch,
 } from "@/lib/types";
 
@@ -143,6 +144,23 @@ export default function JobDescriptionsPage() {
   const [state, setState] = useState<PageState>({ status: "form" });
   const [rawText, setRawText] = useState("");
   const [textError, setTextError] = useState<string | null>(null);
+  // null while loading; false: no skill on the CV and no claim yet (add the CV first).
+  const [hasCv, setHasCv] = useState<boolean | null>(null);
+
+  // Fetch first, then set state only in the promise callbacks.
+  useEffect(() => {
+    let active = true;
+    apiGet<CVStatusResponse[]>("/cv/status")
+      .then(
+        (statuses) =>
+          active &&
+          setHasCv(statuses.some((s) => s.cv_status === "present" || s.knowledge_status !== null)),
+      )
+      .catch(() => active && setHasCv(null)); // unknown: show no hint rather than a wrong one
+    return () => {
+      active = false;
+    };
+  }, []);
   const [title, setTitle] = useState("");
   const [company, setCompany] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
@@ -204,6 +222,20 @@ export default function JobDescriptionsPage() {
       <p className="mt-1 text-sm text-ink-soft">
         Paste a job posting to see which requirements you can prove and where the gaps are.
       </p>
+
+      {hasCv === false && (state.status === "form" || state.status === "error") && (
+        <Card className="mt-6 border-warm/50 bg-warm-soft/40">
+          <SectionHeading
+            title="Step 1: add your CV first"
+            hint="Career AI compares each job with the skills on your CV. Add your CV first, then paste jobs here to see your match and what's missing. You can still paste a job now; its match will show once your CV is in."
+            actions={
+              <ButtonLink href="/cv" variant="primary">
+                Add my CV →
+              </ButtonLink>
+            }
+          />
+        </Card>
+      )}
 
       {(state.status === "form" || state.status === "error") && (
         <Card className="mt-6">
@@ -294,7 +326,7 @@ export default function JobDescriptionsPage() {
               }}
             />
           </div>
-          {state.extraction.accepted.length === 0 ? (
+          {!state.match.has_cv ? null : state.extraction.accepted.length === 0 ? (
             <div className="mt-4">
               <EmptyState>
                 None of your saved skills appear in this posting. Requirements are found by
@@ -302,7 +334,7 @@ export default function JobDescriptionsPage() {
                 <Link href="/skills" className="underline">
                   Skills
                 </Link>{" "}
-                page — add the ones this job mentions, then analyze it again.
+                page. Your match above already shows what this job asks for.
               </EmptyState>
             </div>
           ) : (

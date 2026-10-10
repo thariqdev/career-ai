@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { apiPost, ApiError } from "@/lib/api";
 import LearnLinks from "@/components/LearnLinks";
-import { Card, SectionHeading } from "@/components/ui";
+import { ButtonLink, Card, SectionHeading } from "@/components/ui";
 import { useLearningResources } from "@/lib/learning";
 import type { JobMatch, MatchItem } from "@/lib/types";
 
@@ -71,10 +71,24 @@ export default function JobMatchSummary({
   const have = match.proven.length + match.on_cv.length;
   return (
     <Card>
-      <SectionHeading
-        title="Your match"
-        hint={`You have ${have} of the ${match.total} skills this job asks for.`}
-      />
+      {match.has_cv ? (
+        <SectionHeading
+          title="Your match"
+          hint={`You have ${have} of the ${match.total} skills this job asks for.`}
+        />
+      ) : (
+        // Nothing to compare with yet: a 0% here would only be discouraging and wrong.
+        <SectionHeading
+          title="Add your CV to see your match"
+          hint={`Career AI compares each job with the skills on your CV. You haven't added your CV yet, so there's nothing to compare. This job asks for ${match.total} skill${match.total === 1 ? "" : "s"}, listed below.`}
+          actions={
+            <ButtonLink href="/cv" variant="primary">
+              Add my CV →
+            </ButtonLink>
+          }
+        />
+      )}
+      {match.has_cv && (
       <div className="mt-3 flex items-center gap-4">
         <span className="font-display text-4xl text-ink">{match.percent}%</span>
         <div className="flex-1">
@@ -89,10 +103,15 @@ export default function JobMatchSummary({
           </p>
         </div>
       </div>
+      )}
 
       {match.missing.length > 0 && (
         <section className="mt-5">
-          <h3 className="font-medium text-ink">Missing: learn these, then add a project to prove them</h3>
+          <h3 className="font-medium text-ink">
+            {match.has_cv
+              ? "Missing: learn these, then add a project to prove them"
+              : "Skills this job asks for"}
+          </h3>
           <ul className="mt-2 flex flex-col gap-2">
             {match.missing.map((item) => (
               <li

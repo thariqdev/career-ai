@@ -233,3 +233,12 @@ def test_skills_removed_from_the_job_are_left_out(client: TestClient) -> None:
     body = client.get(f"/job-descriptions/{job_id}/match").json()
 
     assert [i["name"] for i in body["on_cv"]] == ["Python"] and body["total"] == 1
+
+
+def test_match_says_when_there_is_no_cv_to_compare_with_yet(client: TestClient) -> None:
+    job_id = _job(client, "Need Python and Docker.")
+    assert client.get(f"/job-descriptions/{job_id}/match").json()["has_cv"] is False
+
+    _add_all(client, "Python.")
+
+    assert client.get(f"/job-descriptions/{job_id}/match").json()["has_cv"] is True

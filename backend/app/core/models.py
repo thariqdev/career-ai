@@ -522,6 +522,7 @@ class JobMatchResponse(BaseModel):
     proven: list[MatchItemResponse]
     on_cv: list[MatchItemResponse]
     missing: list[MatchItemResponse]
+    has_cv: bool  # False: nothing to compare with yet, so ask for the CV first
 
     @classmethod
     def from_match(cls, match: Any) -> "JobMatchResponse":
@@ -534,6 +535,7 @@ class JobMatchResponse(BaseModel):
             proven=items(match.proven),
             on_cv=items(match.on_cv),
             missing=items(match.missing),
+            has_cv=match.has_cv,
         )
 
 

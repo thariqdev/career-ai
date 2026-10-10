@@ -14,6 +14,10 @@ Skills you removed from this job ("not for this job" notes) are left out.
 For each: proven = a VERIFIED claim; on_cv = claimed (not verified) or marked on your CV;
 missing = neither. The percentage is (proven + on_cv) / all, i.e. "how much of this job
 is on my CV"; the proven count shows how much of that is backed by evidence.
+
+has_cv is False while the user has no skill marked on their CV and no claim at all: then
+every skill is "missing" only because there's nothing to compare with yet, and the page
+asks for the CV first instead of showing a discouraging 0%.
 """
 
 from dataclasses import dataclass, field
@@ -40,6 +44,7 @@ class JobMatch:
     proven: list[MatchItem] = field(default_factory=list)
     on_cv: list[MatchItem] = field(default_factory=list)
     missing: list[MatchItem] = field(default_factory=list)
+    has_cv: bool = False  # any skill marked on the CV, or any claim
 
     @property
     def total(self) -> int:
@@ -107,7 +112,7 @@ def job_match(db: Session, user: User, job: JobDescription) -> JobMatch:
     for suggestion in suggestion_service.suggest(db, job.raw_text):
         add(None, suggestion.name, True)
 
-    match = JobMatch()
+    match = JobMatch(has_cv=bool(on_cv or claims))
     for item in asked:
         if item.skill_id is not None and claims.get(item.skill_id) == VerificationStatus.VERIFIED:
             match.proven.append(item)

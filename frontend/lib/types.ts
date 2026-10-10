@@ -221,6 +221,7 @@ export type JobMatch = {
   proven: MatchItem[];
   on_cv: MatchItem[];
   missing: MatchItem[];
+  has_cv: boolean; // false: no CV skills or claims yet, so ask for the CV first
 };
 
 // Matches backend CVAdoptResponse ("Add all my CV skills"). Claims are provisional.

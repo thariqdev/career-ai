@@ -2360,6 +2360,11 @@ Added 2026-10-10 at the user's request. Their workflow is: start empty → uploa
     Suite: **533 passed**.
   - **Mutation checks:** "CV skills become verified" failed 4 tests; "unsaved posting skills ignored" failed 2. Both files were restored byte-identical.
   - Frontend: build is clean, eslint reports 0, and `npm test` is 22/22.
+- **CV-first hint (64c):**
+  - `JobMatch.has_cv` (and `JobMatchResponse.has_cv`) is False while the user has no CV mark and no claim.
+  - `JobMatchSummary` then shows "Add your CV to see your match" with an "Add my CV →" button, and lists "Skills this job asks for" instead of a % and bar.
+  - `/job-descriptions` shows a "Step 1: add your CV first" card above the paste form when `/cv/status` has no present mark and no claim. It hides the "None of your saved skills appear…" note when `has_cv` is false.
+  - Test: `test_match_says_when_there_is_no_cv_to_compare_with_yet`. Suite: 534.
 
 ---
 
