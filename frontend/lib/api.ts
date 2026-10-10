@@ -24,6 +24,37 @@ export class ApiError extends Error {
   }
 }
 
+// "start_date" -> "Start date"
+function fieldLabel(key: string): string {
+  const words = key.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * A message a person can read, never a status code or a URL. The backend's own rules
+ * send {"detail": "<sentence>"}; FastAPI's input checks send a list of problems
+ * ({loc, msg}), which becomes e.g. "Institution is required."
+ */
+function errorText(body: unknown, status: number): string {
+  const detail = body && typeof body === "object" && "detail" in body ? (body as { detail: unknown }).detail : null;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    return detail
+      .map((problem: { loc?: unknown[]; msg?: string; type?: string; input?: unknown }) => {
+        const key = String(problem.loc?.[problem.loc.length - 1] ?? "This field");
+        // Missing, or sent empty (null) where text or a date is needed.
+        if (problem.type === "missing" || problem.input === null) {
+          return `${fieldLabel(key)} is required.`;
+        }
+        return `${fieldLabel(key)}: ${problem.msg ?? "isn't valid"}.`;
+      })
+      .join(" ");
+  }
+  return status >= 500
+    ? "Something went wrong on the server. Please try again."
+    : "That couldn't be saved. Please check the details and try again.";
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, init);
   if (!response.ok) {
@@ -32,12 +63,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     // present, rather than a generic one, so e.g. a 409 duplicate-name error shows
     // the real reason instead of just "409".
     const body: unknown = await response.json().catch(() => null);
-    const detail =
-      body && typeof body === "object" && "detail" in body &&
-      typeof (body as { detail: unknown }).detail === "string"
-        ? (body as { detail: string }).detail
-        : `${path} responded with ${response.status}`;
-    throw new ApiError(detail, response.status);
+    throw new ApiError(errorText(body, response.status), response.status);
   }
   // 204 No Content (e.g. a DELETE) has no body to parse.
   if (response.status === 204) return undefined as T;

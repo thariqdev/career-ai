@@ -18,8 +18,12 @@ How it reads, in order:
    line around the dates, plus up to two short non-bullet lines just above it. Bullet
    lines and long lines below are its description. A section with no date ranges at
    all (common for projects) is split at each title-like line instead (6 words or
-   fewer, no full stop, not just a link).
-3. Fields: the header is split into parts, then keywords decide which part is a role
+   fewer, no full stop, not just a link). The first short, non-bullet, non-sentence
+   line just below the dates is kept aside: if the header has no school (education) or
+   no company (work), it is taken from that line.
+3. Fields: the header is split into parts at strong separators ("|", dashes, " at ");
+   commas split further only where one part holds two things. Then keywords decide
+   which part is a role
    ("Engineer", "Intern"...), a degree ("B.Tech", "Bachelor"...) or a school
    ("University", "College"...).
 
@@ -112,9 +116,14 @@ def parse_date(text: str) -> date | None:
 # --- lines ----------------------------------------------------------------------------
 
 _BULLET = re.compile(r"^\s*(?:[•●▪◦‣∙·*\-–—]|\d{1,2}[.)])\s+")
-_SPLIT = re.compile(r"\s*(?:\||•|·|–|—|\s-\s|,|\bat\b|@)\s*", re.IGNORECASE)
+# Strong separators split a header into its parts; commas only split further when one
+# part holds two things (a degree AND a school, a role AND a company), so names with
+# commas ("College of Arts, Science and Commerce") stay whole.
+_STRONG_SPLIT = re.compile(r"\s*(?:\||•|·|–|—|\s-\s|\bat\b|@)\s*", re.IGNORECASE)
+_COMMA_SPLIT = re.compile(r"\s*,\s*")
 _URL = re.compile(r"https?://[^\s,;|)]+", re.IGNORECASE)
 _SHORT_WORDS = 12
+_BELOW_WORDS = 20  # a school line with its university and city can be long
 
 
 @dataclass
@@ -159,6 +168,9 @@ class _Entry:
     end: date | None = None
     dates_text: str | None = None
     open_ended: bool = False
+    # The first line under the dates when it isn't a bullet or a sentence: the school or
+    # company is often written there ("Degree  2020 - 2023" / "College Name | City").
+    below: str | None = None
 
 
 def _is_header_like(line: _Line) -> bool:
@@ -180,8 +192,13 @@ def _entries(section: list[_Line]) -> list[_Entry]:
     anchors = [i for i, line in enumerate(section) if _RANGE.search(line.text)]
     entries: list[_Entry] = []
     if anchors:
+        # Layout, decided per section: when its very first line already holds dates, the
+        # CV writes details BELOW the dates ("Degree  2020 - 2023" / "College | City"), so
+        # nothing above an entry's dates is borrowed as its header.
+        below_layout = anchors[0] == 0
         claimed = 0  # lines before this index belong to an earlier entry
         for n, i in enumerate(anchors):
+            last = n == len(anchors) - 1
             match = _RANGE.search(section[i].text)
             entry = _Entry(dates_text=match.group(0))
             entry.start = parse_date(match.group("start"))
@@ -192,7 +209,7 @@ def _entries(section: list[_Line]) -> list[_Entry]:
             # Header lines just above the anchor (at most 2, not already claimed).
             above = []
             j = i - 1
-            while j >= claimed and len(above) < 2 and _is_header_like(section[j]):
+            while not below_layout and j >= claimed and len(above) < 2 and _is_header_like(section[j]):
                 above.insert(0, section[j].text)
                 j -= 1
             # Lines between the previous entry's anchor and these header lines are that
@@ -200,12 +217,25 @@ def _entries(section: list[_Line]) -> list[_Entry]:
             if entries:
                 entries[-1].description.extend(l.text for l in section[claimed:j + 1])
             entry.header = above
-            rest = (section[i].text[: match.start()] + " " + section[i].text[match.end():]).strip(" |,–—-:()")
+            rest = _tidy(section[i].text[: match.start()] + " " + section[i].text[match.end():])
             if rest:
                 entry.header.append(rest)
             entries.append(entry)
             claimed = i + 1
-            if n == len(anchors) - 1:
+
+            # The line under the dates, unless it is a bullet, a sentence, dated, or (in
+            # the "above" layout) possibly the next entry's header.
+            nxt = section[i + 1] if i + 1 < len(section) else None
+            if (
+                nxt is not None
+                and (below_layout or last or i + 1 < anchors[n + 1] - 2)
+                and not nxt.bullet
+                and len(nxt.text.split()) <= _BELOW_WORDS
+                and not nxt.text.endswith(".")
+                and not _RANGE.search(nxt.text)
+            ):
+                entry.below = nxt.text
+            if last:
                 entry.description.extend(l.text for l in section[claimed:])
         return entries
 
@@ -219,12 +249,43 @@ def _entries(section: list[_Line]) -> list[_Entry]:
     return entries
 
 
-def _parts(header: list[str]) -> list[str]:
+def _tidy(part: str) -> str:
+    """Trim separators, and brackets only when they're unbalanced: "(BCA)" stays whole,
+    "Initech (" loses its stray "(". Never adds text, so the result is still the CV's."""
+    part = re.sub(r"\(\s*\)", " ", part)  # brackets emptied by cutting out the dates
+    part = " ".join(part.split()).strip(" |,–—-:")
+    changed = True
+    while changed and part:
+        changed = False
+        if part.endswith("(") or part.startswith(")"):
+            part, changed = part.strip("()").strip(" |,–—-:"), True
+        elif part.endswith(")") and part.count(")") > part.count("("):
+            part, changed = part[:-1].rstrip(" |,–—-:"), True
+        elif part.startswith("(") and part.count("(") > part.count(")"):
+            part, changed = part[1:].lstrip(" |,–—-:"), True
+    return part
+
+
+def _strong_parts(lines: list[str]) -> list[str]:
     parts: list[str] = []
-    for line in header:
-        for part in _SPLIT.split(_URL.sub(" ", line)):
-            part = part.strip(" |,–—-:()")
+    for line in lines:
+        for raw in _STRONG_SPLIT.split(_URL.sub(" ", line)):
+            part = _tidy(raw)
             if part and part not in parts:
+                parts.append(part)
+    return parts
+
+
+def _comma_parts(part: str) -> list[str]:
+    return [p for p in (_tidy(raw) for raw in _COMMA_SPLIT.split(part)) if p]
+
+
+def _parts(header: list[str]) -> list[str]:
+    """Strong parts, with any comma-separated pieces split out (used for projects)."""
+    parts: list[str] = []
+    for strong in _strong_parts(header):
+        for part in _comma_parts(strong):
+            if part not in parts:
                 parts.append(part)
     return parts
 
@@ -300,19 +361,34 @@ class ProfileDrafts:
     projects: list[ProjectDraft]
 
 
-def _work(entry: _Entry) -> tuple[str | None, str | None]:
-    parts = _parts(entry.header)
+def _work(entry: _Entry) -> tuple[str | None, str | None, bool]:
+    """(company, role, used_below): used_below means the line under the dates was taken."""
+    parts = _strong_parts(entry.header)
+    if len(parts) == 1 and "," in parts[0]:
+        parts = _comma_parts(parts[0])  # "Backend Intern, Globex"
     role = next((p for p in parts if _ROLE_WORDS.search(p)), None)
     company = next((p for p in parts if p != role), None)
-    if role is None and len(parts) == 1:
-        company = parts[0]
-    return company, role
+    if company is None and role is not None and entry.below:
+        below = _strong_parts([entry.below])
+        if below and not _ROLE_WORDS.search(below[0]):
+            return below[0], role, True
+    return company, role, False
 
 
-def _education(entry: _Entry) -> tuple[str | None, str | None, str | None]:
-    parts = _parts(entry.header)
+def _education(entry: _Entry) -> tuple[str | None, str | None, str | None, bool]:
+    """(institution, degree, field_of_study, used_below)."""
+    parts = _strong_parts(entry.header)
+    refined: list[str] = []
+    for part in parts:  # "B.Tech in CS, Anna University": degree and school in one part
+        both = _SCHOOL_WORDS.search(part) and _DEGREE_WORDS.search(part)
+        refined.extend(_comma_parts(part) if both and "," in part else [part])
+    parts = refined
     institution = next((p for p in parts if _SCHOOL_WORDS.search(p)), None)
     degree_part = next((p for p in parts if p != institution and _DEGREE_WORDS.search(p)), None)
+    used_below = False
+    if institution is None and entry.below and _SCHOOL_WORDS.search(entry.below):
+        institution = next(p for p in _strong_parts([entry.below]) if _SCHOOL_WORDS.search(p))
+        used_below = True
     if institution is None:
         institution = next((p for p in parts if p != degree_part), None)
     degree, field_of_study = degree_part, None
@@ -320,7 +396,7 @@ def _education(entry: _Entry) -> tuple[str | None, str | None, str | None]:
         split = re.split(r"\s+in\s+", degree_part, maxsplit=1, flags=re.IGNORECASE)
         if len(split) == 2 and split[0].strip() and split[1].strip():
             degree, field_of_study = split[0].strip(), split[1].strip()
-    return institution, degree, field_of_study
+    return institution, degree, field_of_study, used_below
 
 
 def _project(entry: _Entry) -> tuple[str | None, str | None]:
@@ -349,26 +425,32 @@ def read_drafts(db: Session, user: User, text: str) -> ProfileDrafts:
     have_projects = existing(Project, "name")
 
     work = []
+    def without_below(entry: _Entry, used: bool) -> str | None:
+        lines = list(entry.description)
+        if used and entry.below in lines:
+            lines.remove(entry.below)
+        return _description(lines)
+
     for entry in _entries(sections["work"]):
-        company, role = _work(entry)
+        company, role, used_below = _work(entry)
         if company is None and role is None:
             continue
         work.append(
             WorkDraft(
-                company, role, entry.start, entry.end, entry.dates_text, _description(entry.description),
+                company, role, entry.start, entry.end, entry.dates_text, without_below(entry, used_below),
                 duplicate=(normalize_text(company or ""), normalize_text(role or "")) in have_work,
             )
         )
 
     educations = []
     for entry in _entries(sections["education"]):
-        institution, degree, field_of_study = _education(entry)
+        institution, degree, field_of_study, used_below = _education(entry)
         if institution is None and degree is None:
             continue
         educations.append(
             EducationDraft(
                 institution, degree, field_of_study, entry.start, entry.end, entry.dates_text,
-                _description(entry.description),
+                without_below(entry, used_below),
                 duplicate=(normalize_text(institution or ""),) in have_edu,
             )
         )

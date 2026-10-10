@@ -4,10 +4,11 @@ import { useState, type FormEvent } from "react";
 import { apiPost, apiPostForm, ApiError } from "@/lib/api";
 import { Button, Card, EmptyState, SectionHeading, inputClasses } from "@/components/ui";
 import type { ProfileDrafts } from "@/lib/types";
+import { validateEntry, type FieldRule } from "@/lib/draftValidation";
 
 type Kind = "work_experiences" | "educations" | "projects";
 
-type FieldDef = { key: string; label: string; type: "text" | "date" | "textarea"; required?: boolean };
+type FieldDef = FieldRule;
 
 // Each kind: where it's saved (the normal add endpoint) and its editable fields.
 const KINDS: { kind: Kind; title: string; path: string; label: (v: Values) => string; fields: FieldDef[] }[] = [
@@ -61,7 +62,8 @@ type Draft = {
   selected: boolean;
   duplicate: boolean;
   datesText: string | null;
-  error: string | null;
+  error: string | null; // a refusal from the server, in plain words
+  fieldErrors: Record<string, string>; // problems found before sending, per box
 };
 
 function toDrafts(result: ProfileDrafts): Draft[] {
@@ -74,6 +76,7 @@ function toDrafts(result: ProfileDrafts): Draft[] {
       duplicate: d.duplicate as boolean,
       datesText: d.dates_text as string | null,
       error: null,
+      fieldErrors: {},
     })),
   );
 }
@@ -118,10 +121,38 @@ export default function CvAutofill({ onSaved }: { onSaved: () => void }) {
     );
   }
 
+  // Editing a box clears its own message (and any server note on that entry).
+  function setValue(draft: Draft, key: string, value: string) {
+    update(draft.key, (d) => {
+      const fieldErrors = { ...d.fieldErrors };
+      delete fieldErrors[key];
+      return { values: { ...d.values, [key]: value }, fieldErrors, error: null };
+    });
+  }
+
   async function handleSave() {
     if (drafts === null) return;
-    setSaving(true);
     setMessage(null);
+    setError(null);
+
+    // Check every ticked entry first; if any box needs fixing, send nothing yet.
+    let problems = 0;
+    const checked = drafts.map((d) => {
+      if (!d.selected) return d;
+      const fieldErrors = validateEntry(d.values, KINDS.find((k) => k.kind === d.kind)!.fields);
+      problems += Object.keys(fieldErrors).length > 0 ? 1 : 0;
+      return { ...d, fieldErrors };
+    });
+    if (problems > 0) {
+      setDrafts(checked);
+      setError(
+        `${problems} ${problems === 1 ? "entry needs" : "entries need"} a fix before saving. ` +
+          "See the red notes, or untick an entry to skip it.",
+      );
+      return;
+    }
+
+    setSaving(true);
     let saved = 0;
     const remaining: Draft[] = [];
     for (const draft of drafts) {
@@ -242,20 +273,23 @@ export default function CvAutofill({ onSaved }: { onSaved: () => void }) {
                                 <textarea
                                   rows={3}
                                   value={draft.values[f.key]}
-                                  onChange={(e) =>
-                                    update(draft.key, (d) => ({ values: { ...d.values, [f.key]: e.target.value }, error: null }))
-                                  }
-                                  className={inputClasses}
+                                  onChange={(e) => setValue(draft, f.key, e.target.value)}
+                                  aria-invalid={f.key in draft.fieldErrors}
+                                  className={`${inputClasses} ${f.key in draft.fieldErrors ? "border-not-verified" : ""}`}
                                 />
                               ) : (
                                 <input
                                   type={f.type}
                                   value={draft.values[f.key]}
-                                  onChange={(e) =>
-                                    update(draft.key, (d) => ({ values: { ...d.values, [f.key]: e.target.value }, error: null }))
-                                  }
-                                  className={inputClasses}
+                                  onChange={(e) => setValue(draft, f.key, e.target.value)}
+                                  aria-invalid={f.key in draft.fieldErrors}
+                                  className={`${inputClasses} ${f.key in draft.fieldErrors ? "border-not-verified" : ""}`}
                                 />
+                              )}
+                              {draft.fieldErrors[f.key] && (
+                                <span className="text-xs font-medium text-not-verified">
+                                  {draft.fieldErrors[f.key]}
+                                </span>
                               )}
                             </label>
                           ))}

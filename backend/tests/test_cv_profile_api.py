@@ -254,3 +254,42 @@ def test_file_upload_works_too(client: TestClient) -> None:
 )
 def test_bad_input_is_refused(client: TestClient, kwargs: dict, status: int) -> None:
     assert client.post("/profile/cv-drafts", **kwargs).status_code == status
+
+
+# --- details written BELOW the dates (the user's real CV layout) -----------------------
+
+BELOW = """EDUCATION
+Bachelor of Computer Applications (BCA) June 2020 – March 2023
+Chinmaya College of Arts, Science and Commerce (Mahatma Gandhi University) | Kerala, India
+Higher Secondary (Computer Science) 2018 – 2020
+St. Mary's Higher Secondary School | Kochi
+EXPERIENCE
+Backend Developer Intern Jan 2024 – Present
+XYZ Technologies | Kochi, India
+• Built REST APIs with FastAPI
+"""
+
+
+def test_school_and_company_written_below_the_dates(client: TestClient) -> None:
+    body = _drafts(client, BELOW)
+
+    first, second = body["educations"]
+    assert first["degree"] == "Bachelor of Computer Applications (BCA)"  # bracket kept
+    assert first["institution"] == "Chinmaya College of Arts, Science and Commerce (Mahatma Gandhi University)"
+    assert (first["start_date"], first["end_date"]) == ("2020-06-01", "2023-03-01")
+    assert first["description"] is None  # the school line moved out of the notes
+    # The next entry right below isn't confused with the previous school line.
+    assert second["degree"] == "Higher Secondary (Computer Science)"
+    assert second["institution"] == "St. Mary's Higher Secondary School"
+    assert _work(body) == [("XYZ Technologies", "Backend Developer Intern", "2024-01-01", None)]
+    assert body["work_experiences"][0]["description"] == "Built REST APIs with FastAPI"
+
+
+def test_brackets_are_only_trimmed_when_unbalanced(client: TestClient) -> None:
+    from app.core.services.cv_profile_service import _tidy
+
+    assert _tidy("Bachelor of Computer Applications (BCA)") == "Bachelor of Computer Applications (BCA)"
+    assert _tidy("Initech (") == "Initech"
+    assert _tidy("Initech ( )") == "Initech"
+    assert _tidy("(Remote") == "Remote"
+    assert _tidy("Acme)") == "Acme"

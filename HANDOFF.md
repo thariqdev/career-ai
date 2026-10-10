@@ -2262,6 +2262,20 @@ Added 2026-10-10 at the user's request ("autofill like careers sites do"). It us
   - AI-based reading (a possible later step through Ollama, behind the same review screen)
   - name, contact or summary fields
   - skills (handled on the CV page)
+- **Fix after the user's first real try (2026-10-10).** Their CV wrote "Bachelor of Computer Applications (BCA)  June 2020 – March 2023", with the college **on the line below**. The draft lost ")" and left School empty, and saving showed the raw "/educations responded with 422".
+  - **Brackets:** `_tidy(part)` replaces the old blanket `strip("()")`. It removes empty "( )" left by cutting out dates, and trims a bracket only when it's unbalanced, so "(BCA)" is kept and "Initech (" becomes "Initech".
+  - **Separators in two strengths:** `_STRONG_SPLIT` (`| • · – — " - " at @`) makes the parts. `_COMMA_SPLIT` splits only a part that holds both a degree and a school (education), or a lone "Role, Company" (work). So "Chinmaya College of Arts, Science and Commerce (…)" stays whole.
+  - **Layout per section:** `below_layout = anchors[0] == 0` (the section's first line holds dates). When it's set, no lines above an anchor are borrowed as its header, so a following entry never steals the previous entry's school line.
+  - **The line below the dates:** the first non-bullet line of 20 words or fewer (`_BELOW_WORDS`) under the anchor that isn't a sentence and isn't dated is kept as `_Entry.below`. Education takes the institution from it when the header has none (a strong part with a school word); work takes the company from it when the header has a role but no company. When used, it's removed from the description.
+  - **Frontend:**
+    - **New `lib/draftValidation.ts`:** `validateEntry(values, fields)` covers required boxes, end before start, and http(s) links. "Save selected" checks every ticked draft **first**, and if any fail, nothing is sent: each box gets a red border and its message ("School is required."), plus a summary line. Editing a box clears its message.
+    - **`lib/api.ts` `errorText`:** never shows a status code or path. A FastAPI 422 list becomes "<Field> is required." for missing or null values, or "<Field>: <msg>." otherwise. Other failures get a plain sentence. This applies to every page.
+  - **Verified:**
+    - Backend: 2 new tests. The user's layout (with a second entry right after it, and a job with the company below) and the bracket tidying. Suite **520 passed**.
+    - **Mutation check:** disabling `entry.below` failed the layout test.
+    - Frontend: `tests/draftValidation.test.mjs` has 5 checks, and `npm test` is 21/21. **Mutation check:** dropping the required check failed 2. Both files were restored byte-identical.
+    - Build is clean, and eslint reports 0.
+    - **Live check** (read-only): the user's exact lines gave degree "Bachelor of Computer Applications (BCA)", school "Chinmaya College of Arts, Science and Commerce (Mahatma Gandhi University)", the dates, and empty notes. Nothing was saved.
 
 ---
 
