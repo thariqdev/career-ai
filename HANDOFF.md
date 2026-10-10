@@ -2437,8 +2437,15 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - PostgreSQL 18.6 **without pgvector**
   - **no numpy**
   - **Ollama not installed yet**; the user was told to use the official installer from ollama.com/download, installed per-user and globally, not in the repo
+- **Stage 66a (evaluation + stemming experiment):**
+  - **`app/rag/evaluate.py`:** a golden set of 15 questions with expected chunks named by `(kind, title)`, over a **fixed fixture career** built in an in-memory SQLite DB by `build_fixture_chunks()` (via the real `cv_adopt_service` and chunker). `recall_at_k` and `reciprocal_rank` are written from scratch. `evaluate(chunks, stem=None)` uses the assistant's own setting by default, and `main()` prints a per-question table comparing no stemming against stemming. Run: `.venv/Scripts/python -m app.rag.evaluate`.
+  - **`bm25.stem()`** is a tiny suffix stripper (ies→y, ing, ed, es, s; keeps "ss"; skips words of 3 letters or fewer and anything non-alphabetic, such as node.js/c++/k8s). `tokenize(text, stem_words=False)` and `BM25Index(..., stem=False)` take it as an option.
+  - **The result: stemming hurt.** Recall@4 went 1.000 → 0.833 and MRR 0.889 → 0.672, because the chunks' repeated label words ("Skill:", "Jobs that need it") make stemmed "skill"/"job" near-universal. So `assistant.USE_STEMMING = False`.
+  - **`test_retrieval_quality_does_not_regress`** asserts recall ≥ 0.99 and MRR ≥ 0.88 with the assistant's settings. **Mutation check:** flipping `USE_STEMMING` on fails it.
+  - Plus 14 more tests: stem rules (×11), stemming off by default, and recall/MRR by hand. Suite: **564**.
+  - **Caveat (documented in the guide):** the golden set was written by the same author as the chunk templates, which inflates scores.
 - **Next:**
-  - 66: embeddings via Ollama `nomic-embed-text` + cosine similarity, plus hybrid with BM25
+  - 66: embeddings via Ollama `nomic-embed-text` + cosine similarity, plus hybrid with BM25, scored with the 66a harness
   - 67: grounded generation with `llama3.2`
   - 68: evaluation
 

@@ -181,3 +181,51 @@ def test_an_empty_app_still_answers_honestly(client: TestClient) -> None:
 @pytest.mark.parametrize(("question", "status"), [("   ", 422), ("x" * 501, 422)])
 def test_bad_questions_are_refused(client: TestClient, question: str, status: int) -> None:
     assert client.post("/assistant/ask", json={"question": question}).status_code == status
+
+
+# --- stage 66a: stemming and evaluation -------------------------------------------------------
+
+from app.rag import evaluate as rag_eval  # noqa: E402
+from app.rag.bm25 import stem  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("word", "root"),
+    [
+        ("jobs", "job"), ("skills", "skill"), ("learning", "learn"), ("studies", "study"),
+        ("verified", "verifi"), ("class", "class"), ("aws", "aws"), ("node.js", "node.js"),
+        ("c++", "c++"), ("k8s", "k8s"), ("go", "go"),
+    ],
+)
+def test_stem_cuts_suffixes_but_never_touches_tech_names(word: str, root: str) -> None:
+    assert stem(word) == root
+
+
+def test_stemming_is_off_by_default_and_on_when_asked() -> None:
+    assert tokenize("Missing jobs") == ["missing", "jobs"]
+    assert tokenize("Missing jobs", stem_words=True) == ["miss", "job"]
+    assert BM25Index(["job"], stem=True).search("jobs")  # the forms meet when stemming
+    assert BM25Index(["job"]).search("jobs") == []  # ...and don't by default
+
+
+def test_recall_and_mrr_by_hand() -> None:
+    retrieved = [("gap", "A"), ("job", "X"), ("skill", "B"), ("overview", "Y")]
+
+    assert rag_eval.recall_at_k(retrieved, {("gap", "A"), ("skill", "B")}) == 1.0
+    assert rag_eval.recall_at_k(retrieved, {("gap", "A"), ("skill", "Z")}) == 0.5
+    assert rag_eval.reciprocal_rank(retrieved, {("skill", "B")}) == pytest.approx(1 / 3)
+    assert rag_eval.reciprocal_rank(retrieved, {("skill", "Z")}) == 0.0
+    assert rag_eval.reciprocal_rank(retrieved, {("overview", "Y")}, k=3) == 0.0  # outside the top k
+
+
+def test_retrieval_quality_does_not_regress() -> None:
+    """The golden-set score of the assistant's search, locked in (measured 2026-10-10).
+
+    If a change lowers these, it made retrieval worse: look at the per-question table from
+    `python -m app.rag.evaluate` before accepting it.
+    """
+    scores = rag_eval.evaluate(rag_eval.build_fixture_chunks())
+    recall, mrr = rag_eval.summary(scores)
+
+    assert recall >= 0.99
+    assert mrr >= 0.88

@@ -28,6 +28,17 @@ For one query word q and one chunk D:
 and a chunk's score for the whole question is the SUM over the question's words.
 k1 = 1.5 and b = 0.75 are the textbook defaults.
 
+Stemming (added in 66a): "jobs" and "job" are different strings, so a question about
+"jobs" used to miss a note about a "job". `stem()` cuts words to a rough common root with
+a few suffix rules (jobs -> job, learning -> learn, studies -> study), applied to BOTH
+the notes and the question, so the two forms meet. The root doesn't need to be a real
+word ("verified" -> "verifi"), only the same for both sides. Words with digits or symbols
+(node.js, c++, k8s) are left alone. Measured in app/rag/evaluate.py, where it made
+retrieval WORSE on our notes (recall@4 1.00 -> 0.83, MRR 0.89 -> 0.67): our notes repeat
+label words like "Skill:" and "Jobs that need it", so stemming "skills"/"jobs" in a
+question matches nearly every note and drowns out the right one. So it's OFF by default
+(stem=False) and kept only so the experiment can be re-run. Measure, don't assume.
+
 What BM25 can't do: it only matches exact words. "container orchestration" won't find a
 chunk that says "Kubernetes". That's what embeddings fix in stage 66 ("meaning search").
 """
@@ -51,8 +62,24 @@ STOP_WORDS = frozenset(
 _TOKEN = re.compile(r"[a-z0-9][a-z0-9+#.]*")
 
 
-def tokenize(text: str) -> list[str]:
-    """Lowercase words, keeping "c++", "c#", "node.js"; drop stop words and a trailing dot.
+def stem(word: str) -> str:
+    """A tiny suffix-stripper (a much-simplified Porter stemmer), readable on purpose.
+
+    Order matters: the first matching rule wins, and a root must keep >= 3 letters.
+    """
+    if not word.isalpha() or len(word) <= 3:
+        return word  # "aws", "c++", "node.js", "k8s" are names, not English words
+    for suffix, replacement in (("ies", "y"), ("ing", ""), ("ed", ""), ("es", ""), ("s", "")):
+        if word.endswith(suffix) and len(word) - len(suffix) + len(replacement) >= 3:
+            if suffix == "s" and word.endswith("ss"):
+                return word  # "class", "process": not a plural
+            return word[: len(word) - len(suffix)] + replacement
+    return word
+
+
+def tokenize(text: str, stem_words: bool = False) -> list[str]:
+    """Lowercase words, keeping "c++", "c#", "node.js"; drop stop words and a trailing dot;
+    optionally stem them (off by default: see the module docstring).
 
     "What skills am I MISSING for Node.js?" -> ["skills", "am", "missing", "node.js"]
     """
@@ -60,7 +87,7 @@ def tokenize(text: str) -> list[str]:
     for raw in _TOKEN.findall(text.lower()):
         token = raw.rstrip(".")
         if token and token not in STOP_WORDS:
-            tokens.append(token)
+            tokens.append(stem(token) if stem_words else token)
     return tokens
 
 
@@ -73,9 +100,9 @@ class Hit:
 class BM25Index:
     """Build once over a list of texts, then ask it for the best matches to a question."""
 
-    def __init__(self, texts: list[str], k1: float = K1, b: float = B) -> None:
-        self.k1, self.b = k1, b
-        self.docs = [Counter(tokenize(t)) for t in texts]  # word -> count, per chunk
+    def __init__(self, texts: list[str], k1: float = K1, b: float = B, stem: bool = False) -> None:
+        self.k1, self.b, self.stem = k1, b, stem
+        self.docs = [Counter(tokenize(t, stem)) for t in texts]  # word -> count, per chunk
         self.lengths = [sum(d.values()) for d in self.docs]
         self.n_docs = len(self.docs)
         self.avgdl = (sum(self.lengths) / self.n_docs) if self.n_docs else 0.0
@@ -85,13 +112,14 @@ class BM25Index:
             self.df.update(doc.keys())
 
     def idf(self, word: str) -> float:
+        """How rare `word` is (pass it already tokenized, i.e. stemmed if stemming is on)."""
         n = self.df.get(word, 0)
         return math.log((self.n_docs - n + 0.5) / (n + 0.5) + 1)
 
     def score(self, query: str, index: int) -> float:
         doc, length = self.docs[index], self.lengths[index]
         total = 0.0
-        for word in set(tokenize(query)):  # a word repeated in the question counts once
+        for word in set(tokenize(query, self.stem)):  # a word repeated in the question counts once
             f = doc.get(word, 0)
             if f == 0:
                 continue

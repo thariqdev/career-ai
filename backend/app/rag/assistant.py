@@ -20,6 +20,8 @@ from app.rag.bm25 import BM25Index
 from app.rag.chunker import Chunk, build_chunks
 
 TOP_K = 4
+# Stemming measured worse on our notes (app/rag/evaluate.py), so it's off.
+USE_STEMMING = False
 MAX_QUESTION_CHARS = 500
 NOT_FOUND = (
     "I couldn't find anything about that in your Career AI data. Try asking about a skill, "
@@ -57,7 +59,7 @@ def ask(db: Session, user: User, question: str, top_k: int = TOP_K) -> Assistant
     question = question[:MAX_QUESTION_CHARS]
 
     chunks = build_chunks(db, user)  # 1. CHUNK (fresh from PostgreSQL)
-    index = BM25Index([f"{c.title}. {c.text}" for c in chunks])  # 2. RETRIEVE...
+    index = BM25Index([f"{c.title}. {c.text}" for c in chunks], stem=USE_STEMMING)  # 2. RETRIEVE...
     hits = index.search(question, top_k)
     sources = [Source(n, chunks[hit.index], round(hit.score, 3)) for n, hit in enumerate(hits, start=1)]
     return AssistantAnswer(_compose(sources), sources, len(chunks))  # 3. GENERATE (extractive)

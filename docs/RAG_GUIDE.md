@@ -115,18 +115,86 @@ Keyword search finds **words**, not **meaning**. Stage 66 adds meaning.
 
 ---
 
+## Stage 66a: measure first (evaluation), and an "improvement" that wasn't ✅
+
+**Run it yourself** (from `backend/`):
+
+```powershell
+.venv/Scripts/python -m app.rag.evaluate
+```
+
+### Why measure before improving?
+
+Without a score, "it seems better" is a feeling, not evidence. Real RAG teams keep a small
+**golden set**: questions, each with the notes that *should* be retrieved. They re-score
+every change against it. Ours is 15 questions over a **fixed, made-up career** built in a
+throwaway database (`app/rag/evaluate.py`), so the score changes only when the code or
+the note wording changes, never because your real data changed.
+
+### The two numbers
+
+- **Recall@k:** of the notes that should be found, the fraction in the top *k* (k = 4,
+  because the assistant reads 4 notes). This asks: *did the right facts reach the model?*
+  Example: expected {A, B}, top 4 = [A, X, Y, Z] gives recall@4 = **0.5**.
+- **MRR (mean reciprocal rank):** 1 ÷ the position of the **first** right note,
+  averaged over all questions. 1st place = 1.0, 2nd = 0.5, 3rd = 0.33, not in the top k = 0.
+  This asks: *how high up is the first good answer?*
+
+### The experiment: stemming
+
+We'd seen "jobs" fail to match "job", so we tried **stemming**: cutting words to a common
+root (jobs → job, learning → learn) on both the notes and the question
+(`stem()` in `app/rag/bm25.py`). The textbook says this helps. The numbers:
+
+| | recall@4 | MRR |
+|---|---|---|
+| BM25 (no stemming) | **1.000** | **0.889** |
+| BM25 + stemming | 0.833 | 0.672 |
+
+**It made retrieval worse.** Why: our notes repeat label words, since every skill note
+starts with "Skill:" and says "Jobs that need it". With stemming, the question words
+"skills" and "jobs" match *nearly every note*, BM25 sees them as common (low IDF), and
+the right note (often the long overview) gets drowned out. "Which skills have no proof
+yet?" went from found (1st place) to not found at all.
+
+**Decision, backed by numbers:** stemming stays in the code (so the experiment can be
+re-run) but is **off** (`USE_STEMMING = False` in `app/rag/assistant.py`). A test,
+`test_retrieval_quality_does_not_regress`, locks the score in. Flipping stemming on
+makes it fail, which was checked.
+
+### Two honest caveats
+
+1. **The golden set is biased.** I wrote both the notes *and* the questions, so they share
+   wording, which is partly why the baseline scores a perfect recall. Real evaluation uses
+   questions from real users, ideally collected before you see the notes.
+2. **16 notes is tiny.** Scores on small sets swing a lot from one question. Treat them as
+   a smoke alarm, not a leaderboard.
+
+### Interview questions you can now answer
+
+- *How do you evaluate a RAG system?* Separate **retrieval** (recall@k, MRR, precision)
+  from **generation** (faithfulness to the sources, answer relevance). Use a golden set,
+  and re-run it on every change.
+- *What's the difference between recall@k and MRR?* Recall: did the right documents
+  arrive at all? MRR: how high was the first right one?
+- *Does stemming always help keyword search?* No. It depends on your text. Measure it.
+  (Here it hurt, because of repeated label words.)
+- *What's wrong with a golden set the developer wrote?* Shared wording inflates scores.
+  Use real user questions.
+
 ## Stage 66: embeddings + vector search (next)
 
 *Needs Ollama (free) with `nomic-embed-text`.* We'll turn each note and question into a
 list of numbers (an **embedding**) that captures meaning, find the notes **closest in
-meaning** (cosine similarity), and combine that with BM25 (**hybrid search**).
+meaning** (cosine similarity), and combine that with BM25 (**hybrid search**). Then we'll
+score it with the same golden set as 66a, so we'll *know* whether meaning search helps.
 
 ## Stage 67: generation with grounding
 
 *Needs Ollama with `llama3.2`.* The model writes a natural answer **using only the
 retrieved notes**, cites them as [1] [2], and says when the notes don't cover the question.
 
-## Stage 68: evaluation
+## Stage 68: evaluating generation
 
-How do you know it works? A small test set of questions with the notes that *should* be
-found (retrieval accuracy), plus checks that answers only use retrieved facts (faithfulness).
+Stage 66a already measures retrieval. Once a model writes answers, we'll also check
+**faithfulness**: does every claim in the answer come from a retrieved note?
