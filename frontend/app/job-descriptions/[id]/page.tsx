@@ -7,6 +7,7 @@ import { apiDelete, apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import NotInSkillsYet from "@/components/NotInSkillsYet";
 import SkillSuggestions from "@/components/SkillSuggestions";
+import JobMatchSummary from "@/components/JobMatchSummary";
 import ApplicationEditor from "@/components/ApplicationEditor";
 import StatusBadge from "@/components/StatusBadge";
 import { Button, ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
@@ -17,6 +18,7 @@ import type {
   ExtractorInfo,
   Gap,
   JobDescription,
+  JobMatch,
   Skill,
   SkillSuggestion,
 } from "@/lib/types";
@@ -29,20 +31,22 @@ type Loaded = {
   dismissed: Skill[];
   reader: ExtractorInfo;
   suggestions: SkillSuggestion[];
+  match: JobMatch;
 };
 
 type PageState = { status: "loading" } | { status: "error"; message: string } | Loaded;
 
 async function fetchJob(id: number): Promise<Loaded> {
-  const [job, results, gaps, dismissed, reader, suggestions] = await Promise.all([
+  const [job, results, gaps, dismissed, reader, suggestions, match] = await Promise.all([
     apiGet<JobDescription>(`/job-descriptions/${id}`),
     apiGet<ComparisonResult[]>(`/job-descriptions/${id}/results`),
     apiGet<Gap[]>(`/job-descriptions/${id}/gaps`),
     apiGet<Skill[]>(`/job-descriptions/${id}/dismissed`),
     apiGet<ExtractorInfo>("/job-descriptions/extractor"),
     apiGet<SkillSuggestion[]>(`/job-descriptions/${id}/suggestions`),
+    apiGet<JobMatch>(`/job-descriptions/${id}/match`),
   ]);
-  return { status: "loaded", job, results, gaps, dismissed, reader, suggestions };
+  return { status: "loaded", job, results, gaps, dismissed, reader, suggestions, match };
 }
 
 function readerLabel(reader: ExtractorInfo): string {
@@ -285,6 +289,11 @@ export default function JobDescriptionPage() {
             />
           </div>
         </Card>
+
+        <JobMatchSummary
+          match={state.match}
+          onChanged={async () => setState(await fetchJob(jobId))}
+        />
 
         <Card>
           <SectionHeading

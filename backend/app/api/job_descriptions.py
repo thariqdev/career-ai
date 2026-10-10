@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.ai.client import RequirementExtractor
 from app.core.models import (
     ApplicationUpdate,
+    JobMatchResponse,
     ComparisonResultResponse,
     ExtractionResponse,
     ExtractorInfo,
@@ -41,6 +42,7 @@ from app.core.services import (
     comparison_service,
     interview_prep_service,
     job_description_service,
+    match_service,
     requirement_service,
     suggestion_service,
 )
@@ -169,6 +171,17 @@ def delete_requirement(
     job_description_service.delete_requirement(db, requirement)
     db.commit()
     return Response(status_code=204)
+
+
+@router.get("/{job_description_id}/match", response_model=JobMatchResponse)
+def read_match(
+    job_description_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> JobMatchResponse:
+    """How much of this job you have: proven, on your CV, missing. Read-only, always current."""
+    job_description = _get_owned_job_description(db, job_description_id, user)
+    return JobMatchResponse.from_match(match_service.job_match(db, user, job_description))
 
 
 @router.get("/{job_description_id}/suggestions", response_model=list[SkillSuggestionResponse])

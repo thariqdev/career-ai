@@ -213,6 +213,24 @@ export type ProfileDrafts = {
   projects: (DraftCommon & { name: string | null; url: string | null })[];
 };
 
+// Matches backend MatchItemResponse / JobMatchResponse (match_service): always current.
+export type MatchItem = { skill_id: number | null; name: string; is_required: boolean };
+export type JobMatch = {
+  percent: number;
+  total: number;
+  proven: MatchItem[];
+  on_cv: MatchItem[];
+  missing: MatchItem[];
+};
+
+// Matches backend CVAdoptResponse ("Add all my CV skills"). Claims are provisional.
+export type CVAdoptResult = {
+  added_skills: string[];
+  marked_on_cv: string[];
+  claimed: string[];
+  already_done: string[];
+};
+
 // Matches backend SkillSuggestionResponse: a common skill the text mentions that
 // isn't saved yet (only ever a suggestion).
 export type SkillSuggestion = { name: string; category: string; matched_text: string };

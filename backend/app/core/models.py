@@ -495,6 +495,48 @@ class CVPresenceUpdate(BaseModel):
     present: bool
 
 
+class CVAdoptResponse(BaseModel):
+    """What "Add all my CV skills" did. Claims are provisional, never verified."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    added_skills: list[str]
+    marked_on_cv: list[str]
+    claimed: list[str]
+    already_done: list[str]
+
+
+class MatchItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    skill_id: int | None
+    name: str
+    is_required: bool
+
+
+class JobMatchResponse(BaseModel):
+    """How well you match a job right now (see match_service)."""
+
+    percent: int
+    total: int
+    proven: list[MatchItemResponse]
+    on_cv: list[MatchItemResponse]
+    missing: list[MatchItemResponse]
+
+    @classmethod
+    def from_match(cls, match: Any) -> "JobMatchResponse":
+        def items(group: list) -> list[MatchItemResponse]:
+            return [MatchItemResponse.model_validate(i) for i in group]
+
+        return cls(
+            percent=match.percent,
+            total=match.total,
+            proven=items(match.proven),
+            on_cv=items(match.on_cv),
+            missing=items(match.missing),
+        )
+
+
 class CVPresenceResponse(BaseModel):
     """Public shape of a CVSkillPresence; `skill_name` is pulled from the relationship."""
 

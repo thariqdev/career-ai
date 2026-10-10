@@ -30,6 +30,7 @@ type Loaded = {
   status: "loaded";
   loadedAt: number; // when the data was fetched: the "now" for upcoming interviews
   verifiedCount: number;
+  onCvCount: number;
   totalGaps: number;
   jobDescriptions: JobDescription[];
   mostRecentGaps: Gap[];
@@ -77,6 +78,7 @@ async function fetchDashboard(): Promise<Loaded> {
     status: "loaded",
     loadedAt: Date.now(),
     verifiedCount: userSkills.filter((us) => us.status === "verified").length,
+    onCvCount: cvStatuses.filter((c) => c.cv_status === "present").length,
     // Only jobs still open (not offer/rejected/withdrawn) count as gaps to close.
     totalGaps: gapsPerJob.reduce(
       (sum, gaps, i) => sum + (isOpen(jobDescriptions[i].application_status) ? gaps.length : 0),
@@ -271,7 +273,8 @@ export default function DashboardPage() {
         What you can prove, what jobs ask for, and what to learn next.
       </p>
 
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile value={state.onCvCount} label="Skills on your CV" href="/cv" />
         <StatTile value={state.verifiedCount} label="Verified skills" href="/skills" />
         <StatTile value={state.totalGaps} label="Open gaps (open jobs)" href="/job-descriptions" />
         <StatTile

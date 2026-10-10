@@ -25,3 +25,6 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local data backups made by backend/scripts/reset_data.py (personal data: never commit)
+backend/backups/

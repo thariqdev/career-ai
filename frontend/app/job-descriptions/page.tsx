@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
+import JobMatchSummary from "@/components/JobMatchSummary";
 import { shortDateTime } from "@/lib/interviews";
 import {
   ACTIVE_STATUSES,
@@ -18,6 +19,7 @@ import type {
   ExtractionResponse,
   Gap,
   JobDescription,
+  JobMatch,
 } from "@/lib/types";
 
 // Paste one job description and see its results here; "analyze another" resets the
@@ -131,6 +133,7 @@ type PageState =
       status: "done";
       jobDescription: JobDescription;
       extraction: ExtractionResponse;
+      match: JobMatch;
       comparisons: ComparisonResult[];
       gaps: Gap[];
     }
@@ -181,9 +184,12 @@ export default function JobDescriptionsPage() {
       );
 
       setState({ status: "running", stage: "loading-gaps" });
-      const gaps = await apiGet<Gap[]>(`/job-descriptions/${jobDescription.id}/gaps`);
+      const [gaps, match] = await Promise.all([
+        apiGet<Gap[]>(`/job-descriptions/${jobDescription.id}/gaps`),
+        apiGet<JobMatch>(`/job-descriptions/${jobDescription.id}/match`),
+      ]);
 
-      setState({ status: "done", jobDescription, extraction, comparisons, gaps });
+      setState({ status: "done", jobDescription, extraction, comparisons, gaps, match });
       setPastReloadKey((key) => key + 1);
     } catch (error) {
       setState({
@@ -278,6 +284,16 @@ export default function JobDescriptionsPage() {
             }
           />
           {state.extraction.note && <p className="mt-3 text-sm text-ink-soft">{state.extraction.note}</p>}
+          <div className="mt-4">
+            <JobMatchSummary
+              match={state.match}
+              onChanged={async () => {
+                const id = state.jobDescription.id;
+                const match = await apiGet<JobMatch>(`/job-descriptions/${id}/match`);
+                setState((prev) => (prev.status === "done" ? { ...prev, match } : prev));
+              }}
+            />
+          </div>
           {state.extraction.accepted.length === 0 ? (
             <div className="mt-4">
               <EmptyState>

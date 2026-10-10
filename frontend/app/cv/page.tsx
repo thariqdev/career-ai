@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { apiPostForm, apiPut, ApiError } from "@/lib/api";
-import type { CVPresence, CVScan } from "@/lib/types";
+import type { CVAdoptResult, CVPresence, CVScan } from "@/lib/types";
 import { Button, Card, EmptyState, Page, SectionHeading, inputClasses } from "@/components/ui";
 import SkillSuggestions from "@/components/SkillSuggestions";
 
@@ -25,8 +25,11 @@ export default function CVPage() {
   // reader missed (e.g. a nickname you haven't saved) is never removed by accident.
   const [present, setPresent] = useState<Set<number>>(new Set());
   const [absent, setAbsent] = useState<Set<number>>(new Set());
+  const [addingAll, setAddingAll] = useState(false);
+  const [adopted, setAdopted] = useState<CVAdoptResult | null>(null);
 
   function reset() {
+    setAdopted(null);
     setFile(null);
     setPasted("");
     setError(null);
@@ -79,6 +82,24 @@ export default function CVPage() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not save.");
       setState({ status: "review", scan });
+    }
+  }
+
+  // "Add all my CV skills": saves every skill the CV mentions, marks it on the CV and
+  // claims it as provisional (never verified), then rescans in place.
+  async function handleAddAll() {
+    setError(null);
+    setAddingAll(true);
+    try {
+      const form = new FormData();
+      if (file) form.append("file", file);
+      else form.append("text", pasted);
+      setAdopted(await apiPostForm<CVAdoptResult>("/cv/add-all", form));
+      await scan(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not add the skills.");
+    } finally {
+      setAddingAll(false);
     }
   }
 
@@ -141,6 +162,38 @@ export default function CVPage() {
             Read {state.scan.characters.toLocaleString()} characters. Nothing is saved until
             you click Save.
           </p>
+
+          {state.scan.found.length + state.scan.suggestions.length > 0 && (
+            <Card className="border-accent/40">
+              <SectionHeading
+                title="Add all my CV skills"
+                hint="One click: every skill below is saved, marked as on your CV, and added to your skills as “provisional” (you say you have it). Linking a project later proves it."
+                actions={
+                  <Button variant="primary" onClick={handleAddAll} disabled={addingAll || state.status === "saving"}>
+                    {addingAll
+                      ? "Adding…"
+                      : `Add all ${state.scan.found.length + state.scan.suggestions.length} skills`}
+                  </Button>
+                }
+              />
+              {adopted && (
+                <p className="mt-3 text-sm text-verified">
+                  ✓ Added {adopted.added_skills.length} new skill{adopted.added_skills.length === 1 ? "" : "s"},
+                  marked {adopted.marked_on_cv.length} on your CV and claimed {adopted.claimed.length}.
+                  {adopted.already_done.length > 0 && ` ${adopted.already_done.length} were already done.`}{" "}
+                  See them on the{" "}
+                  <Link href="/skills" className="underline">
+                    Skills
+                  </Link>{" "}
+                  page and the{" "}
+                  <Link href="/" className="underline">
+                    Dashboard
+                  </Link>
+                  .
+                </p>
+              )}
+            </Card>
+          )}
 
           <Card>
             <SectionHeading title="Found on your CV" hint="Untick any that shouldn't be marked." />

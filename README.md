@@ -202,6 +202,8 @@ Skills endpoints (skills are a shared taxonomy; there is no authentication yet):
 | `GET /skills/{skill_id}/learning-path` | The four-step path for a skill (start learning, finish, prove it, get verified), each step `done` / `current` / `todo`, worked out only from what you've recorded |
 | `GET /learning-paths?skill_ids=1&skill_ids=2` | The same for several skills in one request (unknown ids are skipped) |
 | `POST /profile/cv-drafts` | Read a CV (multipart `file` or `text`) into **draft** projects, work experience and education for you to review on My Profile ("Fill from my CV"). Saves nothing and never stores the CV; saving uses the normal add endpoints |
+| `POST /cv/add-all` | "Add all my CV skills": saves every skill the CV mentions, marks it on your CV and claims it as **provisional** (never verified: a CV isn't proof). Running it again adds nothing |
+| `GET /job-descriptions/{id}/match` | Your match for a job, always current: `percent`, and which of its skills are `proven`, `on_cv` (not proven yet) or `missing` (including common skills it names that you don't have) |
 | `GET /export` | Download everything stored for you (skills, claims, evidence, profile, jobs and results, CV marks, learning progress and links) as one JSON file; read-only. Also on My Profile as "Download my data" |
 | `POST /import/preview` | Upload a backup file (multipart `file`): returns what it holds, every problem found, and whether this app is empty. Writes nothing |
 | `POST /import` | Restore a backup into an **empty** app, all or nothing: `422` for an invalid file (broken links, verified without evidence, bad links…), `409` if the app already has data. On My Profile as "Restore from backup" |
@@ -260,6 +262,13 @@ pytest
 ```
 
 This will run the health endpoint test in `tests/test_health.py`. The test suite does not require a running PostgreSQL server.
+
+
+**Start from scratch.** To empty the database (a backup is saved first to `backend/backups/`, which "Restore from backup" accepts), stop the backend and run, from `backend/`:
+
+```bash
+.venv/Scripts/python scripts/reset_data.py --yes
+```
 
 ## Phase 2 — Frontend Setup
 

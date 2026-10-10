@@ -176,6 +176,8 @@ career-ai/
     │   │   │   ├── application_service.py ← update_application() (status, applied-on date, note; PATCH rules)
     │   │   │   ├── suggestion_service.py ← suggest() (catalogue skills a text mentions that aren't saved; read-only)
     │   │   │   ├── cv_profile_service.py ← read_drafts() (CV text -> draft projects/work/education; read-only)
+    │   │   │   ├── cv_adopt_service.py ← add_all_from_cv() (save + mark on CV + claim PROVISIONAL)
+    │   │   │   ├── match_service.py ← job_match() (proven / on CV / missing, from the posting text; read-only)
     │   │   │   ├── import_service.py ← parse()/check()/preview()/restore() (restore a v1 export into an EMPTY app)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
@@ -247,6 +249,7 @@ career-ai/
         ├── test_application_api.py
         ├── test_suggestions_api.py
         ├── test_cv_profile_api.py
+        ├── test_cv_workflow_api.py
         └── conftest.py   ← autouse: unsets OLLAMA_MODEL/OLLAMA_BASE_URL for every test
 ```
 
@@ -2299,6 +2302,64 @@ Added 2026-10-10. The user didn't want the browser's "Please fill out this field
   - Build is clean, and eslint reports 0. A grep finds no remaining native `required` attributes.
   - **Smoke test:** :3011 returned 200 for `/profile`, `/skills`, `/skills/1` and `/job-descriptions`.
   - The look is the user's to judge.
+
+---
+
+### CV-first workflow: "Add all my CV skills", job match summary, reset script
+
+Added 2026-10-10 at the user's request. Their workflow is: start empty → upload the CV → its skills appear everywhere → paste jobs → see the match and what's missing → learn → build a project → prove the skill.
+
+- **`cv_adopt_service.add_all_from_cv(db, user, text)`:**
+  1. creates every catalogue suggestion as a skill (with its category, and the CV's spelling as a nickname when it differs; a nickname collision is skipped)
+  2. re-scans the CV
+  3. for every found skill, marks it on the CV and claims it as **PROVISIONAL** (`UserSkill` default) if it isn't claimed yet
+
+  **It never sets VERIFIED or PARTIAL**: a CV is a self-report (PROJECT_RULES 4.2). Existing claims keep their status, and running it again adds nothing. It flushes only, and the route commits once.
+- **API:** `POST /cv/add-all` (multipart `file` or `text`, via the shared `_cv_text` helper in `app/api/cv.py`) returns `CVAdoptResponse{added_skills, marked_on_cv, claimed, already_done}`.
+- **`match_service.job_match(db, user, job)`** is read-only and **always current**: no "Compare again" needed.
+  - **What the job asks for:**
+    1. the user's skills the **posting text** mentions (the current taxonomy via `SkillListExtractor` + `resolve_skill`, so skills saved later count)
+    2. the job's requirements (mapped, plus unmapped text)
+    3. **catalogue skills the posting names that aren't saved** (`suggestion_service`), which are always missing with `skill_id=None`
+
+    It's de-duplicated by skill id or normalized name, and skills with a "not for this job" note are excluded.
+  - **Status of each:**
+    - proven = a VERIFIED claim
+    - on_cv = claimed (not verified) or marked on the CV
+    - missing = neither
+
+    Required ones come first, in posting order.
+  - **The percentage** is (proven + on_cv) / total.
+  - **Why the posting text is read:** in an empty app the default reader only finds saved skills, so without step 3 a posting's unknown skills would be invisible and the match would wrongly read 100%. The tests caught exactly that.
+- **API:** `GET /job-descriptions/{id}/match` returns `JobMatchResponse{percent, total, proven, on_cv, missing}` (ownership: 404).
+- **Frontend:**
+  - **New `components/JobMatchSummary.tsx`:** a big %, a stacked bar (proven / on CV / missing), and the **missing skills first**. A saved missing skill gets `LearnLinks`. An unsaved one gets client-built YouTube searches (the same query templates as `learning_service`) and an "Add to my skills" button (name only, no claim).
+    - It's used on the job page (loaded in `fetchJob`, reloaded on change) and in the paste-a-job result (fetched with the gaps).
+  - **CV page:** an **"Add all N skills"** card after scanning, which calls `/cv/add-all`, shows a summary, then rescans in place.
+  - **Dashboard:** a new **"Skills on your CV"** tile (from `/cv/status`), with the grid now 2 or 4 columns.
+- **New `backend/scripts/reset_data.py`** (`--yes` required, otherwise exit 2):
+  1. writes a **backup first** to `backend/backups/backup-<timestamp>.json`, in the exact "Download my data" format so "Restore from backup" accepts it. If the backup fails, nothing is deleted.
+  2. empties every table: `TRUNCATE … RESTART IDENTITY` on PostgreSQL, ordered deletes otherwise. `alembic_version` stays.
+  3. reports any rows left
+
+  `backend/backups/` is in `.gitignore` because it holds personal data. The built-in user is recreated on the next request.
+- **Verified:**
+  - **Tests:** 13 in `tests/test_cv_workflow_api.py`:
+    - an empty app gets every CV skill saved, marked and provisionally claimed (JS → JavaScript, with the nickname and category)
+    - a second run adds nothing
+    - an existing verified claim is untouched
+    - add-all needs a CV
+    - match: proven / on CV / missing, with a skill counted once
+    - the match is current without comparing
+    - zero requirements gives 0%
+    - another user's job gives 404
+    - unsaved catalogue skills count as missing
+    - removed skills are excluded
+    - reset: refused without `--yes`; backs up then empties; **the backup restores into the emptied app**
+
+    Suite: **533 passed**.
+  - **Mutation checks:** "CV skills become verified" failed 4 tests; "unsaved posting skills ignored" failed 2. Both files were restored byte-identical.
+  - Frontend: build is clean, eslint reports 0, and `npm test` is 22/22.
 
 ---
 
