@@ -108,3 +108,40 @@ export function apiPatch<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
 }
+
+/**
+ * POST and read a streamed NDJSON response line by line, calling onEvent for each object
+ * as it arrives (the assistant's answer appearing word by word). `signal` lets the caller
+ * stop it (an AbortController for a "Stop" button). Errors before the stream starts
+ * (e.g. 422) throw ApiError with a readable message, like the other helpers.
+ */
+export async function apiStream<E>(
+  path: string,
+  body: unknown,
+  onEvent: (event: E) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok || response.body === null) {
+    const errorBody: unknown = await response.json().catch(() => null);
+    throw new ApiError(errorText(errorBody, response.status), response.status);
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    // A chunk can end halfway through a line: handle whole lines, keep the rest.
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) if (line.trim() !== "") onEvent(JSON.parse(line) as E);
+    if (done) break;
+  }
+  if (buffer.trim() !== "") onEvent(JSON.parse(buffer) as E);
+}

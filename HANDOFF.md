@@ -2476,6 +2476,24 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
     Suite: **578**.
   - **Mutation checks:** no `MIN_COSINE` failed the threshold test; RRF max-instead-of-sum failed the RRF test. Both files were restored byte-identical.
   - Frontend: build is clean, eslint reports 0, and `npm test` is 24/24.
+- **Stage 67a (chatbot UI):**
+  - **Backend:** `POST /assistant/ask/stream` returns NDJSON events: `meta` (`AskResponse` minus `answer`), then `delta {text}` pieces from `assistant.stream_pieces()` (a regex word split that joins back exactly), then `done`.
+    - It calls the normal `ask()` first, so validation (422) and **all DB work happen before streaming**. The generator only yields prepared strings.
+    - Tests: the pieces join back exactly; event order and meta equal `/ask`'s sources, retrieval and searched; the deltas join to `/ask`'s answer; an empty question gives 422 before streaming. RAG tests: 30.
+  - **Frontend:**
+    - **`lib/api.ts`:** `apiStream(path, body, onEvent, signal)` reads `response.body`, splits lines while keeping a partial-line buffer, and throws `ApiError` before streaming.
+    - **`lib/chat.ts`** holds the pure helpers, tested in `tests/chat.test.mjs` (5 tests): `parseNdjson`, `splitCitations` (only `[n]` with 1 ≤ n ≤ sources), `suggestionsFor(PageContext)`, `pageTarget(pathname)`, and `forStorage` (newest 50, with streaming turned into stopped).
+    - **`lib/chatStore.ts`:** a module-level external store plus `useSyncExternalStore` (the server snapshot is empty, so there's no hydration mismatch).
+      - localStorage key `career-ai-chat-v1`, wrapped in try/catch
+      - `send` (one at a time) creates the user message and a streaming assistant message, then applies meta, delta and done
+      - `stop` aborts; `clear` empties
+    - **`components/ChatPanel.tsx`:** bubbles with times, a thinking dots and caret animation, `[n]` citation buttons that highlight source chips (links), a sources line with the retrieval mode, the fallback note, and suggestions when empty. Enter sends, Shift+Enter adds a line, Send swaps to Stop, and "Clear chat" uses the confirm modal.
+    - **`components/ChatWidget.tsx`:** a fixed 💬 button (bottom-right, `print:hidden`, hidden on `/assistant`) with a busy dot, and a dialog panel. Esc closes it unless a confirm modal is open, and focus returns to the button. Page-aware context is fetched on open: the job via `jobLabel`, the skill name from `/skills`. It's mounted in `layout.tsx` inside `ConfirmProvider`.
+    - **`/assistant`** now renders the same `ChatPanel` in a tall card.
+  - **Verified:**
+    - Build is clean, eslint reports 0, and `npm test` is 29/29. Backend: 581.
+    - **Live:** `/ask/stream` on :8011 against real data gave 177 events (meta with 4 sources, 175 deltas, done), and the deltas join to the full answer.
+    - **Smoke test:** :3011 returned 200 for `/`, `/assistant`, `/skills` and `/job-descriptions/1`, and the widget button is in the server HTML.
 - **Next:**
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - 67: grounded generation with `llama3.2`

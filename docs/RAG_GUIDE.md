@@ -271,6 +271,65 @@ that's 1st in only one list (1/61 = 0.0164). **Agreement wins.**
 - *What is a vector database?* Storage plus fast nearest-neighbour search over vectors
   (pgvector, FAISS, Pinecone). Unnecessary at tiny scale, essential at millions of chunks.
 
+## Stage 67a: the chatbot UI (streaming, citations, one shared conversation) ✅
+
+**Use it:** click the **💬** button at the bottom-right of any page, or open **Assistant** in
+the menu (the same conversation, more room).
+
+### Streaming: why answers appear word by word
+
+A language model writes one small piece (a **token**) at a time. Waiting for the whole
+answer feels slow, so chat apps **stream**: the server sends each piece as soon as it
+exists, and the page shows it immediately. We use **NDJSON** (newline-delimited JSON: one
+JSON object per line) over a normal HTTP response:
+
+```
+{"type": "meta", "sources": [...], "retrieval": "bm25", "searched": 35}
+{"type": "delta", "text": "Here's "}
+{"type": "delta", "text": "what "}
+…
+{"type": "done"}
+```
+
+- **meta comes first:** the sources are known *before* any text, because retrieval
+  happens before generation. That's the R before the G in RAG.
+- **deltas, joined, are the answer.** A test checks this:
+  `test_the_stream_sends_meta_then_deltas_then_done`.
+- **All database work happens before streaming starts**, so a half-sent answer never holds
+  a database connection, and a bad question still gets a normal 422 error.
+- **Network chunks don't line up with lines.** A chunk can end in the middle of a JSON
+  line, so the reader keeps the unfinished part and adds it to the next chunk
+  (`parseNdjson`, tested).
+- **Stop** cancels the request with an `AbortController`.
+
+Today the pieces are the extractive answer split into words. In stage 67 they'll be the
+model's real tokens, and **the UI won't need to change**. That's why the plumbing was
+built first.
+
+### Citations you can click
+
+Answers refer to sources as **[1] [2]**. The chat turns each into a button; clicking it
+highlights that source chip under the answer, and the chip links to the skill or job page.
+Numbers with no matching source (like "[2024]") stay plain text (`splitCitations`, tested).
+**Showing sources is how a RAG system earns trust.**
+
+### One conversation, everywhere
+
+The floating widget and the full page read the **same chat store** (`lib/chatStore.ts`,
+using React's `useSyncExternalStore`). The newest 50 messages are kept in **your browser
+only** (localStorage), so the chat survives page changes. "Clear chat" removes them. On a
+job's or skill's page, the suggestions are about *that* job or skill.
+
+### Interview questions you can now answer
+
+- *How do you stream LLM output to a web page?* Server-sent chunks: NDJSON or SSE over
+  HTTP. The client reads the stream incrementally and appends deltas; cancelling uses an
+  AbortController.
+- *Why send the sources before the text?* Retrieval finishes before generation starts,
+  and the UI can show "what I'm reading" while the answer is written.
+- *How do you show a RAG answer is grounded?* Inline citations linked to the source
+  documents.
+
 ## Stage 67: generation with grounding
 
 *Needs Ollama with `llama3.2`.* The model writes a natural answer **using only the

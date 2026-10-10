@@ -229,3 +229,41 @@ def test_retrieval_quality_does_not_regress() -> None:
 
     assert recall >= 0.99
     assert mrr >= 0.88
+
+
+# --- stage 67a: streaming -------------------------------------------------------------------
+
+import json  # noqa: E402
+
+from app.rag.assistant import stream_pieces  # noqa: E402
+
+
+def test_stream_pieces_join_back_to_the_answer() -> None:
+    answer = "Here's what I found:\n\n[1] Gap: Kubernetes  is missing."
+    pieces = list(stream_pieces(answer))
+
+    assert "".join(pieces) == answer
+    assert len(pieces) > 5
+
+
+def test_the_stream_sends_meta_then_deltas_then_done(client: TestClient, filled: None) -> None:
+    question = {"question": "What am I missing for the Acme backend job? Kubernetes?"}
+    whole = client.post("/assistant/ask", json=question).json()
+
+    response = client.post("/assistant/ask/stream", json=question)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    events = [json.loads(line) for line in response.text.splitlines()]
+    assert events[0]["type"] == "meta" and events[-1] == {"type": "done"}
+    assert events[0]["sources"] == whole["sources"]
+    assert (events[0]["retrieval"], events[0]["searched"]) == (whole["retrieval"], whole["searched"])
+    deltas = [e["text"] for e in events if e["type"] == "delta"]
+    assert "".join(deltas) == whole["answer"]
+
+
+def test_a_bad_question_fails_before_streaming(client: TestClient) -> None:
+    response = client.post("/assistant/ask/stream", json={"question": "  "})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Type a question first."

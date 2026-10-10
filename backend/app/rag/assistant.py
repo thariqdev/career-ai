@@ -19,6 +19,8 @@ with a language model that is given only these same notes.
 """
 
 import os
+import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Literal
 
@@ -130,6 +132,15 @@ def _compose(sources: list[Source]) -> str:
     lines = ["Here's what I found in your data:"]
     lines += [f"[{s.number}] {s.chunk.text}" for s in sources]
     return "\n\n".join(lines)
+
+
+def stream_pieces(answer: str) -> Iterator[str]:
+    """Split an answer into small pieces (a word plus its following spaces) for streaming.
+
+    Joining the pieces gives back exactly `answer`. Stage 67 streams a language model's
+    tokens instead; the frontend handles both the same way.
+    """
+    yield from re.findall(r"\S+\s*|\s+", answer)
 
 
 def ask(

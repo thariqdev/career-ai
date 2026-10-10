@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
+import ChatWidget from "@/components/ChatWidget";
 import "./globals.css";
 
 // next/font/google, not a manual <link> tag: Next.js downloads and self-hosts the
@@ -46,6 +47,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <ConfirmProvider>
           <AppHeader />
           {children}
+          {/* The 💬 assistant button, on every page. */}
+          <ChatWidget />
         </ConfirmProvider>
       </body>
     </html>
