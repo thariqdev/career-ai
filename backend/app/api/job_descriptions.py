@@ -34,6 +34,7 @@ from app.core.models import (
     JobDescriptionResponse,
     RejectedRequirementResponse,
     SkillResponse,
+    SkillSuggestionResponse,
 )
 from app.core.services import (
     application_service,
@@ -41,6 +42,7 @@ from app.core.services import (
     interview_prep_service,
     job_description_service,
     requirement_service,
+    suggestion_service,
 )
 from app.db.models import JobDescription, JobRequirement, Skill, User
 from app.dependencies import (
@@ -167,6 +169,20 @@ def delete_requirement(
     job_description_service.delete_requirement(db, requirement)
     db.commit()
     return Response(status_code=204)
+
+
+@router.get("/{job_description_id}/suggestions", response_model=list[SkillSuggestionResponse])
+def list_suggestions(
+    job_description_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[SkillSuggestionResponse]:
+    """Common skills this posting mentions that you haven't saved yet. Read-only, never adds."""
+    job_description = _get_owned_job_description(db, job_description_id, user)
+    return [
+        SkillSuggestionResponse.from_suggestion(s)
+        for s in suggestion_service.suggest(db, job_description.raw_text)
+    ]
 
 
 @router.get("/{job_description_id}/dismissed", response_model=list[SkillResponse])

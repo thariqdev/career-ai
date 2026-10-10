@@ -29,7 +29,7 @@ from app.core.exceptions import (
     NoCVTextError,
     UnsupportedCVFileError,
 )
-from app.core.services import skill_service
+from app.core.services import skill_service, suggestion_service
 from app.db.models import CVSkillPresence, Skill, User
 
 MAX_CV_MB = 5
@@ -51,6 +51,8 @@ class CVScan:
     characters: int
     found: list[FoundSkill]
     on_cv_not_found: list[Skill]  # marked "on my CV" but not mentioned in this CV
+    # Catalogue skills this CV mentions that aren't saved yet: suggestions only.
+    suggestions: list[suggestion_service.Suggestion]
 
 
 def _pdf_text(content: bytes) -> str:
@@ -165,4 +167,9 @@ def scan_cv(db: Session, user: User, text: str) -> CVScan:
         if missing_ids
         else []
     )
-    return CVScan(characters=len(text), found=found, on_cv_not_found=on_cv_not_found)
+    return CVScan(
+        characters=len(text),
+        found=found,
+        on_cv_not_found=on_cv_not_found,
+        suggestions=suggestion_service.suggest(db, text),
+    )

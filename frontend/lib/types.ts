@@ -193,10 +193,15 @@ export type CVSkillRef = { skill_id: number; skill_name: string };
 
 export type CVFoundSkill = CVSkillRef & { matched_text: string; on_cv: boolean };
 
+// Matches backend SkillSuggestionResponse: a common skill the text mentions that
+// isn't saved yet (only ever a suggestion).
+export type SkillSuggestion = { name: string; category: string; matched_text: string };
+
 export type CVScan = {
   characters: number;
   found: CVFoundSkill[];
   on_cv_not_found: CVSkillRef[];
+  suggestions: SkillSuggestion[];
 };
 
 export type CVPresence = {

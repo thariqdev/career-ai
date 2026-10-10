@@ -174,6 +174,7 @@ career-ai/
     │   │   │   ├── learning_path_service.py ← learning_paths() (4 steps, done/current/todo, read-only)
     │   │   │   ├── export_service.py ← export_all() (read-only backup of one user's data + shared taxonomy)
     │   │   │   ├── application_service.py ← update_application() (status, applied-on date, note; PATCH rules)
+    │   │   │   ├── suggestion_service.py ← suggest() (catalogue skills a text mentions that aren't saved; read-only)
     │   │   │   ├── import_service.py ← parse()/check()/preview()/restore() (restore a v1 export into an EMPTY app)
     │   │   │   └── learning_service.py      ← youtube_search_url() (derived), add/list/remove_resource()
     │   │   └── exceptions.py   ← DomainError + 3 evidence-rule + 3 skill-taxonomy exceptions + RequirementsAlreadyExistError
@@ -243,6 +244,7 @@ career-ai/
         ├── test_export_api.py
         ├── test_import_api.py
         ├── test_application_api.py
+        ├── test_suggestions_api.py
         └── conftest.py   ← autouse: unsets OLLAMA_MODEL/OLLAMA_BASE_URL for every test
 ```
 
@@ -2157,6 +2159,57 @@ Added 2026-10-05. This is frontend only: the browser builds the file and nothing
   - account sync (Google or Outlook)
   - updating an already-imported event
   - multiple rounds
+
+---
+
+### Skill suggestions from a fixed catalogue (CV and job postings)
+
+Added 2026-10-10, in answer to the user's question "why does my CV scan only show Python and PostgreSQL?". Both readers only ever find **saved** skills.
+
+- **New `app/core/skill_catalog.py`** is a hand-written, reviewable catalogue of **227 common tech skills** with **131 alternative spellings** (for example `JavaScript | Languages | JS, ECMAScript, ES6`), parsed into `CatalogSkill(name, category, aliases)`.
+  - **`EXACT_CASE`** lists everyday-word skills (Go, Rust, Swift, Express, Spark, Agile, Communication…). They match only when written exactly as the skill.
+  - **Deliberately left out** because they match too much ordinary text: `C`, `R` ("R&D", "Grade C"), `Less` and `Spring` ("Spring semester"). Spring Boot and Spring Framework stay.
+- **New `suggestion_service.suggest(db, text)`** is read-only and **never adds anything**.
+  - It uses the same whole-term regex rules as the skill-list reader, and is case-sensitive for terms of 2 characters or fewer and for `EXACT_CASE`.
+  - It **skips a catalogue skill if any of its spellings is one of the user's saved names or nicknames**.
+  - It returns suggestions in text order, at most 50, with the text's own words as `matched_text`.
+  - Patterns are compiled once at import. Matching takes about 0.18 s on a 4 KB CV.
+- **API:**
+  - `CVScanResponse` gains `suggestions: [SkillSuggestionResponse{name, category, matched_text}]`
+  - new `GET /job-descriptions/{id}/suggestions` (ownership: 404)
+- **Frontend:** new `components/SkillSuggestions.tsx` shows "Also <where>, not in your skills yet:" as chips with **Add** buttons. **Add** works like this:
+  1. the `/skills/similar` look-alike check (a look-alike shows a nickname hint instead)
+  2. `POST /skills` with the name and category
+  3. **plus the text's own spelling as a nickname when it differs** ("JS" for JavaScript), so the next scan finds it
+  4. then `onAdded`
+  - **On `/cv`:** shown after "Found on your CV". `onAdded` = `scan(true)`, which **rescans the same file or text in place** without returning to the upload form. Ticks the user changed are kept, and newly found skills start ticked.
+  - **On `/job-descriptions/[id]`:** shown under the requirements, loaded by `fetchJob`. `onAdded` = `handleLookForNew`, so the new skill becomes a requirement and is compared.
+- **Verified:**
+  - **Tests:** `tests/test_suggestions_api.py` has 11:
+    - text order, with the text's own words (JS → JavaScript, K8s → Kubernetes)
+    - **everyday words aren't skills** ("go running", "swift response", "express ideas", "Spring semester", "R&D")
+    - the same words written as skills do match
+    - whole terms only (not Java inside JavaScript)
+    - saved skills and nicknames are never suggested
+    - suggesting adds nothing
+    - the catalogue is well-formed (unique names and spellings, the exclusions)
+    - the CV scan includes suggestions
+    - add + nickname + rescan finds it
+    - the job endpoint
+    - another user's job, or a missing one, gives 404
+
+    Suite: **497 passed**. One full run was slow (120 s) because the machine was busy; the rerun took 42 s, and the matcher itself was timed separately.
+  - **Mutation check:** dropping the `EXACT_CASE` rule made 2 tests fail. The file was restored byte-identical.
+  - Frontend: build is clean, eslint reports 0, and `npm test` is 16/16.
+  - **Live check** on :8011, **read-only**:
+    - A sample CV found the user's saved Python, PostgreSQL (as "Postgres") and Docker, and suggested 11 skills (FastAPI, Django, React, TypeScript, Git, GitHub Actions, GitHub, AWS, Agile, Unit Testing as "unit tests", and Pytest). "I go to meetups" didn't become Go.
+    - The real job 1 suggests JavaScript.
+    - Table counts were unchanged.
+- **Known quirk:** "GitHub Actions" also suggests "GitHub", since both are real skills.
+- **Not done:**
+  - a user-editable catalogue
+  - suggestions in the AI readers' results
+  - skills outside tech
 
 ---
 

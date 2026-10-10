@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { apiDelete, apiGet, apiPost, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import NotInSkillsYet from "@/components/NotInSkillsYet";
+import SkillSuggestions from "@/components/SkillSuggestions";
 import ApplicationEditor from "@/components/ApplicationEditor";
 import StatusBadge from "@/components/StatusBadge";
 import { Button, ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
@@ -17,6 +18,7 @@ import type {
   Gap,
   JobDescription,
   Skill,
+  SkillSuggestion,
 } from "@/lib/types";
 
 type Loaded = {
@@ -26,19 +28,21 @@ type Loaded = {
   gaps: Gap[];
   dismissed: Skill[];
   reader: ExtractorInfo;
+  suggestions: SkillSuggestion[];
 };
 
 type PageState = { status: "loading" } | { status: "error"; message: string } | Loaded;
 
 async function fetchJob(id: number): Promise<Loaded> {
-  const [job, results, gaps, dismissed, reader] = await Promise.all([
+  const [job, results, gaps, dismissed, reader, suggestions] = await Promise.all([
     apiGet<JobDescription>(`/job-descriptions/${id}`),
     apiGet<ComparisonResult[]>(`/job-descriptions/${id}/results`),
     apiGet<Gap[]>(`/job-descriptions/${id}/gaps`),
     apiGet<Skill[]>(`/job-descriptions/${id}/dismissed`),
     apiGet<ExtractorInfo>("/job-descriptions/extractor"),
+    apiGet<SkillSuggestion[]>(`/job-descriptions/${id}/suggestions`),
   ]);
-  return { status: "loaded", job, results, gaps, dismissed, reader };
+  return { status: "loaded", job, results, gaps, dismissed, reader, suggestions };
 }
 
 function readerLabel(reader: ExtractorInfo): string {
@@ -367,6 +371,17 @@ export default function JobDescriptionPage() {
           )}
 
           <NotInSkillsYet requirements={skillless} busy={comparing} onAdd={handleAddSkill} />
+
+          {/* Common skills the posting names that you haven't saved (no AI). Adding one
+              looks again, so it becomes a requirement and is compared. */}
+          <div className="mt-4">
+            <SkillSuggestions
+              suggestions={state.suggestions}
+              where="in this posting"
+              busy={comparing}
+              onAdded={handleLookForNew}
+            />
+          </div>
 
           {dismissed.length > 0 && (
             <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg bg-ground/60 px-4 py-3 text-sm text-ink-soft">

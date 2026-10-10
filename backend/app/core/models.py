@@ -576,12 +576,25 @@ class CVFoundSkill(CVSkillRef):
     on_cv: bool
 
 
+class SkillSuggestionResponse(BaseModel):
+    """A catalogue skill the text mentions that isn't saved yet. Only a suggestion."""
+
+    name: str
+    category: str
+    matched_text: str
+
+    @classmethod
+    def from_suggestion(cls, suggestion: Any) -> "SkillSuggestionResponse":
+        return cls(name=suggestion.name, category=suggestion.category, matched_text=suggestion.matched_text)
+
+
 class CVScanResponse(BaseModel):
     """A CV scan preview: nothing has been saved yet."""
 
     characters: int
     found: list[CVFoundSkill]
     on_cv_not_found: list[CVSkillRef]
+    suggestions: list[SkillSuggestionResponse]
 
     @classmethod
     def from_scan(cls, scan: Any) -> "CVScanResponse":
@@ -601,6 +614,7 @@ class CVScanResponse(BaseModel):
             on_cv_not_found=[
                 CVSkillRef(skill_id=skill.id, skill_name=skill.name) for skill in scan.on_cv_not_found
             ],
+            suggestions=[SkillSuggestionResponse.from_suggestion(s) for s in scan.suggestions],
         )
 
 

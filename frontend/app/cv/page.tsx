@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiPostForm, apiPut, ApiError } from "@/lib/api";
 import type { CVPresence, CVScan } from "@/lib/types";
 import { Button, Card, EmptyState, Page, SectionHeading, inputClasses } from "@/components/ui";
+import SkillSuggestions from "@/components/SkillSuggestions";
 
 // Two steps, matching the backend: scanning only suggests; nothing is saved until
 // the user reviews the ticks and clicks Save. The CV itself is never stored.
@@ -34,19 +35,31 @@ export default function CVPage() {
 
   async function handleScan(event: FormEvent) {
     event.preventDefault();
+    await scan();
+  }
+
+  // Also used after adding a suggested skill (rescan = true): the same file or text is
+  // scanned again in place, so the new skill appears under "Found on your CV". Ticks the
+  // user already changed are kept; newly found skills start ticked.
+  async function scan(rescan = false) {
     setError(null);
     const form = new FormData();
     if (file) form.append("file", file);
     else form.append("text", pasted);
-    setState({ status: "scanning" });
+    if (!rescan) setState({ status: "scanning" });
     try {
-      const scan = await apiPostForm<CVScan>("/cv/scan", form);
-      setPresent(new Set(scan.found.map((f) => f.skill_id)));
-      setAbsent(new Set());
-      setState({ status: "review", scan });
+      const result = await apiPostForm<CVScan>("/cv/scan", form);
+      setPresent((prev) => {
+        const previous = state.status === "review" ? state.scan.found.map((f) => f.skill_id) : [];
+        return new Set(
+          result.found.map((f) => f.skill_id).filter((id) => prev.has(id) || !previous.includes(id)),
+        );
+      });
+      if (state.status !== "review") setAbsent(new Set());
+      setState({ status: "review", scan: result });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reach the backend.");
-      setState({ status: "input" });
+      if (!rescan) setState({ status: "input" });
     }
   }
 
@@ -163,6 +176,13 @@ export default function CVPage() {
               </ul>
             )}
           </Card>
+
+          <SkillSuggestions
+            suggestions={state.scan.suggestions}
+            where="on your CV"
+            busy={state.status === "saving"}
+            onAdded={() => scan(true)}
+          />
 
           {state.scan.on_cv_not_found.length > 0 && (
             <Card>

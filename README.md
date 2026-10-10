@@ -236,6 +236,7 @@ Job-description endpoints (all scoped to that one user automatically — no `use
 | `GET /job-descriptions/{id}/dismissed` | Skills removed from this job (re-reading the posting skips them) |
 | `DELETE /job-descriptions/{id}/dismissed/{skill_id}` | "Allow again": forget that removal, so the next "Look for new skills" may find it; adds nothing by itself |
 | `PATCH /job-descriptions/{id}/application` | Your application for this job: `{"status": "applied", "applied_on": "2026-09-01", "notes": "…"}` (only fields sent change). Status is saved / applied / interviewing / offer / rejected / withdrawn; "applied" with no date records today; no future dates; a saved job has no date. Also `next_interview_at` (an ISO time with a time zone, or null): only while applied or interviewing, cleared otherwise; never changes the status by itself |
+| `GET /job-descriptions/{id}/suggestions` | Common skills (from a built-in catalogue of about 230) the posting mentions that you haven't saved yet. Read-only; the CV scan returns the same `suggestions` for your CV |
 | `DELETE /job-descriptions/{id}` | Delete a job together with its requirements and comparison history; skills, claims, evidence and CV marks are untouched |
 | `POST /job-descriptions/{id}/extract` | Extract requirements from the text — by default, finds your saved skills (and their aliases) in it; Claude-backed instead if `ANTHROPIC_API_KEY` is set |
 | `POST /job-descriptions/{id}/compare` | Compare its requirements against your verified skills |
