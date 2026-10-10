@@ -12,7 +12,7 @@ import {
   APPLICATION_LABEL,
   CLOSED_STATUSES,
 } from "@/lib/applications";
-import { Button, ButtonLink, Card, EmptyState, Page, Pill, SectionHeading, inputClasses } from "@/components/ui";
+import { Button, ButtonLink, Card, EmptyState, FieldError, Page, Pill, SectionHeading, inputClasses, invalidClasses } from "@/components/ui";
 import type {
   ComparisonResult,
   ExtractionResponse,
@@ -139,6 +139,7 @@ type PageState =
 export default function JobDescriptionsPage() {
   const [state, setState] = useState<PageState>({ status: "form" });
   const [rawText, setRawText] = useState("");
+  const [textError, setTextError] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [company, setCompany] = useState("");
   const [sourceUrl, setSourceUrl] = useState("");
@@ -154,6 +155,10 @@ export default function JobDescriptionsPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    if (rawText.trim() === "") {
+      setTextError("Paste the job posting text first.");
+      return;
+    }
     try {
       setState({ status: "running", stage: "creating" });
       const jobDescription = await apiPost<JobDescription>("/job-descriptions", {
@@ -196,17 +201,21 @@ export default function JobDescriptionsPage() {
 
       {(state.status === "form" || state.status === "error") && (
         <Card className="mt-6">
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-4">
             <label className="flex flex-col gap-1 text-sm text-ink-soft">
               Job posting text
               <textarea
                 value={rawText}
-                onChange={(e) => setRawText(e.target.value)}
-                required
+                onChange={(e) => {
+                  setRawText(e.target.value);
+                  setTextError(null);
+                }}
                 rows={8}
                 placeholder="Paste the full posting here…"
-                className={inputClasses}
+                aria-invalid={textError !== null}
+                className={`${inputClasses} ${textError ? invalidClasses : ""}`}
               />
+              <FieldError message={textError} />
             </label>
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1 text-sm text-ink-soft">

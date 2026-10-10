@@ -2,7 +2,8 @@
 
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { apiDelete, apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
-import { Button, Card, EmptyState, Page, SectionHeading, inputClasses } from "@/components/ui";
+import { Button, Card, EmptyState, FieldError, Page, SectionHeading, inputClasses, invalidClasses } from "@/components/ui";
+import { validateEntry } from "@/lib/draftValidation";
 import DownloadMyData from "@/components/DownloadMyData";
 import RestoreFromBackup from "@/components/RestoreFromBackup";
 import CvAutofill from "@/components/CvAutofill";
@@ -50,18 +51,31 @@ function ProfileSection<T extends Item>({
   const [error, setError] = useState<string | null>(null);
   // The record being edited, or null when the form adds a new one.
   const [editing, setEditing] = useState<T | null>(null);
+  // Problems found when the button is clicked, per box (shown under each box).
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+
+  function setValue(key: string, value: string) {
+    setValues((prev) => ({ ...prev, [key]: value }));
+    setFieldErrors((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
 
   function startEdit(item: T) {
     const record = item as unknown as Record<string, unknown>;
     setValues(Object.fromEntries(fields.map((f) => [f.key, (record[f.key] as string | null) ?? ""])));
     setEditing(item);
     setError(null);
+    setFieldErrors({});
   }
 
   function cancelEdit() {
     setEditing(null);
     setValues({});
     setError(null);
+    setFieldErrors({});
   }
 
   // Fetch first, then set state only in the promise callbacks.
@@ -78,6 +92,9 @@ function ProfileSection<T extends Item>({
   async function handleAdd(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    const problems = validateEntry(values, fields);
+    setFieldErrors(problems);
+    if (Object.keys(problems).length > 0) return; // nothing is sent until it's fixed
     setBusy(true);
     try {
       // Empty optional inputs are sent as null (the backend would treat "" the same
@@ -150,6 +167,7 @@ function ProfileSection<T extends Item>({
       )}
 
       <form
+        noValidate
         onSubmit={handleAdd}
         className="mt-4 grid gap-3 rounded-lg border border-line bg-ground/50 p-4 sm:grid-cols-2"
       >
@@ -166,20 +184,22 @@ function ProfileSection<T extends Item>({
             {field.type === "textarea" ? (
               <textarea
                 value={values[field.key] ?? ""}
-                onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
+                onChange={(e) => setValue(field.key, e.target.value)}
                 rows={2}
-                className={inputClasses}
+                aria-invalid={field.key in fieldErrors}
+                className={`${inputClasses} ${field.key in fieldErrors ? invalidClasses : ""}`}
               />
             ) : (
               <input
                 type={field.type === "url" ? "text" : field.type}
                 value={values[field.key] ?? ""}
-                onChange={(e) => setValues({ ...values, [field.key]: e.target.value })}
-                required={field.required}
+                onChange={(e) => setValue(field.key, e.target.value)}
                 placeholder={field.type === "url" ? "https://…" : undefined}
-                className={inputClasses}
+                aria-invalid={field.key in fieldErrors}
+                className={`${inputClasses} ${field.key in fieldErrors ? invalidClasses : ""}`}
               />
             )}
+            <FieldError message={fieldErrors[field.key]} />
           </label>
         ))}
         <div className="flex gap-2 sm:col-span-2">

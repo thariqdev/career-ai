@@ -66,3 +66,12 @@ test("a link must be a web address", () => {
   assert.deepEqual(validateEntry({ name: "App", url: "https://github.com/me/app" }, PROJECT), {});
   assert.deepEqual(validateEntry({ name: "App", url: "" }, PROJECT), {});
 });
+
+test("isWebAddress: the one link rule used by every form", async () => {
+  const { isWebAddress } = await import("../lib/draftValidation.ts");
+  assert.equal(isWebAddress("https://github.com/me"), true);
+  assert.equal(isWebAddress("  http://example.com/x  "), true);
+  assert.equal(isWebAddress("github.com/me"), false);
+  assert.equal(isWebAddress("javascript:alert(1)"), false);
+  assert.equal(isWebAddress("https://"), false);
+});

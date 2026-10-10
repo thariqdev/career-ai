@@ -1,3 +1,8 @@
+/** "https://…" with something after it. */
+export function isWebAddress(value: string): boolean {
+  return /^https?:\/\/\S+$/i.test(value.trim());
+}
+
 /**
  * Plain-language checks for a profile entry before it's sent, so the user sees "School
  * is required." next to the right box instead of a server error. The backend still
@@ -8,7 +13,7 @@
 export type FieldRule = {
   key: string;
   label: string;
-  type: "text" | "date" | "textarea";
+  type: "text" | "date" | "textarea" | "url";
   required?: boolean;
 };
 
@@ -30,7 +35,7 @@ export function validateEntry(values: Record<string, string>, fields: FieldRule[
   }
 
   const url = value("url");
-  if (url !== "" && !/^https?:\/\/\S+$/i.test(url)) {
+  if (url !== "" && !isWebAddress(url)) {
     errors.url = "Link must start with http:// or https://.";
   }
   return errors;

@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { apiDelete, apiPost, ApiError } from "@/lib/api";
-import { Button, Card, SectionHeading, inputClasses } from "@/components/ui";
+import { Button, Card, FieldError, SectionHeading, inputClasses, invalidClasses } from "@/components/ui";
 import type { Skill } from "@/lib/types";
 
 /**
@@ -19,6 +19,7 @@ export default function AliasEditor({
   onChange: (updated: Skill) => void;
 }) {
   const [alias, setAlias] = useState("");
+  const [aliasError, setAliasError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,6 +39,10 @@ export default function AliasEditor({
 
   async function handleAdd(event: FormEvent) {
     event.preventDefault();
+    if (alias.trim() === "") {
+      setAliasError("Type a nickname first.");
+      return;
+    }
     const added = await run(() => apiPost<Skill>(`/skills/${skill.id}/aliases`, { alias }));
     if (added) setAlias("");
   }
@@ -79,14 +84,21 @@ export default function AliasEditor({
         </ul>
       )}
 
-      <form onSubmit={handleAdd} className="mt-3 flex flex-wrap items-center gap-2">
-        <input
-          value={alias}
-          onChange={(e) => setAlias(e.target.value)}
-          required
-          placeholder="e.g. Postgres"
-          className={inputClasses}
-        />
+      <form noValidate onSubmit={handleAdd} className="mt-3 flex flex-wrap items-start gap-2">
+        <span className="flex flex-col gap-1">
+          <input
+            value={alias}
+            onChange={(e) => {
+              setAlias(e.target.value);
+              setAliasError(null);
+            }}
+            placeholder="e.g. Postgres"
+            aria-label="New nickname"
+            aria-invalid={aliasError !== null}
+            className={`${inputClasses} ${aliasError ? invalidClasses : ""}`}
+          />
+          <FieldError message={aliasError} />
+        </span>
         <Button type="submit" variant="primary" disabled={busy}>
           Add nickname
         </Button>

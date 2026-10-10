@@ -2,7 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Button, inputClasses } from "@/components/ui";
+import { Button, FieldError, inputClasses, invalidClasses } from "@/components/ui";
+import { isWebAddress } from "@/lib/draftValidation";
 import { ApiError } from "@/lib/api";
 import { educationLabel, projectLabel, workLabel } from "@/lib/profile";
 import type { Education, Evidence, Project, WorkExperience } from "@/lib/types";
@@ -65,10 +66,17 @@ export default function EvidenceForm({
   const [source, setSource] = useState(sourceChoice(initial));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    const badTitle = title.trim() === "" ? "Title is required." : null;
+    const badUrl = url.trim() !== "" && !isWebAddress(url) ? "Link must start with http:// or https://." : null;
+    setTitleError(badTitle);
+    setUrlError(badUrl);
+    if (badTitle || badUrl) return;
     setSaving(true);
     const [kind, id] = source.split(":");
     const sourceId = id ? Number(id) : null;
@@ -99,6 +107,7 @@ export default function EvidenceForm({
 
   return (
     <form
+      noValidate
       onSubmit={handleSubmit}
       className="flex flex-col gap-3 rounded-lg border border-line bg-ground/50 p-4"
     >
@@ -115,7 +124,16 @@ export default function EvidenceForm({
       </label>
       <label className="flex flex-col text-sm text-ink-soft">
         Title
-        <input value={title} onChange={(e) => setTitle(e.target.value)} required className={input} />
+        <input
+          value={title}
+          onChange={(e) => {
+            setTitle(e.target.value);
+            setTitleError(null);
+          }}
+          aria-invalid={titleError !== null}
+          className={`${input} ${titleError ? invalidClasses : ""}`}
+        />
+        <FieldError message={titleError} />
       </label>
       <label className="flex flex-col text-sm text-ink-soft">
         Description (optional)
@@ -125,10 +143,15 @@ export default function EvidenceForm({
         Link (optional)
         <input
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e) => {
+            setUrl(e.target.value);
+            setUrlError(null);
+          }}
           placeholder="https://…"
-          className={input}
+          aria-invalid={urlError !== null}
+          className={`${input} ${urlError ? invalidClasses : ""}`}
         />
+        <FieldError message={urlError} />
       </label>
       <label className="flex flex-col text-sm text-ink-soft">
         Comes from (optional)

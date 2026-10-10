@@ -10,7 +10,8 @@ import LearningProgressControl from "@/components/LearningProgressControl";
 import MergeSkillControl from "@/components/MergeSkillControl";
 import SkillNameEditor from "@/components/SkillNameEditor";
 import StatusBadge from "@/components/StatusBadge";
-import { Button, Card, EmptyState, Page, Pill, SectionHeading, inputClasses } from "@/components/ui";
+import { Button, Card, EmptyState, FieldError, Page, Pill, SectionHeading, inputClasses, invalidClasses } from "@/components/ui";
+import { isWebAddress } from "@/lib/draftValidation";
 import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
 import { MODE_LABEL } from "@/lib/learning";
 import { educationLabel, projectLabel, workLabel } from "@/lib/profile";
@@ -48,10 +49,22 @@ function LearningColumn({
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [titleError, setTitleError] = useState<string | null>(null);
+  const [urlError, setUrlError] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    const badTitle = title.trim() === "" ? "Give the link a title." : null;
+    const badUrl =
+      url.trim() === ""
+        ? "Paste the link."
+        : !isWebAddress(url)
+          ? "Link must start with http:// or https://."
+          : null;
+    setTitleError(badTitle);
+    setUrlError(badUrl);
+    if (badTitle || badUrl) return;
     try {
       await onAdd(title, url);
       setTitle("");
@@ -105,21 +118,31 @@ function LearningColumn({
         </ul>
       )}
 
-      <form onSubmit={handleSubmit} className="flex flex-col gap-2 border-t border-line pt-3">
+      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-2 border-t border-line pt-3">
         <input
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
+          onChange={(e) => {
+            setTitle(e.target.value);
+            setTitleError(null);
+          }}
           placeholder="Title"
-          className={inputClasses}
+          aria-label="Link title"
+          aria-invalid={titleError !== null}
+          className={`${inputClasses} ${titleError ? invalidClasses : ""}`}
         />
+        <FieldError message={titleError} />
         <input
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          required
+          onChange={(e) => {
+            setUrl(e.target.value);
+            setUrlError(null);
+          }}
           placeholder="https://…"
-          className={inputClasses}
+          aria-label="Link address"
+          aria-invalid={urlError !== null}
+          className={`${inputClasses} ${urlError ? invalidClasses : ""}`}
         />
+        <FieldError message={urlError} />
         <Button type="submit" variant="primary" disabled={busy} className="self-start">
           Save link
         </Button>

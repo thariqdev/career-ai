@@ -66,6 +66,19 @@ export const inputClasses =
   "rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-ink " +
   "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-soft";
 
+/** The red look for a box with a problem; add it to inputClasses. */
+export const invalidClasses = "border-not-verified focus:border-not-verified focus:ring-not-verified-bg";
+
+/** A box's own problem, shown right under it (instead of the browser's pop-up bubble). */
+export function FieldError({ message }: { message: string | null | undefined }) {
+  if (!message) return null;
+  return (
+    <span role="alert" className="text-xs font-medium text-not-verified">
+      {message}
+    </span>
+  );
+}
+
 /** A link styled like a button (e.g. "Next step: …"). */
 export function ButtonLink({
   href,

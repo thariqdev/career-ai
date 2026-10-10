@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { apiPatch, ApiError } from "@/lib/api";
 import type { Skill } from "@/lib/types";
-import { Button, inputClasses } from "@/components/ui";
+import { Button, FieldError, inputClasses, invalidClasses } from "@/components/ui";
 
 /**
  * The skill's name and category, with an Edit form (PATCH /skills/{id}). Claims,
@@ -21,6 +21,7 @@ export default function SkillNameEditor({
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(skill.name);
+  const [nameError, setNameError] = useState<string | null>(null);
   const [category, setCategory] = useState(skill.category ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,12 +30,17 @@ export default function SkillNameEditor({
     setName(skill.name);
     setCategory(skill.category ?? "");
     setError(null);
+    setNameError(null);
     setEditing(true);
   }
 
   async function handleSave(event: FormEvent) {
     event.preventDefault();
     setError(null);
+    if (name.trim() === "") {
+      setNameError("Name is required.");
+      return;
+    }
     setSaving(true);
     try {
       await apiPatch<Skill>(`/skills/${skill.id}`, { name, category });
@@ -63,11 +69,20 @@ export default function SkillNameEditor({
 
   const input = inputClasses;
   return (
-    <form onSubmit={handleSave} className="flex flex-col gap-3">
+    <form noValidate onSubmit={handleSave} className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-3">
         <label className="flex flex-col text-sm text-ink-soft">
           Name
-          <input value={name} onChange={(e) => setName(e.target.value)} required className={input} />
+          <input
+            value={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              setNameError(null);
+            }}
+            aria-invalid={nameError !== null}
+            className={`${input} ${nameError ? invalidClasses : ""}`}
+          />
+          <FieldError message={nameError} />
         </label>
         <label className="flex flex-col text-sm text-ink-soft">
           Category (optional)

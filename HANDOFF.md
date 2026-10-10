@@ -2277,6 +2277,29 @@ Added 2026-10-10 at the user's request ("autofill like careers sites do"). It us
     - Build is clean, and eslint reports 0.
     - **Live check** (read-only): the user's exact lines gave degree "Bachelor of Computer Applications (BCA)", school "Chinmaya College of Arts, Science and Commerce (Mahatma Gandhi University)", the dates, and empty notes. Nothing was saved.
 
+### Inline form validation everywhere (no browser pop-ups)
+
+Added 2026-10-10. The user didn't want the browser's "Please fill out this field." bubble (it comes from the HTML `required` attribute). **No `required` attribute is left in the frontend.** Every form has `noValidate` and checks itself when the button is clicked: the box gets a red border (`invalidClasses`) and a short message right under it (`<FieldError>`, `role="alert"`). Typing in a box clears its message, and nothing is sent while there's a problem.
+
+- **Shared pieces:**
+  - `components/ui.tsx` has `invalidClasses` and `FieldError`.
+  - `lib/draftValidation.ts` has `isWebAddress` (the one http(s) rule) and `validateEntry`. `FieldRule.type` now includes `"url"`.
+- **Forms converted:**
+  - **My Profile** add/edit (`ProfileSection`, using `validateEntry`: required boxes, end before start, link)
+  - **Job Descriptions** paste ("Paste the job posting text first.")
+  - **Skills** add ("Type the skill's name first.")
+  - the **Skill page**'s saved-link form ("Give the link a title." / "Paste the link." / the http(s) rule)
+  - **Nicknames** ("Type a nickname first.")
+  - **Edit name** ("Name is required.")
+  - the **Evidence** form (title required; a link, if given, must be http(s))
+
+  The backend still enforces every rule; these checks only explain them up front.
+- **Verified:**
+  - `npm test`: 22/22 (+1 for `isWebAddress`).
+  - Build is clean, and eslint reports 0. A grep finds no remaining native `required` attributes.
+  - **Smoke test:** :3011 returned 200 for `/profile`, `/skills`, `/skills/1` and `/job-descriptions`.
+  - The look is the user's to judge.
+
 ---
 
 ## 8. What Is Already Working

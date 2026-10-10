@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { apiGet, apiPatch, apiPost, ApiError } from "@/lib/api";
 import StatusBadge from "@/components/StatusBadge";
-import { Button, Card, EmptyState, Page, inputClasses } from "@/components/ui";
+import { Button, Card, EmptyState, FieldError, Page, inputClasses, invalidClasses } from "@/components/ui";
 import { cvBadgeClasses, cvBadgeLabel } from "@/lib/cv";
 import type { CVStatusResponse, Skill } from "@/lib/types";
 
@@ -54,6 +54,7 @@ function errorState(error: unknown): ListState {
 export default function SkillsPage() {
   const [state, setState] = useState<ListState>({ status: "loading" });
   const [name, setName] = useState("");
+  const [nameError, setNameError] = useState<string | null>(null);
   const [category, setCategory] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -86,6 +87,10 @@ export default function SkillsPage() {
   async function handleCreate(event: FormEvent) {
     event.preventDefault();
     setFormError(null);
+    if (name.trim() === "") {
+      setNameError("Type the skill's name first.");
+      return;
+    }
     setSubmitting(true);
     try {
       // Only a warning: the user can still choose "Add anyway".
@@ -150,7 +155,7 @@ export default function SkillsPage() {
       </p>
 
       <Card className="mt-6">
-        <form onSubmit={handleCreate} className="flex flex-wrap items-end gap-3">
+        <form noValidate onSubmit={handleCreate} className="flex flex-wrap items-start gap-3">
           <label className="flex flex-col gap-1 text-sm text-ink-soft">
             Name
             <input
@@ -158,11 +163,13 @@ export default function SkillsPage() {
               onChange={(e) => {
                 setName(e.target.value);
                 setLookalikes(null);
+                setNameError(null);
               }}
-              required
               placeholder="e.g. Kubernetes"
-              className={inputClasses}
+              aria-invalid={nameError !== null}
+              className={`${inputClasses} ${nameError ? invalidClasses : ""}`}
             />
+            <FieldError message={nameError} />
           </label>
           <label className="flex flex-col gap-1 text-sm text-ink-soft">
             Category (optional)
@@ -173,7 +180,7 @@ export default function SkillsPage() {
               className={inputClasses}
             />
           </label>
-          <Button type="submit" variant="primary" disabled={submitting}>
+          <Button type="submit" variant="primary" disabled={submitting} className="mt-6">
             {submitting ? "Adding…" : "Add skill"}
           </Button>
         </form>
