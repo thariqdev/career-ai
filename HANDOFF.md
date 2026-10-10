@@ -2444,8 +2444,40 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **`test_retrieval_quality_does_not_regress`** asserts recall ≥ 0.99 and MRR ≥ 0.88 with the assistant's settings. **Mutation check:** flipping `USE_STEMMING` on fails it.
   - Plus 14 more tests: stem rules (×11), stemming off by default, and recall/MRR by hand. Suite: **564**.
   - **Caveat (documented in the guide):** the golden set was written by the same author as the chunk templates, which inflates scores.
+- **Stage 66 (embeddings + hybrid), built and tested with a fake model. Real Ollama scores are pending: it wasn't installed yet.**
+  - **`app/rag/embeddings.py`:**
+    - `cosine()`
+    - `OllamaEmbedder`: `POST /api/embed {model, input:[...]}` returns `embeddings`. HTTP, status, shape and count problems all raise `EmbeddingUnavailableError`; an httpx `transport` hook is there for tests.
+    - `CachedEmbedder`: an LRU of 5,000 keyed by sha256(model+text); `calls` counts real embeds.
+    - `VectorIndex`: documents use the `search_document: ` prefix and the query `search_query: `, as nomic-embed-text expects.
+    - `reciprocal_rank_fusion(rankings, k=60)`
+  - **`app/rag/assistant.py`:** `retrieve(chunks, question, top_k, embedder, mode)` supports modes `bm25` / `vector` / `hybrid`.
+    - BM25 and vector each contribute `CANDIDATES = 20`.
+    - Vector-only hits must have cosine ≥ `MIN_COSINE = 0.5`. That's an uncalibrated first guess, so that "not found" stays possible.
+    - Hybrid fuses with RRF.
+    - `configured_embedder()` is a process-wide cached Ollama embedder when **`OLLAMA_EMBED_MODEL`** is set (it also honours `OLLAMA_BASE_URL`).
+    - If it's unavailable, it falls back to BM25 with a `note`.
+    - `AskResponse` gains `retrieval` and `note`.
+  - **`evaluate.evaluate(..., mode, embedder)`** scores vector/hybrid through the same `retrieve`. `main()` probes Ollama and adds "meaning" and "hybrid" rows when it answers, or prints why not.
+  - `tests/conftest.py` also unsets `OLLAMA_EMBED_MODEL`.
+  - **Frontend:** Assistant replies show "(searched N notes with keyword / meaning / keyword + meaning search)" and the fallback note in warm text.
+  - **Tests:** 14 in `tests/test_rag_embeddings.py`, using a **fake bag-of-concepts embedder** (synonym groups share a dimension):
+    - cosine by hand (1/√2)
+    - meaning finds "container orchestration" → Kubernetes where BM25 finds nothing
+    - **RRF by hand** (1/62 + 1/61)
+    - the cache embeds each text once
+    - the Ollama client's batch, bad answers ×3, and unreachable
+    - hybrid finds the synonym
+    - bm25 without an embedder
+    - below-threshold hits are dropped
+    - an unavailable embedder falls back with a note
+    - the API reports the mode and falls back on a dead port
+
+    Suite: **578**.
+  - **Mutation checks:** no `MIN_COSINE` failed the threshold test; RRF max-instead-of-sum failed the RRF test. Both files were restored byte-identical.
+  - Frontend: build is clean, eslint reports 0, and `npm test` is 24/24.
 - **Next:**
-  - 66: embeddings via Ollama `nomic-embed-text` + cosine similarity, plus hybrid with BM25, scored with the 66a harness
+  - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - 67: grounded generation with `llama3.2`
   - 68: evaluation
 

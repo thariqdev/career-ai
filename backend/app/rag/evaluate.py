@@ -103,11 +103,21 @@ def build_fixture_chunks() -> list[Chunk]:
     return chunks
 
 
-def evaluate(chunks: list[Chunk], stem: bool | None = None, k: int = K) -> list[QuestionScore]:
-    """Score BM25 on the golden set; by default with exactly the assistant's settings."""
-    if stem is None:
-        from app.rag.assistant import USE_STEMMING
+def evaluate(
+    chunks: list[Chunk],
+    stem: bool | None = None,
+    k: int = K,
+    mode: str = "bm25",
+    embedder=None,
+) -> list[QuestionScore]:
+    """Score retrieval on the golden set; by default exactly the assistant's BM25 settings.
 
+    mode "vector" (meaning only) and "hybrid" (BM25 + meaning, fused) need an embedder and
+    use the assistant's own `retrieve`, so what's scored is what the assistant does.
+    """
+    from app.rag.assistant import USE_STEMMING, retrieve
+
+    if stem is None:
         stem = USE_STEMMING
     index = BM25Index([f"{c.title}. {c.text}" for c in chunks], stem=stem)
     keys = [(c.kind, c.title) for c in chunks]
@@ -116,7 +126,13 @@ def evaluate(chunks: list[Chunk], stem: bool | None = None, k: int = K) -> list[
         missing = expected - set(keys)
         if missing:
             raise ValueError(f"Golden set names chunks that don't exist: {missing}")
-        retrieved = [keys[hit.index] for hit in index.search(question, k)]
+        if mode == "bm25":
+            retrieved = [keys[hit.index] for hit in index.search(question, k)]
+        else:
+            found = retrieve(chunks, question, k, embedder, mode)  # type: ignore[arg-type]
+            if found.mode != mode:
+                raise RuntimeError(found.note or f"{mode} retrieval wasn't available")
+            retrieved = [keys[i] for i, _ in found.hits]
         scores.append(
             QuestionScore(
                 question,
@@ -134,9 +150,30 @@ def summary(scores: list[QuestionScore]) -> tuple[float, float]:
     return sum(s.recall for s in scores) / n, sum(s.reciprocal_rank for s in scores) / n
 
 
+def _ollama_embedder():
+    """The real embedder if Ollama answers, else (None, reason)."""
+    import os
+
+    from app.rag.embeddings import DEFAULT_MODEL, CachedEmbedder, EmbeddingUnavailableError, OllamaEmbedder
+
+    model = (os.getenv("OLLAMA_EMBED_MODEL") or DEFAULT_MODEL).strip()
+    embedder = CachedEmbedder(OllamaEmbedder(model, base_url=os.getenv("OLLAMA_BASE_URL") or "http://127.0.0.1:11434"))
+    try:
+        embedder.embed(["probe"])
+    except EmbeddingUnavailableError as error:
+        return None, str(error)
+    return embedder, model
+
+
 def main() -> int:
     chunks = build_fixture_chunks()
     results = {"BM25, no stemming": evaluate(chunks, stem=False), "BM25 + stemming": evaluate(chunks, stem=True)}
+    embedder, info = _ollama_embedder()
+    if embedder is not None:
+        results[f"meaning ({info})"] = evaluate(chunks, mode="vector", embedder=embedder)
+        results["hybrid (BM25+meaning)"] = evaluate(chunks, mode="hybrid", embedder=embedder)
+    else:
+        print(f"Meaning search not scored: {info}\n")
     print(f"{len(GOLDEN)} golden questions over {len(chunks)} notes, top {K}\n")
     print(f"{'question':<52}" + "".join(f"{name:>22}" for name in results))
     for i, (question, _) in enumerate(GOLDEN):
@@ -145,7 +182,7 @@ def main() -> int:
     print()
     for name, scores in results.items():
         recall, mrr = summary(scores)
-        print(f"{name:<20} recall@{K} = {recall:.3f}   MRR = {mrr:.3f}")
+        print(f"{name:<34} recall@{K} = {recall:.3f}   MRR = {mrr:.3f}")
     return 0
 
 

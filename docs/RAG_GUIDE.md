@@ -182,12 +182,94 @@ makes it fail, which was checked.
 - *What's wrong with a golden set the developer wrote?* Shared wording inflates scores.
   Use real user questions.
 
-## Stage 66: embeddings + vector search (next)
+## Stage 66: embeddings, meaning search and hybrid search (built ✅; real-model scores pending Ollama)
 
-*Needs Ollama (free) with `nomic-embed-text`.* We'll turn each note and question into a
-list of numbers (an **embedding**) that captures meaning, find the notes **closest in
-meaning** (cosine similarity), and combine that with BM25 (**hybrid search**). Then we'll
-score it with the same golden set as 66a, so we'll *know* whether meaning search helps.
+**Turn it on** (once Ollama is installed and `ollama pull nomic-embed-text` is done): add
+this line to `backend/.env`, then restart the backend:
+
+```
+OLLAMA_EMBED_MODEL=nomic-embed-text
+```
+
+Without it, or if Ollama isn't running, the Assistant uses keyword search and says so.
+**Score it:** `.venv/Scripts/python -m app.rag.evaluate` adds "meaning" and "hybrid" rows
+automatically when Ollama answers.
+
+### 1. Embeddings: meaning as numbers (`backend/app/rag/embeddings.py`)
+
+An **embedding model** turns text into a list of numbers, a **vector**. `nomic-embed-text`
+gives 768 of them. It was trained so that texts with **similar meaning point in similar
+directions**, even with no words in common:
+
+```
+"Kubernetes"                 → [0.12, -0.40, 0.88, …]  ┐  point the same way
+"container orchestration"    → [0.10, -0.37, 0.91, …]  ┘
+"garden planner"             → [-0.70, 0.22, 0.05, …]     points elsewhere
+```
+
+nomic-embed-text wants a **task prefix**: `search_document: ` for notes and
+`search_query: ` for the question, so both sides are embedded "for retrieval".
+
+### 2. Cosine similarity: how close two meanings are
+
+```
+cos(a, b) = (a · b) / (|a| · |b|)          a · b = a₁b₁ + a₂b₂ + …
+```
+
+It's the cosine of the angle between the two arrows: **1** means the same direction, **0**
+means unrelated, and **−1** means opposite. It ignores length, so a long note and a short
+question can still match. Worked by hand in `test_cosine_by_hand`: (1,1) vs (1,0) gives
+1/√2 ≈ 0.707, a 45° angle.
+
+**Meaning search** = embed every note, embed the question, and return the highest cosines.
+A "vector database" like **pgvector** does exactly this at scale. With our few dozen notes,
+a Python loop is instant.
+
+### 3. A trap: meaning search always finds *something*
+
+Every note has *some* cosine with any question, even "astronaut spaceship". So a note
+found **only** by meaning must reach `MIN_COSINE` (0.5, a first guess that the scoreboard
+will calibrate) to count. Otherwise "I couldn't find that" would become impossible, and
+the assistant would always hand over its least-bad notes.
+
+### 4. Hybrid search with Reciprocal Rank Fusion (RRF)
+
+Keyword search is great at **exact names** ("FastAPI", "K8s"). Meaning search is great at
+**paraphrases**. Use both and merge the two rankings:
+
+```
+RRF score of a note = Σ over each ranking  1 / (60 + its rank)
+```
+
+Why ranks, not scores? BM25 scores (0 to about 20) and cosines (−1 to 1) are on different
+scales, but "1st place" means the same in both. Worked by hand in `test_rrf_by_hand`: a
+note that's 2nd in one list and 1st in the other (1/62 + 1/61 = 0.0325) beats a note
+that's 1st in only one list (1/61 = 0.0164). **Agreement wins.**
+
+### 5. Engineering details that matter in real systems
+
+- **Caching:** embedding is the slow part, so each note's vector is cached by
+  (model, text) and only re-computed when the text changes (`CachedEmbedder`, which keeps
+  the most recently used 5,000).
+- **Graceful fallback:** if Ollama is down or the model isn't pulled, the assistant uses
+  keyword search and puts a `note` in the reply instead of failing.
+- **Testing without the model:** the tests use a tiny **fake embedder** that maps synonyms
+  to the same direction. That tests our plumbing and maths, not the real model's quality.
+  The real model is measured by the scoreboard.
+
+### Interview questions you can now answer
+
+- *What is an embedding?* A vector representing meaning, where similar texts have nearby
+  vectors.
+- *Why cosine similarity rather than distance?* It compares direction (meaning), not
+  length.
+- *What is hybrid search and why use it?* BM25 + vector search, fused with RRF. It catches
+  exact terms *and* paraphrases.
+- *Why RRF instead of adding scores?* The scores aren't on the same scale; ranks are.
+- *What's a similarity threshold for?* Vector search always returns neighbours; a
+  threshold lets the system say "not found".
+- *What is a vector database?* Storage plus fast nearest-neighbour search over vectors
+  (pgvector, FAISS, Pinecone). Unnecessary at tiny scale, essential at millions of chunks.
 
 ## Stage 67: generation with grounding
 

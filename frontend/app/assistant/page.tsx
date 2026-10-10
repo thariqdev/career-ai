@@ -144,22 +144,39 @@ export default function AssistantPage() {
 
       <p className="mt-3 text-xs text-ink-soft">
         How it works: your data is cut into small notes, and your question is matched to the best
-        ones with keyword search (BM25). A smarter, AI-written answer comes in a later step.
+        ones with keyword search (BM25), plus meaning search when a local Ollama embedding model is
+        switched on. An AI-written answer comes in a later step.
       </p>
     </Page>
   );
 }
 
+const RETRIEVAL_LABEL: Record<AssistantAnswer["retrieval"], string> = {
+  bm25: "keyword search",
+  vector: "meaning search",
+  hybrid: "keyword + meaning search",
+};
+
 function Reply({ reply }: { reply: AssistantAnswer }) {
+  const note = reply.note && <p className="text-xs text-warm">{reply.note}</p>;
   if (reply.sources.length === 0) {
-    return <p className="rounded-lg bg-ground/60 px-4 py-3 text-sm text-ink">{reply.answer}</p>;
+    return (
+      <div className="flex flex-col gap-1">
+        <p className="rounded-lg bg-ground/60 px-4 py-3 text-sm text-ink">{reply.answer}</p>
+        {note}
+      </div>
+    );
   }
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm text-ink">
         Here&apos;s what I found in your data{" "}
-        <span className="text-xs text-ink-soft">(searched {reply.searched} notes)</span>:
+        <span className="text-xs text-ink-soft">
+          (searched {reply.searched} notes with {RETRIEVAL_LABEL[reply.retrieval]})
+        </span>
+        :
       </p>
+      {note}
       {reply.sources.map((source) => (
         <div key={source.number} className="rounded-lg border border-line bg-surface px-4 py-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">

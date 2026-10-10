@@ -1,7 +1,9 @@
 """POST /assistant/ask: the Career AI assistant (RAG over your own data; see app/rag).
 
 Read-only: it searches chunks built from your current data and answers with numbered
-sources. Stage 65 answers extractively (no language model, so nothing can be made up).
+sources. Retrieval is keyword search, or hybrid keyword + meaning search when
+OLLAMA_EMBED_MODEL is set. Answers are extractive (no language model writes them yet, so
+nothing can be made up).
 """
 
 from fastapi import APIRouter, Depends
@@ -33,6 +35,8 @@ class AskResponse(BaseModel):
     answer: str
     sources: list[SourceResponse]
     searched: int
+    retrieval: str  # "bm25" (keyword) or "hybrid" (keyword + meaning)
+    note: str | None  # e.g. why meaning search wasn't used
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -56,4 +60,6 @@ def ask(
             for s in result.sources
         ],
         searched=result.searched,
+        retrieval=result.retrieval,
+        note=result.note,
     )

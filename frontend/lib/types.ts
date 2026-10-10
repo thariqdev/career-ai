@@ -306,4 +306,10 @@ export type AssistantSource = {
   link: string;
   score: number;
 };
-export type AssistantAnswer = { answer: string; sources: AssistantSource[]; searched: number };
+export type AssistantAnswer = {
+  answer: string;
+  sources: AssistantSource[];
+  searched: number;
+  retrieval: "bm25" | "vector" | "hybrid"; // keyword, meaning, or both (fused)
+  note: string | null; // e.g. why meaning search wasn't used
+};

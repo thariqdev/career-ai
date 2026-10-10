@@ -11,3 +11,4 @@ import pytest
 def _no_local_ai_reader(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OLLAMA_MODEL", raising=False)
     monkeypatch.delenv("OLLAMA_BASE_URL", raising=False)
+    monkeypatch.delenv("OLLAMA_EMBED_MODEL", raising=False)
