@@ -250,6 +250,7 @@ career-ai/
         ├── test_suggestions_api.py
         ├── test_cv_profile_api.py
         ├── test_cv_workflow_api.py
+        ├── test_rag_assistant.py
         └── conftest.py   ← autouse: unsets OLLAMA_MODEL/OLLAMA_BASE_URL for every test
 ```
 
@@ -2387,6 +2388,59 @@ Added 2026-10-10 at the user's request. Their workflow is: start empty → uploa
   - **Rule:** pick a variant; never override `bg-`/`text-` on a `Button` through `className`.
 - **Delete from the list (64g):** `PastJobs` rows are now an `<li>` card holding the job `<Link>` (flex-1) plus a small danger `Button`, since a button can't sit inside a link. Clicking it opens `useConfirm` (the same wording as the job page), then calls `DELETE /job-descriptions/{id}` (the existing, tested endpoint), drops the row locally and calls `onDeleted(id)`. The parent resets the result card if it showed that job, and clears a duplicate-link pointing at it. Errors are shown under the row.
 - **Pointer cursor (64f):** `app/globals.css` has an `@layer base` rule. It gives `cursor: pointer` to enabled buttons, `[role=button]`, `a[href]`, selects, `summary`, checkbox labels, checkbox/radio/file inputs, date-picker icons and `::file-selector-button`, and `cursor: not-allowed` to disabled controls. Tailwind v4's preflight resets buttons to the default cursor. Because it's in the base layer, utility classes can still override it.
+
+---
+
+### RAG stage 65: chunking, BM25 retrieval, extractive assistant
+
+Added 2026-10-10. This is the user's request to learn RAG by building it; the teaching guide is **`docs/RAG_GUIDE.md`**, updated each stage. Nothing was installed: pure Python, no AI model.
+
+- **`app/rag/chunker.py`:** `build_chunks(db, user) -> list[Chunk(id, kind, title, text, link)]`. It's read-only and rebuilt per question.
+  - Kinds:
+    - **overview:** counts, verified skills, unproven claims, the most-needed missing skills
+    - **skill:** status phrased with "proof"/"verified", CV yes/no, learning progress, the jobs that need it (via `match_service`)
+    - **job:** application, match %, and the proven / on-CV / missing lists
+    - **gap:** one per missing skill per job
+    - **evidence, project, work, education**
+  - Only the user's own records are used (skills are the shared taxonomy). `job_label` mirrors the frontend's `jobLabel`.
+- **`app/rag/bm25.py`:** BM25 Okapi **from scratch** (k1 = 1.5, b = 0.75, idf = ln((N − n + 0.5)/(n + 0.5) + 1)).
+  - `tokenize` lowercases, keeps `c++`/`c#`/`node.js`, and drops a short stop-word list.
+  - `BM25Index(texts).search(query, top_k)` returns positive-score hits, best first.
+- **`app/rag/assistant.py`:** `ask(db, user, question)` builds chunks, indexes `"{title}. {text}"`, and takes the top 4. The answer is **extractive**: "Here's what I found in your data:" plus `[n] <chunk text>`, or `NOT_FOUND` when nothing scores above 0. An empty question gives `EmptyQuestionError` (422), and questions are capped at 500 characters (also enforced by the request model).
+- **API:** `POST /assistant/ask {question}` returns `{answer, sources[{number, kind, title, text, link, score}], searched}` (`app/api/assistant.py`).
+- **Frontend:** a new `/assistant` page and an "Assistant" nav item.
+  - Example-question chips, a chat log (page-only, not saved), and inline validation.
+  - Replies are rendered as numbered source cards (a kind tag, the title, the text, and an "Open →" link to the page). "Not found" shows as plain text.
+- **Verified:**
+  - **Tests:** 13 in `tests/test_rag_assistant.py`:
+    - the tokenizer
+    - **a hand-worked BM25 score (1.10516)**
+    - rare beats common
+    - diminishing returns
+    - an empty index
+    - chunks cover every kind, are user-scoped, and have unique ids
+    - a gap question finds gaps, and a proof question finds the evidence
+    - **the answer contains only retrieved text**
+    - no match gives NOT_FOUND
+    - an empty app returns only the overview
+    - an empty or over-long question gives 422
+
+    Suite: **550 passed**.
+  - **Mutation check:** IDF set to 1 failed the hand example and rare-beats-common. The file was restored byte-identical.
+  - Frontend: build is clean, eslint reports 0, and `npm test` is 24/24.
+  - **Live check** on :8011, read-only, on the user's real data (35 notes):
+    - "What am I missing for my jobs?" gives gap notes (GraphQL, LangChain, AWS) plus the overview.
+    - "Which skills have no proof yet?" gives the overview first.
+    - "astronaut" gives NOT_FOUND.
+    - It showed BM25's limits: no stemming ("jobs" ≠ "job"), and ties between similarly worded notes. That motivates stage 66.
+- **Environment facts for the next stages:**
+  - PostgreSQL 18.6 **without pgvector**
+  - **no numpy**
+  - **Ollama not installed yet**; the user was told to use the official installer from ollama.com/download, installed per-user and globally, not in the repo
+- **Next:**
+  - 66: embeddings via Ollama `nomic-embed-text` + cosine similarity, plus hybrid with BM25
+  - 67: grounded generation with `llama3.2`
+  - 68: evaluation
 
 ---
 

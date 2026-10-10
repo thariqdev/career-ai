@@ -198,6 +198,13 @@ class DuplicateJobDescriptionError(DomainError):
         )
 
 
+class EmptyQuestionError(DomainError):
+    """The assistant was asked an empty question."""
+
+    def __init__(self) -> None:
+        super().__init__("Type a question first.")
+
+
 class AliasNotFoundError(DomainError):
     """The skill has no alias matching this text."""
 

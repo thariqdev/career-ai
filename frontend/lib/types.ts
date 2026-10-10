@@ -296,3 +296,14 @@ export type Education = {
   description: string | null;
   created_at: string;
 };
+
+// Matches backend AskResponse (POST /assistant/ask): RAG over your own data.
+export type AssistantSource = {
+  number: number; // [1], [2]... as cited
+  kind: string; // overview | skill | job | gap | evidence | project | work | education
+  title: string;
+  text: string;
+  link: string;
+  score: number;
+};
+export type AssistantAnswer = { answer: string; sources: AssistantSource[]; searched: number };

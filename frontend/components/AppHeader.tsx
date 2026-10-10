@@ -10,6 +10,7 @@ const NAV = [
   { href: "/job-descriptions", label: "Job Descriptions" },
   { href: "/cv", label: "My CV" },
   { href: "/profile", label: "My Profile" },
+  { href: "/assistant", label: "Assistant" },
 ];
 
 // "/" is active only on the Dashboard itself; the others also cover their sub-pages

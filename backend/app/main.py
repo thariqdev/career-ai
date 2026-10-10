@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
+    assistant,
     cv,
     evidence,
     export,
@@ -34,6 +35,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(assistant.router)
 app.include_router(skills.router)
 app.include_router(me.router)
 app.include_router(job_descriptions.router)
