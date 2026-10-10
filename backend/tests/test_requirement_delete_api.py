@@ -75,7 +75,7 @@ def setup(client: TestClient, engine: Engine) -> dict:
     jobs = []
     for title in ("Backend", "Platform"):
         job_id = client.post(
-            "/job-descriptions", json={"raw_text": "Need Python and Docker.", "title": title}
+            "/job-descriptions", json={"raw_text": f"{title} role: Need Python and Docker.", "title": title}
         ).json()["id"]
         client.post(f"/job-descriptions/{job_id}/extract")
         assert client.post(f"/job-descriptions/{job_id}/compare").status_code == 200

@@ -8,6 +8,7 @@ import GapList from "@/components/GapList";
 import NotInSkillsYet from "@/components/NotInSkillsYet";
 import SkillSuggestions from "@/components/SkillSuggestions";
 import JobMatchSummary from "@/components/JobMatchSummary";
+import { jobLabel } from "@/lib/jobs";
 import ApplicationEditor from "@/components/ApplicationEditor";
 import StatusBadge from "@/components/StatusBadge";
 import { Button, ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
@@ -254,7 +255,7 @@ export default function JobDescriptionPage() {
         <Card>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h1 className="font-display text-3xl text-ink">{job.title ?? "Untitled job"}</h1>
+              <h1 className="font-display text-3xl text-ink">{jobLabel(job)}</h1>
               <p className="mt-1 text-sm text-ink-soft">
                 {job.company ?? "No company"} · added {new Date(job.created_at).toLocaleDateString()}
                 {job.source_url &&

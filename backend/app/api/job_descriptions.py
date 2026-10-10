@@ -73,18 +73,15 @@ def create_job_description(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> JobDescription:
-    # No business rule to enforce beyond shape (which Pydantic already checked), so this
-    # is built directly rather than through a service — same as SkillCreate's own
-    # construction has none; only skill_service's actual rules (create_skill, add_alias)
-    # warrant a service.
-    job_description = JobDescription(
-        user=user,
+    # 409 if you already added the same posting text (see job_description_service).
+    job_description = job_description_service.create_job_description(
+        db,
+        user,
         raw_text=payload.raw_text,
         title=payload.title,
         company=payload.company,
         source_url=payload.source_url,
     )
-    db.add(job_description)
     db.commit()
     return job_description
 

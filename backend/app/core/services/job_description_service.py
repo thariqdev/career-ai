@@ -20,8 +20,10 @@ knowledge, flush but never commit.
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import DismissalNotFoundError
+from app.core.exceptions import DismissalNotFoundError, DuplicateJobDescriptionError
+from app.core.services.skill_service import normalize_text
 from app.db.models import (
+    User,
     ComparisonResult,
     ComparisonResultEvidence,
     DismissedRequirement,
@@ -110,3 +112,35 @@ def allow_again(db: Session, job_description: JobDescription, skill_id: int) -> 
         raise DismissalNotFoundError(skill_id)
     db.delete(note)
     db.flush()
+
+
+def find_duplicate(db: Session, user: User, raw_text: str) -> JobDescription | None:
+    """This user's job with the same posting text, ignoring case and spacing, if any."""
+    key = normalize_text(raw_text)
+    if not key:
+        return None
+    for job in db.scalars(select(JobDescription).where(JobDescription.user_id == user.id)):
+        if normalize_text(job.raw_text) == key:
+            return job
+    return None
+
+
+def create_job_description(
+    db: Session,
+    user: User,
+    *,
+    raw_text: str,
+    title: str | None = None,
+    company: str | None = None,
+    source_url: str | None = None,
+) -> JobDescription:
+    """Save a pasted posting. Refuses the same text twice (DuplicateJobDescriptionError,
+    409): an exact copy would only duplicate its requirements, results and match."""
+    existing = find_duplicate(db, user, raw_text)
+    if existing is not None:
+        label = existing.title or " ".join(existing.raw_text.split())[:40]
+        raise DuplicateJobDescriptionError(existing.created_at.strftime("%d/%m/%Y"), label)
+    job = JobDescription(user=user, raw_text=raw_text, title=title, company=company, source_url=source_url)
+    db.add(job)
+    db.flush()
+    return job

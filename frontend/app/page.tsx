@@ -8,6 +8,7 @@ import LearnLinks from "@/components/LearnLinks";
 import { ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
 import { APPLICATION_CLASSES, APPLICATION_LABEL, APPLICATION_STATUSES } from "@/lib/applications";
 import { isOpen, rankSkillsToLearn, type SkillToLearn } from "@/lib/ranking";
+import { jobLabel } from "@/lib/jobs";
 import { COMING_UP_DAYS, countdown, shortDateTime, upcomingInterviews } from "@/lib/interviews";
 import AddToCalendar from "@/components/AddToCalendar";
 import { PROGRESS_LABEL, useLearningResources } from "@/lib/learning";
@@ -191,7 +192,7 @@ function ComingUp({ jobs, loadedAt }: { jobs: JobDescription[]; loadedAt: number
                   {countdown(at, now)}
                 </span>
                 <Link href={`/job-descriptions/${job.id}`} className="font-medium text-ink hover:underline">
-                  {job.title ?? "Untitled job"}
+                  {jobLabel(job)}
                 </Link>
                 {job.company && <span className="text-ink-soft"> · {job.company}</span>}
                 <span className="block text-xs text-ink-soft sm:inline">
@@ -338,7 +339,7 @@ export default function DashboardPage() {
           ) : (
             <Card>
               <p className="font-medium text-ink">
-                {mostRecent.title ?? "Untitled"}
+                {jobLabel(mostRecent)}
                 {mostRecent.company && (
                   <span className="font-normal text-ink-soft"> · {mostRecent.company}</span>
                 )}

@@ -2365,6 +2365,12 @@ Added 2026-10-10 at the user's request. Their workflow is: start empty → uploa
   - `JobMatchSummary` then shows "Add your CV to see your match" with an "Add my CV →" button, and lists "Skills this job asks for" instead of a % and bar.
   - `/job-descriptions` shows a "Step 1: add your CV first" card above the paste form when `/cv/status` has no present mark and no claim. It hides the "None of your saved skills appear…" note when `has_cv` is false.
   - Test: `test_match_says_when_there_is_no_cv_to_compare_with_yet`. Suite: 534.
+- **No duplicate postings (64d):**
+  - `job_description_service.create_job_description` refuses the same `raw_text` as one of the **same user's** jobs (`normalize_text`: case and whitespace ignored) with `DuplicateJobDescriptionError` (409). The create route now goes through this service.
+  - The frontend checks first with `lib/jobs.ts` `sameText`, against `GET /job-descriptions`, and shows a FieldError under the paste box plus an "Open it →" link. A 409 from the server is also shown there.
+  - `jobLabel(job)` (title, else the first 60 characters of the posting, else "Untitled job") replaces the "Untitled job" fallbacks on the list, the job page, the Dashboard and the paste result.
+  - Tests: 3 backend (same text twice → 409, different text OK, another user's identical text OK) and `tests/jobs.test.mjs` (2). Two older test setups that posted the same text twice now use distinct texts.
+  - Suite: 537 backend, 24 frontend.
 
 ---
 

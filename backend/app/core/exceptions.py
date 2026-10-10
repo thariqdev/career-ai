@@ -188,6 +188,16 @@ class ApplicationDateError(DomainError):
     """An applied-on date that can't be right (in the future, or on a job not applied to)."""
 
 
+class DuplicateJobDescriptionError(DomainError):
+    """The same posting text (ignoring case and spacing) was already added by this user."""
+
+    def __init__(self, added_on: str, label: str) -> None:
+        super().__init__(
+            f'You already added this exact job description on {added_on} ("{label}"). '
+            "Open it from the list instead of adding it again."
+        )
+
+
 class AliasNotFoundError(DomainError):
     """The skill has no alias matching this text."""
 

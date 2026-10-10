@@ -7,6 +7,7 @@ import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
 import JobMatchSummary from "@/components/JobMatchSummary";
 import { shortDateTime } from "@/lib/interviews";
+import { jobLabel, sameText } from "@/lib/jobs";
 import {
   ACTIVE_STATUSES,
   APPLICATION_CLASSES,
@@ -90,7 +91,7 @@ function PastJobs({ reloadKey }: { reloadKey: number }) {
                   className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-sm shadow-sm transition-colors hover:border-accent"
                 >
                   <span>
-                    <span className="font-medium text-ink">{job.title ?? "Untitled job"}</span>
+                    <span className="font-medium text-ink">{jobLabel(job)}</span>
                     <span className="text-ink-soft">
                       {job.company ? ` · ${job.company}` : ""} · {new Date(job.created_at).toLocaleDateString()}
                     </span>
@@ -144,6 +145,7 @@ export default function JobDescriptionsPage() {
   const [state, setState] = useState<PageState>({ status: "form" });
   const [rawText, setRawText] = useState("");
   const [textError, setTextError] = useState<string | null>(null);
+  const [duplicateOf, setDuplicateOf] = useState<JobDescription | null>(null);
   // null while loading; false: no skill on the CV and no claim yet (add the CV first).
   const [hasCv, setHasCv] = useState<boolean | null>(null);
 
@@ -180,6 +182,22 @@ export default function JobDescriptionsPage() {
       setTextError("Paste the job posting text first.");
       return;
     }
+    // Same posting already added? Say so under the box, with a link, and save nothing.
+    // (The backend refuses it too, with 409, in case this check is skipped.)
+    try {
+      const existing = (await apiGet<JobDescription[]>("/job-descriptions")).find((j) =>
+        sameText(j.raw_text, rawText),
+      );
+      if (existing) {
+        setDuplicateOf(existing);
+        setTextError(
+          `You already added this exact job description on ${new Date(existing.created_at).toLocaleDateString()}.`,
+        );
+        return;
+      }
+    } catch {
+      // The list couldn't be loaded: carry on; the backend still refuses a duplicate.
+    }
     try {
       setState({ status: "running", stage: "creating" });
       const jobDescription = await apiPost<JobDescription>("/job-descriptions", {
@@ -210,6 +228,13 @@ export default function JobDescriptionsPage() {
       setState({ status: "done", jobDescription, extraction, comparisons, gaps, match });
       setPastReloadKey((key) => key + 1);
     } catch (error) {
+      // A duplicate refused by the backend (409) belongs under the paste box, like the
+      // check above; anything else is shown as a page error.
+      if (error instanceof ApiError && error.status === 409) {
+        setTextError(error.message);
+        setState({ status: "form" });
+        return;
+      }
       setState({
         status: "error",
         message: error instanceof ApiError ? error.message : "Could not reach the backend.",
@@ -247,6 +272,7 @@ export default function JobDescriptionsPage() {
                 onChange={(e) => {
                   setRawText(e.target.value);
                   setTextError(null);
+                  setDuplicateOf(null);
                 }}
                 rows={8}
                 placeholder="Paste the full posting here…"
@@ -254,6 +280,11 @@ export default function JobDescriptionsPage() {
                 className={`${inputClasses} ${textError ? invalidClasses : ""}`}
               />
               <FieldError message={textError} />
+              {duplicateOf && (
+                <Link href={`/job-descriptions/${duplicateOf.id}`} className="text-xs font-medium text-accent underline">
+                  Open it →
+                </Link>
+              )}
             </label>
             <div className="grid gap-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1 text-sm text-ink-soft">
@@ -307,7 +338,7 @@ export default function JobDescriptionsPage() {
       {state.status === "done" && (
         <Card className="mt-6">
           <SectionHeading
-            title={state.jobDescription.title ?? "Untitled job"}
+            title={jobLabel(state.jobDescription)}
             hint={state.jobDescription.company ?? undefined}
             actions={
               <ButtonLink href={`/job-descriptions/${state.jobDescription.id}`} variant="primary">

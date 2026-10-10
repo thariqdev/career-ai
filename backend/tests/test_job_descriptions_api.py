@@ -675,3 +675,37 @@ def test_openapi_and_docs_include_the_job_description_routes(client: TestClient)
         "/job-descriptions/{job_description_id}/gaps",
     } <= paths
     assert client.get("/docs").status_code == 200
+
+
+# --- duplicates ---------------------------------------------------------------------------
+
+
+def test_the_same_posting_twice_is_refused(client: TestClient) -> None:
+    first = client.post("/job-descriptions", json={"raw_text": "We need Python.\n\nAnd Docker."})
+    assert first.status_code == 201
+
+    again = client.post(
+        "/job-descriptions", json={"raw_text": "  we NEED python.  and docker. ", "title": "Other title"}
+    )
+
+    assert again.status_code == 409
+    assert again.json()["detail"].startswith("You already added this exact job description on ")
+    assert len(client.get("/job-descriptions").json()) == 1
+
+
+def test_a_different_posting_is_fine(client: TestClient) -> None:
+    client.post("/job-descriptions", json={"raw_text": "We need Python."})
+
+    assert client.post("/job-descriptions", json={"raw_text": "We need Python and Go."}).status_code == 201
+
+
+def test_another_users_identical_posting_is_not_a_duplicate(client: TestClient, engine) -> None:
+    from sqlalchemy.orm import Session as _Session
+
+    from app.db.models import JobDescription as _Job, User as _User
+
+    with _Session(engine) as db:
+        db.add(_Job(user=_User(email="other@example.com"), raw_text="We need Python."))
+        db.commit()
+
+    assert client.post("/job-descriptions", json={"raw_text": "We need Python."}).status_code == 201
