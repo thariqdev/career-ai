@@ -24,7 +24,9 @@ import sys
 import time
 
 from app.rag.generate import DEFAULT_CHAT_MODEL
-from app.rag.router import OllamaRouter, keyword_route
+from app.rag.evaluate import build_fixture_chunks
+from app.rag.faithfulness import vocabulary
+from app.rag.router import OllamaRouter, cascade_route, guarded_keyword_route, keyword_route
 from app.rag.tools import ToolCall, matches_job
 
 JOBS = ["Backend Engineer at Acme", "Frontend Developer at Globex"]
@@ -139,10 +141,17 @@ def score(router, questions) -> tuple[int, int, int, list[str]]:
 def main() -> int:
     # Without Ollama the tool-calling router answers None every time (all "missed tool").
     model = os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL
-    routers = {"keyword rules": keyword_route, f"tool calling ({model})": OllamaRouter(model).route}
+    llm = OllamaRouter(model).route
+    known = vocabulary(build_fixture_chunks())
+    routers = {
+        "keyword rules": keyword_route,
+        "keyword rules + guards (live)": lambda q, jobs: guarded_keyword_route(q, jobs, known),
+        f"tool calling ({model})": llm,
+        "cascade (rules, then model + guards)": lambda q, jobs: cascade_route(q, jobs, llm, known),
+    }
     for name, router in routers.items():
         print(f"\n{name}")
-        for label, questions in (("dev", DEV), ("held-out", HELD_OUT)):
+        for label, questions in (("dev", DEV), ("held-out", HELD_OUT), ("TEST", TEST)):
             start = time.time()
             right, wrong, missed, mistakes = score(router, questions)
             seconds = (time.time() - start) / len(questions)

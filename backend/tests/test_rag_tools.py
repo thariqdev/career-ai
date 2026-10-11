@@ -12,8 +12,8 @@ from sqlalchemy.pool import StaticPool
 from app.db.models import CVSkillPresence, Skill, User, UserSkill
 from app.rag import tools
 from app.rag.evaluate import fill_fixture
-from app.rag.router import OllamaRouter, keyword_route, tool_schemas
-from app.rag.router_eval import DEV, HELD_OUT, JOBS, score
+from app.rag.router import OllamaRouter, cascade_route, guard, guarded_keyword_route, keyword_route, tool_schemas
+from app.rag.router_eval import DEV, HELD_OUT, JOBS, TEST, score
 from app.rag.tools import TOOLS, ToolCall
 from database import Base
 
@@ -174,3 +174,59 @@ def test_only_job_gaps_takes_an_argument() -> None:
     with_args = [t["function"]["name"] for t in tool_schemas() if t["function"]["parameters"]["properties"]]
 
     assert with_args == ["job_gaps"]
+
+
+# --- stage 70: guards and the cascade -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("question", "call", "kept"),
+    [
+        ("Do I know Kubernetes?", ToolCall("skills_without_proof"), None),  # names a skill: search
+        ("How do I prove Docker?", ToolCall("verified_skills"), None),  # instructions: search
+        ("What am I missing for my jobs?", ToolCall("job_gaps", "Backend Engineer at Acme"), ToolCall("job_gaps")),
+        ("Am I ready for Acme?", ToolCall("job_gaps", "Acme"), ToolCall("job_gaps", "Acme")),  # job really asked about
+        ("Give me a learning order", ToolCall("learn_first"), ToolCall("learn_first")),
+        ("Anything", None, None),
+    ],
+)
+def test_guard(question: str, call: ToolCall | None, kept: ToolCall | None) -> None:
+    assert guard(question, call) == kept
+
+
+class FakeRouter:
+    def __init__(self, answer: ToolCall | None) -> None:
+        self.answer = answer
+        self.asked: list[str] = []
+
+    def route(self, question: str, job_labels: list[str]) -> ToolCall | None:
+        self.asked.append(question)
+        return self.answer
+
+
+def test_the_cascade_asks_the_model_only_when_the_rules_find_nothing() -> None:
+    model = FakeRouter(ToolCall("learn_first"))
+
+    assert cascade_route("Which skills have no proof yet?", JOBS, model.route) == ToolCall("skills_without_proof")
+    assert model.asked == []
+    assert cascade_route("Give me a learning order", JOBS, model.route) == ToolCall("learn_first")
+    assert cascade_route("Do I know Kubernetes?", JOBS, model.route) is None  # the guard vetoes the model
+    assert model.asked == ["Give me a learning order", "Do I know Kubernetes?"]
+
+
+def test_the_live_router_sends_one_skill_questions_to_search() -> None:
+    assert keyword_route("Why is React not verified?", JOBS) == ToolCall("skills_without_proof")
+    assert guarded_keyword_route("Why is React not verified?", JOBS) is None
+
+
+@pytest.mark.parametrize("questions", [HELD_OUT, TEST], ids=["held-out", "test"])
+def test_the_live_router_never_picks_a_wrong_tool(questions) -> None:
+    right, wrong, missed, mistakes = score(lambda q, jobs: guarded_keyword_route(q, jobs), questions)
+
+    assert wrong == 0, mistakes
+
+
+def test_the_live_router_still_gets_every_dev_question() -> None:
+    right, _, _, mistakes = score(lambda q, jobs: guarded_keyword_route(q, jobs), DEV)
+
+    assert right == len(DEV), mistakes

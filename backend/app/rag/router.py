@@ -10,6 +10,9 @@ Two routers, measured against each other in app/rag/router_eval.py:
   with no tool. It understands new phrasings, but it's slower, and it's a model: it can
   pick a tool when none fits.
 
+Stage 70 combines them: cascade_route tries the rules first and asks the model only
+when the rules find nothing; the model's choice must then pass guardrails (guard).
+
 Either way, None means "no tool: use search", which is always safe.
 """
 
@@ -18,6 +21,7 @@ import re
 
 import httpx
 
+from app.core.services import suggestion_service
 from app.rag.generate import DEFAULT_BASE_URL, DEFAULT_CHAT_MODEL
 from app.rag.tools import TOOLS, ToolCall
 
@@ -45,12 +49,20 @@ _JOBS_WORD = re.compile(r"\b(?:jobs?|roles?|positions?|applications?)\b", re.IGN
 _STOP = {"the", "and", "for", "job", "role", "senior", "junior"}
 
 
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9.+#]+", text.lower())
+
+
+def _distinctive(label: str) -> list[str]:
+    """A job's identifying words: "Backend Engineer at Acme" -> backend, engineer, acme."""
+    return [w for w in _words(label) if len(w) >= 3 and w not in _STOP and w != "at"]
+
+
 def _job_named(question: str, job_labels: list[str]) -> str | None:
     """The job whose distinctive words (title or company) appear in the question."""
-    words = set(re.findall(r"[a-z0-9.+#]+", question.lower()))
+    words = set(_words(question))
     for label in job_labels:
-        distinctive = [w for w in re.findall(r"[a-z0-9.+#]+", label.lower()) if len(w) >= 3 and w not in _STOP and w != "at"]
-        if any(w in words for w in distinctive):
+        if any(w in words for w in _distinctive(label)):
             return label
     return None
 
@@ -150,3 +162,51 @@ class OllamaRouter:
                 arguments = {}
         job = arguments.get("job") if name == "job_gaps" else None
         return ToolCall(name, job.strip() if isinstance(job, str) and job.strip() else None)
+
+
+# --- stage 70: rules first, then the model behind guardrails ----------------------------
+
+_HOW_TO = re.compile(r"^\s*how\b|\bhow\s+(?:do|can|should|would)\s+i\b|\bhow\s+to\b", re.IGNORECASE)
+
+
+def guard(question: str, call: ToolCall | None, known_names: tuple[str, ...] = ()) -> ToolCall | None:
+    """Veto the model's risky choices. Each rule comes from a mistake it made on DEV or
+    HELD_OUT (app/rag/router_eval.py), stated generally:
+
+    - a question naming a specific skill ("Do I know Kubernetes?") is about that skill,
+      not a list: search answers it. Except one job's gaps ("What am I missing for Acme?
+      Kubernetes?"): that job's exact list holds the answer.
+    - "how do I ..." asks for instructions, which no tool gives
+    - a job the question never mentions was made up: show all jobs instead
+    """
+    if call is None:
+        return None
+    if _HOW_TO.search(question):
+        return None
+    asked = set(_words(question))
+    job_asked = call.name == "job_gaps" and call.job is not None and any(w in asked for w in _distinctive(call.job))
+    if call.name == "job_gaps" and call.job and not job_asked:
+        call = ToolCall("job_gaps")
+    if suggestion_service.mentioned(question, known_names) and not job_asked:
+        return None
+    return call
+
+
+def guarded_keyword_route(question: str, job_labels: list[str], known_names: tuple[str, ...] = ()) -> ToolCall | None:
+    """The live router: the rules, behind the same guards. The stage-70 TEST set showed the
+    rules alone sending "Why is React not verified?" (one skill) to a list tool."""
+    return guard(question, keyword_route(question, job_labels), known_names)
+
+
+def cascade_route(
+    question: str,
+    job_labels: list[str],
+    model_route,  # (question, job_labels) -> ToolCall | None, e.g. OllamaRouter(...).route
+    known_names: tuple[str, ...] = (),
+) -> ToolCall | None:
+    """The rules decide when they can (instant, never wrong when measured); otherwise the
+    model picks, and its pick must pass guard()."""
+    call = keyword_route(question, job_labels)
+    if call is not None:
+        return call
+    return guard(question, model_route(question, job_labels), known_names)

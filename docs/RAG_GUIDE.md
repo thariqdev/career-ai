@@ -632,3 +632,60 @@ exactly, and "What should I learn first?" ranks AWS first (needed by 2 jobs).
   is ignored), validated arguments, and least privilege.
 - *Why a held-out set?* Rules or prompts tuned on the dev set overfit it. Only wording you
   didn't tune on shows real-world accuracy.
+
+## Stage 70: a cascade with guardrails, and a test set you can only use once ✅
+
+**The idea:** combine both routers. The rules decide first; only when they find nothing
+is the model asked, and its choice must pass **guardrails** (`router.guard`):
+
+- A question naming a specific skill ("Do I know Kubernetes?") is about that skill, not a
+  list, so it gets search. The exception is one job's gaps ("What am I missing for Acme?
+  Kubernetes?"), because that job's exact list holds the answer.
+- "How do I…" asks for instructions, which no tool gives, so it gets search.
+- A job the question never mentions was made up by the model, so all jobs are shown instead.
+
+### Three question sets, and why
+
+| Set | What it's for | Status |
+|---|---|---|
+| **dev** (27) | tune freely | used for tuning |
+| **held-out** (16) | check the tuning | its mistakes inspired this stage, so it's no longer unseen |
+| **TEST** (20) | written **and committed before any guard code existed** (commit `5b4f6b3`), run once | the honest score |
+
+**Pre-registration:** before measuring, the bar was written down. The cascade goes live
+only if it picks **no wrong tools on TEST** and answers more correctly than the rules.
+
+### The honest results (TEST, first run)
+
+| Router | Right | Wrong tool | Missed tool | Time |
+|---|---|---|---|---|
+| Keyword rules | 11/20 | 1 | 8 | 0 s |
+| llama3.2 alone | 12/20 | **8** | 0 | 0.8 s |
+| **Cascade** (rules, then model + guards) | **16/20** | **4** | 0 | 0.6 s |
+
+- **The cascade answers the most questions, but it fails the bar.** It answered "What
+  projects have I built?" with the unproven-skills list, and "Tell me about the Acme job"
+  with only its gaps. **So it doesn't go live.** Writing the bar down first is what stops
+  you lowering it after seeing the numbers.
+- **The fresh set found a bug in the rules.** They sent "Why is React not verified?" (one
+  skill) to the unproven-skills list. Dev and held-out never showed this.
+
+### What changed
+
+The live router is now **the rules behind the guards** (`guarded_keyword_route`). On dev
+it gets 27/27, on held-out 8/16, and it picks **0 wrong tools** on all three sets.
+
+**Honest caveat:** this fix was prompted by TEST, so its TEST score (12/20, 0 wrong) is
+**no longer an unbiased estimate**. TEST is now "used". The next change to routing needs a
+new, untouched test set.
+
+### Interview questions you can now answer
+
+- *Why do you need separate dev, validation and test sets?* Every time you look at a set's
+  mistakes and change something, you fit that set a little. Only a set you never tuned on
+  estimates real-world accuracy, and it's spent once you act on it.
+- *What is a cascade, and when is it worth it?* Cheap, precise components first; an
+  expensive or flexible one only when they abstain. It's worth it when the flexible part's
+  errors can be contained (here with guards). It wasn't enough here: 4 wrong tools out of 20.
+- *What is pre-registration?* Writing the success criterion before seeing the results, so
+  the decision can't drift to fit the numbers.

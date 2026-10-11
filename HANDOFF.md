@@ -2498,6 +2498,26 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 70 (cascade and guards):**
+  - **`router.guard(question, call, known_names)`:**
+    - "How do I…" questions return None.
+    - A `job_gaps` job argument whose distinctive words aren't in the question falls back to all jobs.
+    - A question that names a catalogue or known skill returns None, unless the call is `job_gaps` for a job actually named in the question.
+  - `guarded_keyword_route` is **live** in `assistant.prepare` (with `known_names = vocabulary(chunks)`).
+  - `cascade_route(question, jobs, model_route, known_names)` sends the question to the rules first, then the model, then the guard. It is **not live**.
+  - **`router_eval`:**
+    - `TEST` (20) was committed in `5b4f6b3` before any guard code.
+    - TEST results on the first run:
+
+      | Router | Right | Wrong tool | Missed |
+      |---|---|---|---|
+      | Rules | 11 | 1 | 8 |
+      | Model | 12 | 8 | 0 |
+      | Cascade | 16 | 4 | 0 |
+
+    - The cascade failed the pre-registered bar (0 wrong on TEST).
+    - Rules plus guards score 27/27 dev and 8/16 held-out, with 0 wrong tools on every set. TEST (12/20) is now used up.
+  - **Tests:** `test_rag_tools.py` +11. Mutation: disabling the skill guard fails 4 tests.
 - **Stage 69 (tools and routing):**
   - **`app/rag/tools.py`** (read-only):
     - `ToolCall(name, job)` and `TOOLS` (name to description).

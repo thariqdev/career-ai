@@ -60,7 +60,7 @@ from app.rag.generate import (
     clean_citations,
     fit_notes,
 )
-from app.rag.router import keyword_route
+from app.rag.router import guarded_keyword_route
 
 TOP_K = 4
 # Stemming measured worse on our notes (app/rag/evaluate.py), so it's off.
@@ -202,9 +202,9 @@ def prepare(
 
     Stage 69: a "list" question ("Which skills have no proof yet?") is routed to a TOOL
     (app/rag/tools.py) that computes the exact answer; its result becomes note [1], and
-    search fills the rest. The keyword router is used because it never picked a wrong
-    tool when measured (app/rag/router_eval.py); a question it doesn't recognise simply
-    gets search, as before.
+    search fills the rest. The keyword rules (behind the stage-70 guards) are used because
+    they picked the fewest wrong tools when measured (app/rag/router_eval.py); a question
+    they don't recognise simply gets search, as before.
     """
     question = question.strip()
     if not question:
@@ -214,14 +214,15 @@ def prepare(
     search_text = f"{question} {previous[:MAX_QUESTION_CHARS]}".strip()
 
     chunks = build_chunks(db, user)
-    call = keyword_route(question, [c.title for c in chunks if c.kind == "job"])
+    known_names = vocabulary(chunks)
+    call = guarded_keyword_route(question, [c.title for c in chunks if c.kind == "job"], known_names)
     tool_chunk = tools.run(db, user, call) if call is not None else None
     found = retrieve(
         chunks, search_text, top_k - 1 if tool_chunk else top_k, embedder if embedder is not None else configured_embedder()
     )
     picked = ([(tool_chunk, 1.0)] if tool_chunk else []) + [(chunks[i], score) for i, score in found.hits]
     sources = [Source(n, chunk, score) for n, (chunk, score) in enumerate(picked, start=1)]
-    return Prepared(question, sources, len(chunks), found.mode, found.note, vocabulary(chunks))
+    return Prepared(question, sources, len(chunks), found.mode, found.note, known_names)
 
 
 def _join_notes(*notes: str | None) -> str | None:
