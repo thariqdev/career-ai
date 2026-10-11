@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { splitCitations, suggestionsFor, type ChatMessage, type PageContext } from "@/lib/chat";
-import { clear, send, stop, useChat } from "@/lib/chatStore";
+import { clear, rate, send, stop, useChat } from "@/lib/chatStore";
 
 const KIND_LABEL: Record<string, string> = {
   overview: "Overview",
@@ -238,7 +238,86 @@ function AssistantBubble({
         </div>
       )}
       {message.note && <p className="text-[11px] text-warm">{message.note}</p>}
-      {message.status !== "streaming" && <span className="text-[11px] text-ink-soft">{time(message.at)}</span>}
+      {message.status !== "streaming" && (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-soft">
+          <span>{time(message.at)}</span>
+          {message.status === "done" && <Feedback message={message} />}
+        </div>
+      )}
     </div>
+  );
+}
+
+/** 👍 / 👎 under a finished answer. 👎 asks "what was wrong?" (optional) before saving. */
+function Feedback({ message }: { message: ChatMessage }) {
+  const [asking, setAsking] = useState(false);
+  const [comment, setComment] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(rating: "up" | "down", text = "") {
+    setSaving(true);
+    setError(null);
+    const problem = await rate(message.id, rating, text);
+    setSaving(false);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setAsking(false);
+    setComment("");
+  }
+
+  const button = (rating: "up" | "down", label: string, emoji: string) => (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={message.feedback === rating}
+      title={label}
+      disabled={saving}
+      onClick={() => (rating === "up" ? save("up") : setAsking(true))}
+      className={`rounded px-1 text-sm transition-opacity ${
+        message.feedback === rating ? "opacity-100" : "opacity-40 hover:opacity-100"
+      }`}
+    >
+      {emoji}
+    </button>
+  );
+
+  return (
+    <>
+      {button("up", "Good answer", "👍")}
+      {button("down", "Bad answer", "👎")}
+      {message.feedback && !asking && <span>Thanks, noted.</span>}
+      {asking && (
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            save("down", comment);
+          }}
+          className="flex w-full flex-col gap-1"
+        >
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            maxLength={1000}
+            rows={2}
+            aria-label="What was wrong with this answer?"
+            placeholder="What was wrong? (optional, helps make it a test case)"
+            className="w-full resize-none rounded-md border border-line bg-surface px-2 py-1 text-xs text-ink focus:border-accent focus:outline-none"
+          />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" variant="primary" disabled={saving}>
+              {saving ? "Saving…" : "Send 👎"}
+            </Button>
+            <Button size="sm" onClick={() => setAsking(false)} disabled={saving}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+      {error && <span role="alert" className="text-not-verified">{error}</span>}
+    </>
   );
 }

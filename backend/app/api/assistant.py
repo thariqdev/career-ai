@@ -15,14 +15,17 @@ it the answer is the notes themselves.
 
 import json
 from collections.abc import Iterator
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from app.core.services import feedback_service
 from app.db.models import User
+from app.db.models.enums import FeedbackRating
 from app.dependencies import get_current_user, get_db
 from app.rag import assistant
 from app.rag.assistant import MAX_QUESTION_CHARS, Source
@@ -104,3 +107,71 @@ def ask_stream(
             yield json.dumps(event) + "\n"
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
+
+
+# --- stage 77: 👍 / 👎 on answers ------------------------------------------------------------
+
+
+class FeedbackSourceIn(BaseModel):
+    number: int
+    kind: str = Field(max_length=32)
+    title: str = Field(max_length=300)
+
+
+class FeedbackIn(BaseModel):
+    message_id: str = Field(min_length=1, max_length=64)  # the chat's id for the answer
+    rating: FeedbackRating
+    question: str = Field(min_length=1, max_length=4000)
+    answer: str = Field(min_length=1, max_length=20000)
+    sources: list[FeedbackSourceIn] = Field(default_factory=list, max_length=10)
+    retrieval: Literal["bm25", "vector", "hybrid"] | None = None
+    written_by: Literal["ai", "notes"] | None = None
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class FeedbackOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    message_id: str
+    rating: FeedbackRating
+    comment: str | None
+    question: str
+    answer: str
+    sources: list[dict]
+    retrieval: str | None
+    written_by: str | None
+    created_at: datetime
+
+
+@router.post("/feedback", response_model=FeedbackOut)
+def rate_answer(
+    payload: FeedbackIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Save a 👍 / 👎 on one answer (rating it again replaces the earlier rating)."""
+    feedback = feedback_service.save_feedback(
+        db,
+        user,
+        message_id=payload.message_id,
+        rating=payload.rating,
+        question=payload.question,
+        answer=payload.answer,
+        sources=[s.model_dump() for s in payload.sources],
+        retrieval=payload.retrieval,
+        written_by=payload.written_by,
+        comment=payload.comment,
+    )
+    db.commit()
+    return feedback
+
+
+@router.get("/feedback", response_model=list[FeedbackOut])
+def list_feedback(
+    rating: FeedbackRating | None = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Your ratings, newest first (?rating=down for the ones to learn from)."""
+    return feedback_service.list_feedback(db, user, rating)

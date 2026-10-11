@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { forStorage, historyFor, pageTarget, parseNdjson, splitCitations, suggestionsFor } from "../lib/chat.ts";
+import { feedbackBody, forStorage, historyFor, pageTarget, parseNdjson, splitCitations, suggestionsFor } from "../lib/chat.ts";
 
 test("NDJSON: complete lines are parsed, a half line is kept for the next chunk", () => {
   const first = parseNdjson('{"type":"delta","text":"Hel"}\n{"type":"del');
@@ -63,4 +63,32 @@ test("follow-ups send the last 4 finished turns, never a half-written or failed 
     { role: "assistant", text: "t5" },
   ]);
   assert.deepEqual(historyFor([]), []);
+});
+
+test("a rating records the answer, the question before it, and what the assistant used", () => {
+  const messages = [
+    { id: "q1", role: "user", text: "Old question", at: "", status: "done" },
+    { id: "a1", role: "assistant", text: "Old answer", at: "", status: "done" },
+    { id: "q2", role: "user", text: "Which skills have no proof yet?", at: "", status: "done" },
+    {
+      id: "a2", role: "assistant", text: "Docker and Git [1].", at: "", status: "done",
+      sources: [{ number: 1, kind: "tool", title: "Skills with no proof yet", text: "...", link: "/skills", score: 1 }],
+      retrieval: "hybrid", writtenBy: "notes",
+    },
+    { id: "a3", role: "assistant", text: "half", at: "", status: "stopped" },
+  ];
+  assert.deepEqual(feedbackBody(messages, "a2", "down", "  left out React  "), {
+    message_id: "a2",
+    rating: "down",
+    question: "Which skills have no proof yet?",
+    answer: "Docker and Git [1].",
+    sources: [{ number: 1, kind: "tool", title: "Skills with no proof yet" }],
+    retrieval: "hybrid",
+    written_by: "notes",
+    comment: "left out React",
+  });
+  assert.equal(feedbackBody(messages, "a2", "up").comment, null);
+  assert.equal(feedbackBody(messages, "a3", "up"), null); // not finished
+  assert.equal(feedbackBody(messages, "q2", "up"), null); // not an answer
+  assert.equal(feedbackBody(messages, "nope", "up"), null);
 });

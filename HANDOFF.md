@@ -2498,6 +2498,23 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 77 (feedback loop):**
+  - **Table `assistant_feedback`** (migration `b2eab744a82e`, head):
+    - columns: id, user_id (FK), `message_id` String(64), `rating` enum `feedback_rating` (UP/DOWN), comment Text, question, answer, `sources` JSON `[{number, kind, title}]`, retrieval, written_by, created_at, updated_at
+    - unique on (user_id, message_id)
+    - the downgrade also drops the enum type
+    - tested upgrade, downgrade and upgrade on the live DB; data unchanged
+  - **`feedback_service`:** `save_feedback` (an upsert; a blank comment becomes None; flushes) and `list_feedback(rating=None)`, newest first.
+  - **API (`app/api/assistant.py`):**
+    - `POST /assistant/feedback` (`FeedbackIn`: limits on all fields, at most 10 sources, a comment up to 1000 characters) commits.
+    - `GET /assistant/feedback?rating=` lists ratings.
+  - **`app/rag/feedback_report.py`:** `summary` (👍/👎 counts, 👎 by writer and by search), `draft_case`, `report`, and `main` (read-only).
+  - **Frontend:**
+    - `ChatMessage.feedback`; `lib/chat.feedbackBody(messages, id, rating, comment)` (the preceding user message is the question; null unless it's a finished answer; tested).
+    - `chatStore.rate()` POSTs, then sets `feedback`.
+    - ChatPanel `Feedback` shows 👍/👎 (`aria-pressed`) beside the time on done answers; 👎 opens an inline comment form; errors show inline.
+  - `scripts/reset_data.py` empties it generically. It isn't in export or backup (out of scope).
+  - **Tests:** `tests/test_assistant_feedback.py` (12), plus 1 frontend test. Mutation: always inserting fails the replace test.
 - **Stage 76 (rewrite settled):**
   - `OllamaChat(seed=None)` sends `options.seed` when set.
   - **`assistant`:**

@@ -19,6 +19,7 @@ export type ChatMessage = {
   note?: string | null;
   searched?: number;
   writtenBy?: "ai" | "notes"; // an AI wrote it from the notes, or it IS the notes
+  feedback?: "up" | "down"; // the user's rating of this answer (stage 77)
 };
 
 /** One line of the /assistant/ask/stream response (NDJSON). */
@@ -94,6 +95,45 @@ export function pageTarget(pathname: string): { kind: "job" | "skill"; id: numbe
 export const MAX_HISTORY = 4;
 
 /** The last few finished turns, sent with a question so follow-ups ("how do I learn it?") work. */
+export type FeedbackBody = {
+  message_id: string;
+  rating: "up" | "down";
+  question: string;
+  answer: string;
+  sources: { number: number; kind: string; title: string }[];
+  retrieval: "bm25" | "vector" | "hybrid" | null;
+  written_by: "ai" | "notes" | null;
+  comment: string | null;
+};
+
+/**
+ * What POST /assistant/feedback needs to record a rating: the answer, the question it
+ * answered (the user message just before it), and what the assistant used. null when the
+ * message isn't a finished answer to a question.
+ */
+export function feedbackBody(
+  messages: ChatMessage[],
+  messageId: string,
+  rating: "up" | "down",
+  comment = "",
+): FeedbackBody | null {
+  const index = messages.findIndex((m) => m.id === messageId);
+  const answer = messages[index];
+  if (!answer || answer.role !== "assistant" || answer.status !== "done") return null;
+  const question = messages.slice(0, index).reverse().find((m) => m.role === "user");
+  if (!question) return null;
+  return {
+    message_id: answer.id,
+    rating,
+    question: question.text,
+    answer: answer.text,
+    sources: (answer.sources ?? []).slice(0, 10).map((s) => ({ number: s.number, kind: s.kind, title: s.title })),
+    retrieval: answer.retrieval ?? null,
+    written_by: answer.writtenBy ?? null,
+    comment: comment.trim() === "" ? null : comment.trim(),
+  };
+}
+
 export function historyFor(messages: ChatMessage[]): { role: ChatRole; text: string }[] {
   return messages
     .filter((m) => m.status === "done" && m.text.trim() !== "")

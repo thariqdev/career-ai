@@ -12,8 +12,8 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { apiStream, ApiError } from "@/lib/api";
-import { forStorage, historyFor, type ChatMessage, type StreamEvent } from "@/lib/chat";
+import { apiPost, apiStream, ApiError } from "@/lib/api";
+import { feedbackBody, forStorage, historyFor, type ChatMessage, type StreamEvent } from "@/lib/chat";
 
 const STORAGE_KEY = "career-ai-chat-v1";
 const EMPTY: ChatMessage[] = [];
@@ -115,6 +115,22 @@ export async function send(question: string): Promise<void> {
     controller = null;
     listeners.forEach((listener) => listener()); // "busy" changed
   }
+}
+
+/**
+ * Rate an answer 👍 / 👎 (stage 77). Returns an error message, or null when saved.
+ * Rating again replaces the earlier rating (the backend keys it on the message id).
+ */
+export async function rate(messageId: string, rating: "up" | "down", comment = ""): Promise<string | null> {
+  const body = feedbackBody(messages, messageId, rating, comment);
+  if (body === null) return "This answer can't be rated.";
+  try {
+    await apiPost("/assistant/feedback", body);
+  } catch (error) {
+    return error instanceof ApiError ? error.message : "Could not reach the backend.";
+  }
+  update(messageId, (m) => ({ ...m, feedback: rating }));
+  return null;
 }
 
 /** Stop the answer that's being written. */

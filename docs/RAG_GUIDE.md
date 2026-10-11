@@ -55,6 +55,8 @@ question ─► (follow-up?) glue on the previous question (rewrite: off) ─ st
 | Keep-alive and warm-up | first word in about 2 s instead of about 19 s |
 | Follow-ups glued, not rewritten | on a fresh set, seeded, 5 runs: glued MRR 0.700 vs rewrite 0.644 (stage 76) |
 
+**Learn from real use:** 👍 / 👎 in the chat, then `.venv/Scripts/python -m app.rag.feedback_report` (stage 77).
+
 **Check everything still works:** `.venv/Scripts/python -m app.rag.scorecard` (add `--full`
 for the real-model measures). Its quick part also runs with the test suite.
 
@@ -997,3 +999,36 @@ not another single run:
 - *An improvement shows on one test set and reverses on another. What now?* Treat it as
   noise. Prefer the simpler method unless a pre-registered test on fresh data shows a
   gain that survives repeated runs.
+
+## Stage 77: 👍 / 👎, the feedback loop from real use ✅
+
+**Use it:** every finished answer in the chat has 👍 and 👎. 👎 asks "What was wrong?"
+(optional). **Review:** `.venv/Scripts/python -m app.rag.feedback_report` (read-only).
+
+Every test set so far was written by hand, from made-up data. Real systems improve from
+**real failures**. That cycle is the **feedback loop**:
+
+```
+answer ─► user rates it 👎 (with a comment) ─► stored with WHAT THE ASSISTANT DID
+       ─► feedback_report lists it as a draft test case ─► you add it to a test set
+       ─► the scorecard guards it from then on
+```
+
+- **Observability:** each rating is stored with the question, the answer, the sources
+  shown, the search used (keyword or hybrid), and who wrote it (the AI or the notes). That's
+  enough to tell *why* an answer went wrong: wrong notes (a retrieval problem) or right
+  notes and bad writing (a generation problem). The report counts 👎 by writer and by search.
+- **One row per answer:** the chat's message id is the key, so rating again replaces the
+  earlier rating (you can change your mind) instead of adding a row.
+- **Privacy:** stored only in your own PostgreSQL (the table `assistant_feedback`, added by
+  an Alembic migration). Nothing is sent anywhere. Feedback isn't in the backup file yet.
+
+### Interview questions you can now answer
+
+- *How would you improve a RAG system after launch?* Collect feedback (thumbs plus a
+  comment), log what the system did for each answer (a trace: query, retrieved documents,
+  prompt, model, output), triage the failures into retrieval or generation problems, turn
+  them into evaluation cases, fix, and check the whole suite for regressions.
+- *What would you log for each answer?* The question, the rewritten query if any, the
+  retrieved document ids and scores, the model and prompt version, the output, latency,
+  and the user's rating. Mind privacy: keep it local or redacted, with a retention policy.

@@ -58,3 +58,10 @@ class VerificationStatus(str, enum.Enum):
     PARTIAL = "partial"
     PROVISIONAL = "provisional"
     NOT_VERIFIED = "not_verified"
+
+
+class FeedbackRating(str, enum.Enum):
+    """A user's verdict on one assistant answer (RAG stage 77)."""
+
+    UP = "up"
+    DOWN = "down"
