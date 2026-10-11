@@ -33,7 +33,8 @@ In Career AI, **PostgreSQL stays the source of truth**. RAG only *reads* it and 
 ## The whole system on one page (stages 65–75)
 
 ```
-question ─► (follow-up?) glue on the previous question (rewrite: off) ─ stages 73, 76
+question ─► a change asked for? propose it, YOU confirm (rules only) ── stage 78
+         ─► (follow-up?) glue on the previous question (rewrite: off) ─ stages 73, 76
          ─► route: an exact-list question? ── yes ─► read-only TOOL ─── stages 69–70
          │                                            (SQL, exact)
          ─► search the notes: BM25 + meaning, fused (RRF) ───────────── stages 65–66
@@ -53,6 +54,7 @@ question ─► (follow-up?) glue on the previous question (rewrite: off) ─ st
 | Keyword routing behind guards (not the model) | 0 wrong tools on every set; the model picked 7 wrong tools |
 | Code writes exact lists | the model alone listed 4, 25 and 24 of 28 gaps; code lists all 28 every time |
 | Keep-alive and warm-up | first word in about 2 s instead of about 19 s |
+| Actions: rules propose, a human confirms | 22/22 on the frozen set, 0 wrong actions; asking never writes |
 | Follow-ups glued, not rewritten | on a fresh set, seeded, 5 runs: glued MRR 0.700 vs rewrite 0.644 (stage 76) |
 
 **Learn from real use:** 👍 / 👎 in the chat, then `.venv/Scripts/python -m app.rag.feedback_report` (stage 77).
@@ -1032,3 +1034,42 @@ answer ─► user rates it 👎 (with a comment) ─► stored with WHAT THE AS
 - *What would you log for each answer?* The question, the rewritten query if any, the
   retrieved document ids and scores, the model and prompt version, the output, latency,
   and the user's rating. Mind privacy: keep it local or redacted, with a retention policy.
+
+## Stage 78: actions you confirm (human in the loop) ✅
+
+**Try it in the chat:** "Mark React as studying", "I finished learning Docker", "Save
+https://… as a Docker tutorial". **Measure:** `.venv/Scripts/python -m app.rag.actions_eval`
+
+Reading is safe; **doing** is where an assistant becomes risky. The industry pattern is
+**human in the loop**, and here it has two layers of safety:
+
+1. **Rules, not the model, decide** whether a message asks for a change
+   (`app/rag/actions.py`). Stages 69–70 showed the model picks wrong tools; rules can't
+   invent an action. Anything unclear is *not* an action, and the chat answers normally:
+   a question ("Is React studied?"), no saved skill named, or two skills named.
+2. **The assistant never writes.** It returns a **proposal**: the summary ("Mark React as
+   Studying?") and the exact request (`PUT /skills/5/learning-progress {"status":
+   "studying"}`). The chat shows **Confirm / Cancel**, and Confirm calls the app's normal
+   endpoint, with all its usual checks. A test proves that asking changes nothing.
+
+**Only two actions:** set learning progress, and save a learning link. **Refused, with a
+reason and a link to the skill's page:** verifying, adding evidence, and deleting. Proof
+needs real evidence (the project's core rule), and deletions deserve their own page.
+
+**Measured on 22 messages committed before the detector was written:** **22/22 right,
+0 wrong actions.** Honest caveat: the same person wrote the rules and the messages, so
+treat this like a dev-set score. Real use (and 👎 feedback) is the true test. Both
+numbers are in the scorecard, so "0 wrong actions" is guarded from now on. Live check:
+asking left the data unchanged, Confirm made the change, and the data was restored
+afterwards.
+
+### Interview questions you can now answer
+
+- *How do you let an LLM agent take actions safely?* Least privilege: a small allow-list
+  of reversible actions; nothing destructive. Separate *proposing* from *executing*, with
+  the human confirming and showing exactly what will change. Execute through the normal
+  validated API, never directly against the database. Log everything, and measure "wrong
+  action" as a hard-zero metric.
+- *Rules or the model for detecting intent?* Rules where a wrong action is costly and the
+  phrasings are few; a model (behind guards and confirmation) when coverage matters more.
+  Either way, the human confirms.

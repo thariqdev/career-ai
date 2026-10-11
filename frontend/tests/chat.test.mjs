@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { feedbackBody, forStorage, historyFor, pageTarget, parseNdjson, splitCitations, suggestionsFor } from "../lib/chat.ts";
+import { canConfirm, feedbackBody, forStorage, historyFor, pageTarget, parseNdjson, splitCitations, suggestionsFor } from "../lib/chat.ts";
 
 test("NDJSON: complete lines are parsed, a half line is kept for the next chunk", () => {
   const first = parseNdjson('{"type":"delta","text":"Hel"}\n{"type":"del');
@@ -91,4 +91,16 @@ test("a rating records the answer, the question before it, and what the assistan
   assert.equal(feedbackBody(messages, "a3", "up"), null); // not finished
   assert.equal(feedbackBody(messages, "q2", "up"), null); // not an answer
   assert.equal(feedbackBody(messages, "nope", "up"), null);
+});
+
+test("Confirm shows only for an undecided proposal on a finished answer", () => {
+  const action = { kind: "progress", skill_id: 1, skill_name: "React", summary: "Mark React as Studying?", link: "/skills/1",
+    method: "PUT", path: "/skills/1/learning-progress", body: { status: "studying" } };
+  const base = { id: "a", role: "assistant", text: "", at: "", status: "done", action };
+  assert.equal(canConfirm(base), true);
+  assert.equal(canConfirm({ ...base, status: "streaming" }), false);
+  assert.equal(canConfirm({ ...base, actionState: "confirmed" }), false);
+  assert.equal(canConfirm({ ...base, actionState: "cancelled" }), false);
+  assert.equal(canConfirm({ ...base, action: { ...action, kind: "refused", method: null, path: null } }), false);
+  assert.equal(canConfirm({ ...base, action: null }), false);
 });

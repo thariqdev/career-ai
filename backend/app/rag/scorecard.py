@@ -35,7 +35,7 @@ class Metric:
 
 def quick() -> list[Metric]:
     """Deterministic measures: fixed made-up career, keyword search, rules."""
-    from app.rag import faithfulness_eval, rewrite_eval, router_eval
+    from app.rag import actions_eval, faithfulness_eval, rewrite_eval, router_eval
     from app.rag.evaluate import build_fixture_chunks, evaluate, summary
     from app.rag.faithfulness import check, vocabulary
     from app.rag.router import guarded_keyword_route
@@ -51,6 +51,7 @@ def quick() -> list[Metric]:
     routing = {name: router_eval.score(route, qs) for name, qs in
                (("dev", router_eval.DEV), ("held_out", router_eval.HELD_OUT), ("test", router_eval.TEST))}
     glued = rewrite_eval.measure(lambda i, c: (rewrite_eval.glued(c), c.question))
+    actions_right, actions_wrong, _, _ = actions_eval.score()
     return [
         Metric("retrieval: keyword recall@4", recall, True, 0),
         Metric("retrieval: keyword MRR", mrr, True, 0),
@@ -60,6 +61,8 @@ def quick() -> list[Metric]:
         Metric("routing (all sets): wrong tools", sum(r[1] for r in routing.values()), False, 0),
         Metric("follow-ups (glued, keyword): recall@4", glued.recall, True, 0),
         Metric("follow-ups (glued, keyword): MRR", glued.mrr, True, 0),
+        Metric("actions: right (of 22)", actions_right, True, 0),
+        Metric("actions: wrong actions proposed", actions_wrong, False, 0),
     ]
 
 

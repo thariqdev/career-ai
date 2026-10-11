@@ -40,6 +40,11 @@ def _pattern(term: str) -> re.Pattern[str] | None:
     return re.compile(rf"(?<!{_TERM_CHAR}){body}(?!{_TERM_CHAR})", 0 if exact else re.IGNORECASE)
 
 
+def term_pattern(term: str) -> re.Pattern[str] | None:
+    """The whole-term matcher for one skill name or nickname (same rules as above)."""
+    return _pattern(term)
+
+
 # Compiled once: the catalogue is fixed.
 _PATTERNS: list[tuple[CatalogSkill, list[re.Pattern[str]]]] = [
     (skill, [p for p in map(_pattern, skill.terms) if p is not None]) for skill in CATALOG

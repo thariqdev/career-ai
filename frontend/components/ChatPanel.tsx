@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import Link from "next/link";
 import { Button } from "@/components/ui";
 import { useConfirm } from "@/components/ConfirmDialog";
-import { splitCitations, suggestionsFor, type ChatMessage, type PageContext } from "@/lib/chat";
-import { clear, rate, send, stop, useChat } from "@/lib/chatStore";
+import { canConfirm, splitCitations, suggestionsFor, type ChatMessage, type PageContext } from "@/lib/chat";
+import { cancelAction, clear, confirmAction, rate, send, stop, useChat } from "@/lib/chatStore";
 
 const KIND_LABEL: Record<string, string> = {
   overview: "Overview",
@@ -237,12 +237,57 @@ function AssistantBubble({
           </ul>
         </div>
       )}
+      {message.action && message.status === "done" && <ActionCard message={message} />}
       {message.note && <p className="text-[11px] text-warm">{message.note}</p>}
       {message.status !== "streaming" && (
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-soft">
           <span>{time(message.at)}</span>
           {message.status === "done" && <Feedback message={message} />}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** A proposed change with Confirm / Cancel (stage 78); a refusal just links to the page. */
+function ActionCard({ message }: { message: ChatMessage }) {
+  const [busy, setBusy] = useState(false);
+  const action = message.action;
+  if (!action) return null;
+  const page = (
+    <Link href={action.link} className="text-accent underline">
+      Open {action.skill_name}&apos;s page →
+    </Link>
+  );
+  if (action.kind === "refused") return <p className="text-xs">{page}</p>;
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-accent bg-accent-soft px-3 py-2 text-xs text-ink">
+      <p className="font-medium">{action.summary}</p>
+      {canConfirm(message) && (
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              await confirmAction(message.id);
+              setBusy(false);
+            }}
+          >
+            {busy ? "Saving…" : "Confirm"}
+          </Button>
+          <Button size="sm" disabled={busy} onClick={() => cancelAction(message.id)}>
+            Cancel
+          </Button>
+        </div>
+      )}
+      {message.actionState === "confirmed" && <p className="text-verified">✓ Done. {page}</p>}
+      {message.actionState === "cancelled" && <p className="text-ink-soft">Cancelled. Nothing was changed.</p>}
+      {message.actionError && (
+        <p role="alert" className="text-not-verified">
+          {message.actionError}
+        </p>
       )}
     </div>
   );

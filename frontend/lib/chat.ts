@@ -20,7 +20,36 @@ export type ChatMessage = {
   searched?: number;
   writtenBy?: "ai" | "notes"; // an AI wrote it from the notes, or it IS the notes
   feedback?: "up" | "down"; // the user's rating of this answer (stage 77)
+  action?: ProposedAction | null; // stage 78: a change the assistant proposes
+  actionState?: "confirmed" | "cancelled";
+  actionError?: string | null;
 };
+
+/**
+ * A change the assistant proposes (stage 78). It never makes it: Confirm sends exactly
+ * `method` + `path` + `body` to the app's normal endpoint. "refused" has no request.
+ */
+export type ProposedAction = {
+  kind: "progress" | "link" | "refused";
+  skill_id: number;
+  skill_name: string;
+  summary: string;
+  link: string;
+  method: "PUT" | "POST" | null;
+  path: string | null;
+  body: Record<string, unknown> | null;
+};
+
+/** Show Confirm / Cancel? Only for a real proposal, on a finished answer, not yet decided. */
+export function canConfirm(message: ChatMessage): boolean {
+  return (
+    message.status === "done" &&
+    !!message.action &&
+    message.action.kind !== "refused" &&
+    message.action.method !== null &&
+    message.actionState === undefined
+  );
+}
 
 /** One line of the /assistant/ask/stream response (NDJSON). */
 export type StreamEvent =
@@ -30,6 +59,7 @@ export type StreamEvent =
       retrieval: "bm25" | "vector" | "hybrid";
       note: string | null;
       searched: number;
+      action?: ProposedAction | null;
     }
   | { type: "delta"; text: string }
   | { type: "replace"; text: string } // the checks changed the answer: show this instead

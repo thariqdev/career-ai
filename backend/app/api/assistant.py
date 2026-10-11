@@ -65,6 +65,7 @@ class AskResponse(BaseModel):
     retrieval: str  # "bm25" (keyword) or "hybrid" (keyword + meaning)
     note: str | None  # e.g. why meaning search or the AI writer wasn't used
     written_by: Literal["ai", "notes"]  # an AI wrote it from the notes, or it IS the notes
+    action: dict | None = None  # stage 78: a change to confirm (kind, summary, method, path, body)
 
 
 def _history(payload: AskRequest) -> list[Turn]:
@@ -85,6 +86,7 @@ def ask(
         retrieval=result.retrieval,
         note=result.note,
         written_by=result.written_by,
+        action=result.action.to_dict() if result.action else None,
     )
 
 

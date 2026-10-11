@@ -2498,6 +2498,24 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 78 (actions, human in the loop):**
+  - **`app/rag/actions.py`:** `detect_action(message, {skill_id: (name, terms)}) -> Action | None`. With URLs stripped first, its rules are:
+    - interrogative start → None
+    - exactly 1 saved skill must be named (via `suggestion_service.term_pattern`)
+    - verify/verified/prove/proven/evidence/proof/delete/remove → "refused"
+    - URL plus save/add/keep/store/bookmark → "link" (mode `theory_interview` if interview/theory/questions, else `technical_practical`)
+    - otherwise it needs mark/set/put/change or "I…", then checks not started, then finished/done/completed, then studying/learning/in progress/started → "progress"
+  - `Action(kind, skill_id, skill_name, summary, link, method, path, body)` and `reply_for`.
+  - **`assistant`:**
+    - `prepare` detects first (`_saved_skills(db)`). An action returns `Prepared([], action=...)` with no search.
+    - `answer_events` adds `meta.action`. An action yields `reply_for` deltas, then `done notes`.
+    - `AssistantAnswer.action`; `AskResponse.action` is a dict.
+  - **Frontend:**
+    - `ProposedAction` type; `ChatMessage.action` / `actionState` / `actionError`; `canConfirm()` (tested).
+    - `chatStore.confirmAction` (`apiPut` / `apiPost` of exactly method, path and body) and `cancelAction`.
+    - ChatPanel `ActionCard` shows Confirm/Cancel, "✓ Done" or "Cancelled", and inline errors. A refusal shows a link to the skill page.
+  - **`app/rag/actions_eval.py`:** `ACTION_CASES` (22) was committed in `d814f62` first. Result: 22/22, 0 wrong. The scorecard quick measures add "actions: right" and "wrong actions proposed", and the baseline is re-saved.
+  - **Tests:** `tests/test_rag_actions.py` (10; the key one: asking changes nothing, the confirmed request does), plus 1 frontend test. Mutations: bypassing the action path fails 2 tests; dropping the question guard fails 3.
 - **Stage 77 (feedback loop):**
   - **Table `assistant_feedback`** (migration `b2eab744a82e`, head):
     - columns: id, user_id (FK), `message_id` String(64), `rating` enum `feedback_rating` (UP/DOWN), comment Text, question, answer, `sources` JSON `[{number, kind, title}]`, retrieval, written_by, created_at, updated_at

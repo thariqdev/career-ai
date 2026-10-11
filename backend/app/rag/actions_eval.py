@@ -42,3 +42,69 @@ ACTION_CASES: list[tuple[str, ActionExpectation]] = [
     ("Save this link for later", None),  # no skill, no link
     ("How do I verify Docker?", None),  # a question about how, not a request
 ]
+
+
+# --- the measurement (written after ACTION_CASES was committed) ---------------------------
+
+
+def fixture_skills() -> dict[int, tuple[str, list[str]]]:
+    """{skill_id: (name, terms)} of the made-up career's saved skills."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
+
+    from app.db.models import Skill
+    from app.rag.evaluate import fill_fixture
+    from database import Base
+
+    engine = create_engine("sqlite://", poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    with Session(engine, autoflush=False) as db:
+        fill_fixture(db)
+        skills = {s.id: (s.name, [s.name, *(a.alias for a in s.aliases)]) for s in db.query(Skill)}
+    engine.dispose()
+    return skills
+
+
+def outcome(action) -> tuple | None:
+    if action is None:
+        return None
+    if action.kind == "progress":
+        return ("progress", action.skill_name, action.body["status"])
+    if action.kind == "link":
+        return ("link", action.skill_name, action.body["mode"])
+    return ("refused", action.skill_name)
+
+
+def score(cases=ACTION_CASES) -> tuple[int, int, int, list[str]]:
+    """(right, wrong action, missed action, mistakes). Wrong = proposed something not asked."""
+    from app.rag.actions import detect_action
+
+    skills = fixture_skills()
+    right = wrong = missed = 0
+    mistakes = []
+    for message, want in cases:
+        got = outcome(detect_action(message, skills))
+        if got == want:
+            right += 1
+            continue
+        if got is None:
+            missed += 1
+        else:
+            wrong += 1
+        mistakes.append(f"    {message!r}: got {got}, want {want}")
+    return right, wrong, missed, mistakes
+
+
+def main() -> int:
+    right, wrong, missed, mistakes = score()
+    print(f"actions: right {right}/{len(ACTION_CASES)}   wrong action {wrong}   missed {missed}")
+    for line in mistakes:
+        print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())

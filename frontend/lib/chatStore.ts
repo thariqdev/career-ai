@@ -12,8 +12,8 @@
  */
 
 import { useSyncExternalStore } from "react";
-import { apiPost, apiStream, ApiError } from "@/lib/api";
-import { feedbackBody, forStorage, historyFor, type ChatMessage, type StreamEvent } from "@/lib/chat";
+import { apiPost, apiPut, apiStream, ApiError } from "@/lib/api";
+import { canConfirm, feedbackBody, forStorage, historyFor, type ChatMessage, type StreamEvent } from "@/lib/chat";
 
 const STORAGE_KEY = "career-ai-chat-v1";
 const EMPTY: ChatMessage[] = [];
@@ -87,7 +87,14 @@ export async function send(question: string): Promise<void> {
       { question: text, history },
       (event) => {
         if (event.type === "meta") {
-          update(answerId, (m) => ({ ...m, sources: event.sources, retrieval: event.retrieval, note: event.note, searched: event.searched }));
+          update(answerId, (m) => ({
+            ...m,
+            sources: event.sources,
+            retrieval: event.retrieval,
+            note: event.note,
+            searched: event.searched,
+            action: event.action ?? null,
+          }));
         } else if (event.type === "delta") {
           update(answerId, (m) => ({ ...m, text: m.text + event.text }));
         } else if (event.type === "replace") {
@@ -131,6 +138,28 @@ export async function rate(messageId: string, rating: "up" | "down", comment = "
   }
   update(messageId, (m) => ({ ...m, feedback: rating }));
   return null;
+}
+
+/**
+ * Make the change an answer proposed (stage 78): exactly its request, to the app's normal
+ * endpoint, which applies all its usual checks. The assistant itself never writes.
+ */
+export async function confirmAction(messageId: string): Promise<void> {
+  const message = messages.find((m) => m.id === messageId);
+  if (!message || !canConfirm(message) || !message.action?.path) return;
+  const { method, path, body } = message.action;
+  try {
+    if (method === "PUT") await apiPut(path, body);
+    else await apiPost(path, body);
+    update(messageId, (m) => ({ ...m, actionState: "confirmed", actionError: null }));
+  } catch (error) {
+    const text = error instanceof ApiError ? error.message : "Could not reach the backend.";
+    update(messageId, (m) => ({ ...m, actionError: text }));
+  }
+}
+
+export function cancelAction(messageId: string): void {
+  update(messageId, (m) => ({ ...m, actionState: "cancelled", actionError: null }));
 }
 
 /** Stop the answer that's being written. */

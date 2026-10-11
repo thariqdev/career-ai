@@ -31,11 +31,13 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Literal
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import EmptyQuestionError
-from app.db.models import User
+from app.db.models import Skill, User
 from app.rag import tools
+from app.rag.actions import Action, detect_action, reply_for
 from app.rag.bm25 import BM25Index
 from app.rag.chunker import Chunk, build_chunks
 from app.rag.embeddings import (
@@ -123,6 +125,7 @@ class Prepared:
     retrieval: Mode
     note: str | None
     known_names: tuple[str, ...] = ()  # this user's skill and gap names, for the faithfulness rules
+    action: Action | None = None  # stage 78: a change the message asks for, to be confirmed
 
 
 @dataclass(frozen=True)
@@ -133,6 +136,7 @@ class AssistantAnswer:
     retrieval: Mode
     note: str | None
     written_by: WrittenBy
+    action: Action | None = None
 
 
 _embedder: CachedEmbedder | None = None
@@ -169,6 +173,11 @@ def configured_rewriter() -> ChatModel | None:
     return OllamaChat(
         model, base_url=os.getenv("OLLAMA_BASE_URL") or DEFAULT_BASE_URL, temperature=0.0, seed=REWRITE_SEED
     )
+
+
+def _saved_skills(db: Session) -> dict[int, tuple[str, list[str]]]:
+    """{skill_id: (name, [name, *aliases])} for the action detector."""
+    return {s.id: (s.name, [s.name, *(a.alias for a in s.aliases)]) for s in db.scalars(select(Skill))}
 
 
 def note_texts(chunks: list[Chunk]) -> list[str]:
@@ -265,6 +274,12 @@ def prepare(
     rewritten = standalone_question(question, history or [], rewriter) if rewriter is not None else None
     search_text = rewritten or f"{question} {previous[:MAX_QUESTION_CHARS]}".strip()
 
+    # Stage 78: a request to change something ("Mark React as studying") is answered with
+    # a proposal to confirm, not a search. Rules decide (app/rag/actions.py), never the model.
+    action = detect_action(question, _saved_skills(db))
+    if action is not None:
+        return Prepared(question, [], 0, "bm25", None, (), action)
+
     chunks = build_chunks(db, user)
     known_names = vocabulary(chunks)
     call = guarded_keyword_route(rewritten or question, [c.title for c in chunks if c.kind == "job"], known_names)
@@ -319,7 +334,13 @@ def answer_events(
         "retrieval": prepared.retrieval,
         "note": prepared.note,
         "searched": prepared.searched,
+        "action": prepared.action.to_dict() if prepared.action else None,
     }
+    if prepared.action is not None:  # a proposal (or a refusal): no notes, no model
+        for piece in stream_pieces(reply_for(prepared.action)):
+            yield {"type": "delta", "text": piece}
+        yield {"type": "done", "written_by": "notes", "note": None}
+        return
     extractive = _compose(sources)
 
     if not sources or chat is None:  # nothing to ground an answer on, or no model: the notes
@@ -387,4 +408,6 @@ def ask(
             text = event["text"]
         elif event["type"] == "done":
             written_by, note = event["written_by"], event["note"]
-    return AssistantAnswer(text, prepared.sources, prepared.searched, prepared.retrieval, note, written_by)
+    return AssistantAnswer(
+        text, prepared.sources, prepared.searched, prepared.retrieval, note, written_by, prepared.action
+    )

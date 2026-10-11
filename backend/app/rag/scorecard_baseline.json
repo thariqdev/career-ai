@@ -118,5 +118,17 @@
     "higher_is_better": false,
     "tolerance": 0,
     "full": true
+  },
+  "actions: right (of 22)": {
+    "value": 22,
+    "higher_is_better": true,
+    "tolerance": 0,
+    "full": false
+  },
+  "actions: wrong actions proposed": {
+    "value": 0,
+    "higher_is_better": false,
+    "tolerance": 0,
+    "full": false
   }
 }
