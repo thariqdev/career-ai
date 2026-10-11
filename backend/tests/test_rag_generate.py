@@ -22,6 +22,7 @@ from app.rag.assistant import NOT_FOUND, UNCITED_NOTE, Prepared, Source, answer_
 from app.rag.chunker import Chunk
 from app.rag.generate import (
     MAX_HISTORY_CHARS,
+    REMINDER,
     SYSTEM_PROMPT,
     GenerationUnavailableError,
     Note,
@@ -89,7 +90,7 @@ def test_the_prompt_has_the_rules_the_notes_and_the_question_only() -> None:
     assert [m["role"] for m in messages] == ["system", "user", "assistant", "user"]
     assert messages[-1]["content"] == (
         "Notes from my Career AI data:\n[1] (gap) Kubernetes gap: Gap: Kubernetes is missing.\n\n"
-        "Question: What am I missing?"
+        "Question: What am I missing?\n\n" + REMINDER
     )
 
 
@@ -292,7 +293,7 @@ def test_history_reaches_the_model_and_helps_find_follow_ups(
     assert any("Kubernetes" in s["title"] for s in body["sources"])
     sent = chat.calls[0]
     assert [m["role"] for m in sent] == ["system", "user", "assistant", "user"]
-    assert sent[-1]["content"].endswith("Question: How do I learn it?")
+    assert sent[-1]["content"].endswith("Question: How do I learn it?\n\n" + REMINDER)
 
 
 def test_too_much_history_is_refused(client: TestClient) -> None:

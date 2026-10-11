@@ -182,7 +182,7 @@ makes it fail, which was checked.
 - *What's wrong with a golden set the developer wrote?* Shared wording inflates scores.
   Use real user questions.
 
-## Stage 66: embeddings, meaning search and hybrid search (built ✅; real-model scores pending Ollama)
+## Stage 66: embeddings, meaning search and hybrid search (built ✅; measured on the real model ✅)
 
 **Turn it on** (once Ollama is installed and `ollama pull nomic-embed-text` is done): add
 this line to `backend/.env`, then restart the backend:
@@ -228,9 +228,39 @@ a Python loop is instant.
 ### 3. A trap: meaning search always finds *something*
 
 Every note has *some* cosine with any question, even "astronaut spaceship". So a note
-found **only** by meaning must reach `MIN_COSINE` (0.5, a first guess that the scoreboard
-will calibrate) to count. Otherwise "I couldn't find that" would become impossible, and
-the assistant would always hand over its least-bad notes.
+found **only** by meaning must reach `MIN_COSINE` to count. Otherwise "I couldn't find
+that" would become impossible, and the assistant would always hand over its least-bad notes.
+
+### 3b. The real scoreboard (nomic-embed-text, 2026-10-11)
+
+Run on the 15 golden questions over the fixture notes (`python -m app.rag.evaluate`):
+
+| Search | recall@4 | MRR |
+|---|---|---|
+| BM25 (keywords) | 1.000 | 0.911 |
+| BM25 + stemming | 0.833 | 0.694 |
+| Meaning only | 0.833 | 0.733 |
+| **Hybrid (BM25 + meaning, RRF)** | **1.000** | **0.933** (at `MIN_COSINE = 0.6`) |
+
+- **Meaning alone is worse than keywords here.** It missed "Tell me about my education"
+  and "Which skills am I learning right now?" entirely. Our notes are written in the words
+  people ask with, which is what BM25 rewards.
+- **Hybrid is best.** Each engine fixes the other's misses. For example, "Tell me about
+  Python" puts the Python note 3rd with BM25 and 1st with hybrid.
+- **Calibrating `MIN_COSINE`:** right notes scored 0.52 to 0.76 (median 0.73). The best
+  note for six **off-topic** questions ("What's the weather in Paris?", "Tell me a joke"…)
+  scored 0.48 to 0.535.
+
+  | `MIN_COSINE` | Hybrid MRR | Off-topic questions that got notes anyway |
+  |---|---|---|
+  | 0.50 (the first guess) | 0.900 | **4 of 6** ❌ |
+  | 0.55 | 0.900 | 0 of 6 |
+  | **0.60 (chosen)** | **0.933** | 0 of 6 |
+
+  The first guess was wrong: it would have answered "weather in Paris?" from your skill
+  notes. **This is why you measure instead of guessing.**
+- **Caveat:** 15 questions is a small set, written by the same person who wrote the notes.
+  It would be worth adding paraphrased questions ("what am I bad at?") over time.
 
 ### 4. Hybrid search with Reciprocal Rank Fusion (RRF)
 
@@ -330,7 +360,7 @@ job's or skill's page, the suggestions are about *that* job or skill.
 - *How do you show a RAG answer is grounded?* Inline citations linked to the source
   documents.
 
-## Stage 67: generation with grounding (built ✅; real-model checks pending Ollama)
+## Stage 67: generation with grounding (built ✅; checked on the real model ✅)
 
 *Turn it on:* `ollama pull llama3.2`, then `OLLAMA_CHAT_MODEL=llama3.2` in `backend/.env`.
 Without it, nothing breaks: the answer is the notes themselves, as before.
@@ -402,6 +432,25 @@ Because the text streams *while* it's written, a correction arrives as a `replac
 
 **Proof the checks matter (mutation test):** disabling the "cites nothing" check made 2
 tests fail. The tests really guard the behaviour.
+
+### What the real model taught us (llama3.2, 2026-10-11)
+
+- **Small models forget rules at the top.** With the rules only in the system prompt,
+  just **9 of 18** answers cited a note, so half of them fell back to the plain notes.
+  Repeating one line right after the question ("Answer using only these notes, and cite
+  the note number for every fact, like [1].") raised that to **18 of 18**. Models pay most
+  attention to what they read last. This is called **recency**.
+- **The first question is slow.** On first use the model is loaded into memory, which
+  took more than 2 minutes on this computer's processor; after that, answers take 3 to 12
+  seconds. The timeout is now 5 minutes for reading, but only 5 seconds for connecting,
+  so a stopped Ollama still fails fast (measured: 2.8 s).
+- **Off-topic questions are never sent to the model.** "What's the weather in Paris?"
+  matched no notes, so the model wasn't asked at all.
+- **A citation is not proof of a correct answer.** One answer said the skills "with no
+  proof yet" were AWS, .NET… and cited the overview note. But that note lists them as
+  *missing* skills, not unproven ones. The citation was real; the reading was wrong. A
+  follow-up answer also ended with a broken sentence ("To build a project, [1]."). Catching
+  this is **faithfulness** checking: stage 68.
 
 ### Why a local model?
 

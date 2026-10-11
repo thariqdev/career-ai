@@ -2507,6 +2507,20 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - The chunker adds a `profile` chunk (index 1, link `/profile`): "Your name is X…", or, when unset, how to add it.
   - **Frontend:** `components/YourName.tsx` (top of Profile, inline validation, refetches on `reloadKey`); CvAutofill has "Name on your CV: X [Use as my name]"; the CV page result mentions the saved name.
   - **Tests:** `tests/test_user_name.py` (13).
+- **Real-model results (2026-10-11):**
+  - Ollama 0.40.3 needed a clean reinstall: overlapping installers had left `lib\ollama` empty, giving "llama-server binary not found" and a 500 on `/api/embed`.
+  - `backend/.env` now sets `OLLAMA_EMBED_MODEL=nomic-embed-text` and `OLLAMA_CHAT_MODEL=llama3.2`.
+  - Evaluation (`MIN_COSINE`, see RAG_GUIDE 3b):
+    | Search | recall@4 | MRR |
+    |---|---|---|
+    | bm25 | 1.000 | 0.911 |
+    | vector | 0.833 | 0.733 |
+    | hybrid | 1.000 | 0.933 |
+    - `MIN_COSINE` changed from 0.5 to **0.6**: off-topic questions scored at most 0.535, and 0.5 let 4 of 6 through.
+  - Generation:
+    - `generate.REMINDER` is appended after the question; cited answers went from 9/18 to 18/18.
+    - `TIMEOUT = httpx.Timeout(300, connect=5)`, because the cold model load took more than 120 s.
+  - Live `/ask/stream` gave 54 events, hybrid, `written_by` ai. A follow-up with history found the AWS gap.
 - **Stage 67 (grounded generation):**
   - **`app/rag/generate.py`:**
     - `SYSTEM_PROMPT` (5 rules), `fit_notes` (rank-order budget `MAX_CONTEXT_CHARS = 6000`, always at least 1), `build_messages` (system, then the last `MAX_HISTORY_MESSAGES = 4` turns cut to 600 characters, then the user message "Notes from my Career AI data: [n] (kind) title: text … Question: …")

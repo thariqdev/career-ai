@@ -61,9 +61,11 @@ TOP_K = 4
 USE_STEMMING = False
 # How many candidates each engine contributes before fusion.
 CANDIDATES = 20
-# A note found ONLY by meaning must be at least this similar to the question. A first
-# guess for nomic-embed-text, to be calibrated with app/rag/evaluate.py on real Ollama.
-MIN_COSINE = 0.5
+# A note found ONLY by meaning must be at least this similar to the question. Calibrated
+# for nomic-embed-text (2026-10-11): off-topic questions ("weather in Paris?") scored up to
+# 0.535, right notes 0.52-0.76 (median 0.73). 0.50 let 4 of 6 off-topic questions through;
+# 0.60 lets none through and gave the best hybrid MRR (0.933; recall@4 1.000).
+MIN_COSINE = 0.6
 MAX_QUESTION_CHARS = 500
 NOT_FOUND = (
     "I couldn't find anything about that in your Career AI data. Try asking about a skill, "
