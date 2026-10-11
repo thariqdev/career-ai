@@ -131,18 +131,20 @@ class OllamaChat:
         base_url: str = DEFAULT_BASE_URL,
         transport: httpx.BaseTransport | None = None,  # tests only
         temperature: float = TEMPERATURE,
+        seed: int | None = None,  # fixed: the same input gives the same output (stage 76)
     ) -> None:
         self.name = model
         self._base_url = base_url.rstrip("/")
         self._transport = transport
         self.temperature = temperature
+        self.seed = seed
 
     def stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         body = {
             "model": self.name,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": self.temperature},
+            "options": {"temperature": self.temperature, **({"seed": self.seed} if self.seed is not None else {})},
             "keep_alive": keep_alive(),
         }
         try:

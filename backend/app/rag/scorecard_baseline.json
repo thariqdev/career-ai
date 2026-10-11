@@ -72,13 +72,13 @@
     "full": true
   },
   "follow-ups (rewritten, hybrid): recall@4": {
-    "value": 0.85,
+    "value": 0.9,
     "higher_is_better": true,
     "tolerance": 0.05,
     "full": true
   },
   "follow-ups (rewritten, hybrid): MRR": {
-    "value": 0.6333333333333334,
+    "value": 0.7166666666666667,
     "higher_is_better": true,
     "tolerance": 0.05,
     "full": true

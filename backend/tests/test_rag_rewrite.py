@@ -93,3 +93,51 @@ def test_without_a_usable_rewrite_the_previous_question_is_glued_on(fixture_db) 
 
     assert all(s.chunk.kind != "tool" for s in prepared.sources)  # "And for Globex?" alone routes nowhere
     assert any("Acme" in s.chunk.text for s in prepared.sources)  # the glued Acme question still finds notes
+
+
+# --- stage 76: seeded, measured, and off by default ------------------------------------------
+
+
+def test_the_rewrite_is_off_by_default_even_with_a_model_configured(fixture_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    db, user = fixture_db
+    monkeypatch.setenv("OLLAMA_CHAT_MODEL", "llama3.2")
+
+    def never() -> None:
+        raise AssertionError("the rewriter must not be used while REWRITE_FOLLOW_UPS is off")
+
+    monkeypatch.setattr(assistant, "configured_rewriter", never)
+
+    prepared = assistant.prepare(db, user, "And for Globex?", history=HISTORY)
+
+    assert any("Acme" in s.chunk.text for s in prepared.sources)  # glued on, as before stage 73
+
+
+def test_switching_it_back_on_uses_the_configured_rewriter(fixture_db, monkeypatch: pytest.MonkeyPatch) -> None:
+    db, user = fixture_db
+    monkeypatch.setattr(assistant, "REWRITE_FOLLOW_UPS", True)
+    monkeypatch.setattr(assistant, "configured_rewriter", lambda: FakeRewriter("What am I missing for the Globex job?"))
+
+    prepared = assistant.prepare(db, user, "And for Globex?", history=HISTORY)
+
+    assert prepared.sources[0].chunk.title == "Missing skills for Frontend Developer at Globex"
+
+
+def test_the_seed_is_sent_only_when_set_and_the_rewriter_has_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+
+    import httpx
+
+    from app.rag.generate import OllamaChat
+
+    sent = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content)["options"])
+        return httpx.Response(200, content=b'{"message": {"content": "ok"}, "done": true}\n')
+
+    for seed in (None, 7):
+        list(OllamaChat(transport=httpx.MockTransport(handler), temperature=0.0, seed=seed).stream([]))
+    monkeypatch.setenv("OLLAMA_CHAT_MODEL", "llama3.2")
+
+    assert sent == [{"temperature": 0.0}, {"temperature": 0.0, "seed": 7}]
+    assert assistant.configured_rewriter().seed == assistant.REWRITE_SEED

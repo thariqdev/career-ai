@@ -33,7 +33,7 @@ In Career AI, **PostgreSQL stays the source of truth**. RAG only *reads* it and 
 ## The whole system on one page (stages 65–75)
 
 ```
-question ─► (follow-up?) rewrite into a standalone question ─────────── stage 73
+question ─► (follow-up?) glue on the previous question (rewrite: off) ─ stages 73, 76
          ─► route: an exact-list question? ── yes ─► read-only TOOL ─── stages 69–70
          │                                            (SQL, exact)
          ─► search the notes: BM25 + meaning, fused (RRF) ───────────── stages 65–66
@@ -53,7 +53,7 @@ question ─► (follow-up?) rewrite into a standalone question ─────�
 | Keyword routing behind guards (not the model) | 0 wrong tools on every set; the model picked 7 wrong tools |
 | Code writes exact lists | the model alone listed 4, 25 and 24 of 28 gaps; code lists all 28 every time |
 | Keep-alive and warm-up | first word in about 2 s instead of about 19 s |
-| Follow-up rewrite | won in stage 73, but **didn't reproduce** in stage 75 (see there) |
+| Follow-ups glued, not rewritten | on a fresh set, seeded, 5 runs: glued MRR 0.700 vs rewrite 0.644 (stage 76) |
 
 **Check everything still works:** `.venv/Scripts/python -m app.rag.scorecard` (add `--full`
 for the real-model measures). Its quick part also runs with the test suite.
@@ -942,8 +942,7 @@ Re-measured in stage 75 (three runs, identical to each other):
   reloaded can change its outputs. (Ollama also takes a fixed `seed`.)
 - **A baseline turns a surprise into a visible ❌** instead of a silent change.
 
-The rewrite is still on for now; whether to keep it is an open decision (see
-PROJECT_PROGRESS).
+**Settled in stage 76:** the rewrite is off.
 
 ### Interview questions you can now answer
 
@@ -955,3 +954,46 @@ PROJECT_PROGRESS).
   hardware, versions), and a single measurement is noisy. Repeat the runs, report the
   variance, pin seeds and versions where possible, and only trust gains larger than the
   run-to-run noise.
+
+## Stage 76: settling the follow-up rewrite (seeded, repeated, a fresh set) ✅
+
+**Run it:** `.venv/Scripts/python -m app.rag.rewrite_eval --fresh`
+
+Stage 75 showed the rewrite's stage-73 win didn't reproduce. The fix is a correct method,
+not another single run:
+
+1. **A fresh question set** (`FRESH`, 15 follow-ups), committed **before** any change
+   (commit `9037ba5`), because the old set had been looked at twice.
+2. **A fixed seed** (`seed` in Ollama's options; `REWRITE_SEED = 42`).
+3. **5 runs, reloading the model before each one**, since a reload is what changed the
+   rewrites between days.
+4. **The bar, set first:** keep the rewrite only if its **worst** run beats gluing on
+   finding notes, with no wrong tools.
+
+### Results
+
+| FRESH (15 follow-ups), hybrid search | recall@4 | MRR | Right tool | Wrong tool |
+|---|---|---|---|---|
+| **Glued** (no model, identical every run) | **0.967** | **0.700** | 12 | 0 |
+| Rewritten with a seed, all 5 reloaded runs | 0.933 | 0.644 | **14** | 0 |
+
+- **The seed works:** 5 reloaded runs gave **1** set of rewrites. Reproducible at last.
+- **The rewrite still loses** at finding notes, so **it's switched off**
+  (`REWRITE_FOLLOW_UPS = False`). The code stays, and passing a `rewriter` re-enables it.
+  The kind of error behind the loss: "And GraphQL?" → "Do I have a **Kubernetes** gap?"
+  (it went back to the previous topic).
+- **The twist:** with the same seed, on the *old* set the rewrite scores MRR 0.717 vs
+  0.637, a win. **The effect flips with the question set.** When a difference changes sign
+  between samples, it's smaller than the noise, and the simpler, deterministic,
+  1.3-seconds-faster method wins by default.
+- **A future idea, not tested:** the rewrite picked 2 more exact lists. "Rewrite for
+  routing only, glue for search" would need *another* fresh set to judge fairly.
+
+### Interview questions you can now answer
+
+- *How do you make LLM outputs reproducible?* Use temperature 0 and a fixed seed, pin
+  the model version, and check by repeating runs (here, after reloading the model). Even
+  then, verify rather than assume.
+- *An improvement shows on one test set and reverses on another. What now?* Treat it as
+  noise. Prefer the simpler method unless a pre-registered test on fresh data shows a
+  gain that survives repeated runs.

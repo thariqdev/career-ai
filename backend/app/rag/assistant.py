@@ -84,6 +84,11 @@ UNCITED_NOTE = "The AI's answer didn't cite your notes, so here are the notes th
 # completeness 1.000 vs 0.982, same facts every run 15/15 vs 13/15; on real data the AI
 # alone mentioned 4, 25 and 24 of 28 missing skills in three runs, code-written all 28.
 EXACT_LISTS = True
+REWRITE_SEED = 42  # stage 76: makes the follow-up rewrite repeatable
+# Stage 76: OFF. On a fresh set, seeded and reloaded 5 times (identical every run), the
+# rewrite found notes worse than gluing on the previous question (recall@4 0.933 vs 0.967,
+# MRR 0.644 vs 0.700), though it routed 2 more exact lists. app/rag/rewrite_eval.py --fresh
+REWRITE_FOLLOW_UPS = False
 DEFAULT_INTRO = "Here's the exact answer from your data:"
 MAX_INTRO_CHARS = 200
 INTRO_SYSTEM = (
@@ -161,7 +166,9 @@ def configured_rewriter() -> ChatModel | None:
     model = (os.getenv("OLLAMA_CHAT_MODEL") or "").strip()
     if not model:
         return None
-    return OllamaChat(model, base_url=os.getenv("OLLAMA_BASE_URL") or DEFAULT_BASE_URL, temperature=0.0)
+    return OllamaChat(
+        model, base_url=os.getenv("OLLAMA_BASE_URL") or DEFAULT_BASE_URL, temperature=0.0, seed=REWRITE_SEED
+    )
 
 
 def note_texts(chunks: list[Chunk]) -> list[str]:
@@ -236,11 +243,11 @@ def prepare(
 ) -> Prepared:
     """All database work: CHUNK (fresh from PostgreSQL) and RETRIEVE.
 
-    A follow-up ("And for Globex?") is rewritten by the model into a standalone question
-    ("What am I missing for the Globex job?") for SEARCH and tool ROUTING (stage 73,
-    app/rag/rewrite.py; measured better than gluing on the previous question). Without a
-    model, or if the rewrite fails, the previous question is glued on as before. The model
-    that writes the answer always sees the real question.
+    For a follow-up ("And for Globex?"), the previous question is glued on for SEARCH, so
+    the topic can be found. Stage 73 tried having the model rewrite follow-ups into
+    standalone questions (app/rag/rewrite.py); stage 76 measured it worse, so it's off
+    (REWRITE_FOLLOW_UPS) unless a `rewriter` is passed in. The model that writes the
+    answer always sees the real question.
 
     Stage 69: a "list" question ("Which skills have no proof yet?") is routed to a TOOL
     (app/rag/tools.py) that computes the exact answer; its result becomes note [1], and
@@ -253,7 +260,8 @@ def prepare(
         raise EmptyQuestionError()
     question = question[:MAX_QUESTION_CHARS]
     previous = next((t.text for t in reversed(history or []) if t.role == "user"), "")
-    rewriter = rewriter if rewriter is not None else configured_rewriter()
+    if rewriter is None and REWRITE_FOLLOW_UPS:
+        rewriter = configured_rewriter()
     rewritten = standalone_question(question, history or [], rewriter) if rewriter is not None else None
     search_text = rewritten or f"{question} {previous[:MAX_QUESTION_CHARS]}".strip()
 

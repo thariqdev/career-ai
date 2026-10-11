@@ -2498,6 +2498,24 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 76 (rewrite settled):**
+  - `OllamaChat(seed=None)` sends `options.seed` when set.
+  - **`assistant`:**
+    - `REWRITE_SEED = 42`; `configured_rewriter` uses it.
+    - **`REWRITE_FOLLOW_UPS = False`**: `prepare` calls `configured_rewriter()` only when it's True; a passed `rewriter` is always used.
+  - **`rewrite_eval`:**
+    - `FRESH` (15) was committed in `9037ba5` first.
+    - `measure(..., cases)` and `rewrite_all(chat, cases)` now take a case list.
+    - `decide_on_fresh()` (`--fresh`) runs 5 seeded runs, unloading the model before each, and prints the decision.
+  - **Results (FRESH):**
+    | | recall@4 | MRR | Right tools | Wrong tools |
+    |---|---|---|---|---|
+    | Glued | 0.967 | 0.700 | 12 | 0 |
+    | Rewritten | 0.933 | 0.644 | 14 | 0 |
+    - The rewrite was identical in all 5 runs, and the decision is **off**.
+    - On the old `FOLLOW_UPS`, the seeded rewrite scores 0.900 / 0.717, versus glued 0.900 / 0.637: the effect flips between sets.
+  - The scorecard's rewriter now uses the seed, and the baseline is re-saved.
+  - **Tests:** `test_rag_rewrite.py` +3 (off by default even with a model; switch on uses the configured rewriter; seed sent only when set). Mutation: switching it on by default fails 1 test.
 - **Stage 75 (scorecard):**
   - **`app/rag/scorecard.py`:**
     - `Metric(name, value, higher_is_better, tolerance, full)`.
@@ -2506,7 +2524,7 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
     - `compare` marks ✅/❌/🆕. `save_baseline` merges into `scorecard_baseline.json`. `main` exits 1 on a regression.
   - Refactored `answer_eval.measure` / `prepare_all` and `rewrite_eval.measure` / `rewrite_all` / `glued` (their printed output is unchanged).
   - **`tests/test_rag_scorecard.py`** (3) runs quick mode against the baseline in pytest. Weakening the skill guard failed it.
-  - **Finding:** follow-up rewrite is now recall 0.850 / MRR 0.633, versus glued 0.900 / 0.637 (stage 73 measured 0.900 / 0.717 once). Two rewrites changed at temperature 0 ("Which job needs it?" became "Backend Engineer"; "What about AWS?" became a Globex question). **Open decision** for the user: keep or turn off the rewrite (or pin a seed).
+  - **Finding:** follow-up rewrite is now recall 0.850 / MRR 0.633, versus glued 0.900 / 0.637 (stage 73 measured 0.900 / 0.717 once). Two rewrites changed at temperature 0 ("Which job needs it?" became "Backend Engineer"; "What about AWS?" became a Globex question). Settled in stage 76: the rewrite is off.
 - **Stage 74 (answer quality):**
   - **`Chunk.lines`** (default `()`) holds display lines for tool results. `tools._note(name, title, lines, link)` sets text to the joined lines.
   - **`assistant`:**

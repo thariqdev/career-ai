@@ -132,8 +132,9 @@ def glued(case: FollowUp) -> str:
     return f"{case.question} {previous}".strip()
 
 
-def measure(texts, embedder=None) -> FollowUpScores:
+def measure(texts, embedder=None, cases: list[FollowUp] | None = None) -> FollowUpScores:
     """Score one strategy. texts(i, case) -> (search text, routing text)."""
+    cases = FOLLOW_UPS if cases is None else cases
     from app.rag.assistant import retrieve
     from app.rag.evaluate import K, build_fixture_chunks, reciprocal_rank, recall_at_k
     from app.rag.faithfulness import vocabulary
@@ -146,7 +147,7 @@ def measure(texts, embedder=None) -> FollowUpScores:
     known = vocabulary(chunks)
     recall = mrr = 0.0
     right = wrong = missed = 0
-    for i, case in enumerate(FOLLOW_UPS):
+    for i, case in enumerate(cases):
         search_text, route_text = texts(i, case)
         found = [keys[j] for j, _ in retrieve(chunks, search_text, K, embedder).hits]
         recall += recall_at_k(found, set(case.expected), K)
@@ -158,19 +159,20 @@ def measure(texts, embedder=None) -> FollowUpScores:
             missed += 1
         else:
             wrong += 1
-    n = len(FOLLOW_UPS)
+    n = len(cases)
     return FollowUpScores(recall / n, mrr / n, right, wrong, missed)
 
 
-def rewrite_all(chat) -> tuple[dict[int, str | None], float]:
+def rewrite_all(chat, cases: list[FollowUp] | None = None) -> tuple[dict[int, str | None], float]:
     """The model's rewrite of every follow-up, and the seconds per rewrite."""
     import time
 
     from app.rag.rewrite import standalone_question
 
+    cases = FOLLOW_UPS if cases is None else cases
     rewrites: dict[int, str | None] = {}
     seconds: list[float] = []
-    for i, case in enumerate(FOLLOW_UPS):
+    for i, case in enumerate(cases):
         start = time.time()
         rewrites[i] = standalone_question(case.question, list(case.history), chat)
         if case.history:
@@ -178,12 +180,63 @@ def rewrite_all(chat) -> tuple[dict[int, str | None], float]:
     return rewrites, sum(seconds) / max(len(seconds), 1)
 
 
+FRESH_RUNS = 5
+
+
+def decide_on_fresh(runs: int = FRESH_RUNS) -> int:
+    """Stage 76: the seeded rewrite vs gluing on FRESH, over several runs, reloading the
+    model before each run (a reload is what changed the rewrites between days)."""
+    import os
+
+    import httpx
+
+    from app.rag.assistant import REWRITE_SEED
+    from app.rag.evaluate import K, _ollama_embedder
+    from app.rag.generate import DEFAULT_BASE_URL, DEFAULT_CHAT_MODEL, OllamaChat
+
+    embedder, _ = _ollama_embedder()
+    model = os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL
+    base_url = os.getenv("OLLAMA_BASE_URL") or DEFAULT_BASE_URL
+    glue = measure(lambda i, c: (glued(c), c.question), embedder, FRESH)
+    print(f"FRESH: {len(FRESH)} follow-ups, hybrid search, top {K}\n")
+    print(f"glued           recall@{K} {glue.recall:.3f}   MRR {glue.mrr:.3f}   "
+          f"tool right {glue.tools_right}, wrong {glue.tools_wrong}   (no model: identical every run)")
+    seen: list[tuple] = []
+    scores = []
+    for run in range(1, runs + 1):
+        httpx.post(f"{base_url}/api/generate", json={"model": model, "keep_alive": 0}, timeout=60)  # reload
+        rewrites, seconds = rewrite_all(OllamaChat(model, base_url, temperature=0.0, seed=REWRITE_SEED), FRESH)
+        seen.append(tuple(rewrites[i] for i in range(len(FRESH))))
+        s = measure(lambda i, c: (rewrites[i] or glued(c), rewrites[i] or c.question), embedder, FRESH)
+        scores.append(s)
+        print(f"rewrite run {run}   recall@{K} {s.recall:.3f}   MRR {s.mrr:.3f}   "
+              f"tool right {s.tools_right}, wrong {s.tools_wrong}   ({seconds:.2f}s per rewrite)")
+    worst_recall, worst_mrr = min(s.recall for s in scores), min(s.mrr for s in scores)
+    print(f"\ndifferent rewrite sets across {runs} reloaded runs: {len(set(seen))}")
+    print(f"rewrite worst run: recall@{K} {worst_recall:.3f}, MRR {worst_mrr:.3f}; "
+          f"wrong tools in any run: {max(s.tools_wrong for s in scores)}")
+    keep = (
+        worst_recall >= glue.recall and worst_mrr >= glue.mrr
+        and (worst_recall > glue.recall or worst_mrr > glue.mrr)
+        and max(s.tools_wrong for s in scores) == 0
+    )
+    print("DECISION (bar set before measuring): " + ("KEEP the rewrite" if keep else "SWITCH the rewrite OFF"))
+    print("\nrewrites (run 1):")
+    for case, text in zip(FRESH, seen[0]):
+        if case.history:
+            print(f"  {case.question!r:34} -> {text!r}")
+    return 0
+
+
 def main() -> int:
     import os
+    import sys
 
     from app.rag.evaluate import K, _ollama_embedder
     from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
 
+    if "--fresh" in sys.argv:
+        return decide_on_fresh()
     embedder, info = _ollama_embedder()
     chat = OllamaChat(os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL, temperature=0.0)
     print(f"search: {'hybrid (' + info + ')' if embedder else 'bm25 (' + info + ')'}, top {K}\n")
