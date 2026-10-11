@@ -477,7 +477,84 @@ method can be the model (`ChatModel` in `generate.py`), which is how the tests u
 - *How do you stream and still validate?* Stream tokens for speed, validate at the end,
   and send a correction (our `replace` event) when the checks change the answer.
 
-## Stage 68: evaluating generation
+## Stage 68: faithfulness, checking the answer against its notes ✅
 
-Stage 66a already measures retrieval. Once a model writes answers, we'll also check
-**faithfulness**: does every claim in the answer come from a retrieved note?
+**Run it:** `.venv/Scripts/python -m app.rag.faithfulness_eval` (from `backend/`).
+
+A citation shows *where* the model looked, not that it read the note correctly. In stage
+67 a real answer said the skills "with no proof yet" were AWS and .NET, and cited the
+overview note, which lists them as *missing*. **Faithfulness** asks: does every statement
+in the answer come from its notes?
+
+### Who checks the checker? A hand-labelled set
+
+You can't measure a checker without knowing the right answers. So `faithfulness_eval.py`
+holds **16 answers written and labelled by hand** over the fixed made-up career:
+
+- **8 faithful answers**, including tricky ones: "Docker **isn't** verified yet" must
+  not be flagged just because it contains the word "verified".
+- **8 unfaithful answers** of the kinds small models really produce: an extra skill
+  (Terraform), a false "verified", missing skills called "on your CV", the wrong job, the
+  wrong dates, the wrong degree, and the wrong proof.
+
+Each checker gets two scores, and both matter:
+
+- **caught:** wrong answers it flagged. Each one missed lets a wrong answer through.
+- **false alarms:** right answers it flagged. Each one throws away a good answer.
+
+### Two kinds of checker, measured
+
+**1. Rule checks** (`app/rag/faithfulness.py`, `check`) are plain code: instant and free.
+
+- **Every skill the answer names must be in its notes.** Names come from the 227-skill
+  catalogue plus your own skills and gaps, with aliases ("JS" counts as JavaScript).
+- **"Verified" or "proven" needs proof.** A sentence that calls a skill verified (and
+  isn't negated with "not", "no", "yet", "0"…) needs a note whose status really is
+  verified. This is the project's core rule, *never invent proof*, applied to the AI.
+
+**2. A judge** (`judge`) is a second model call (**LLM-as-a-judge**) that reads the notes
+and the answer and gives a verdict. Three prompts were tried (llama3.2, 3 runs each, the
+majority vote counts):
+
+| Checker | Wrong answers caught (of 8) | False alarms (of 8) |
+|---|---|---|
+| **Rule checks** | 3 | **0** |
+| Judge A: "Is the answer faithful? YES/NO" | 8 | **8**: it said NO to everything |
+| Judge B: "Does it say anything the notes don't? YES/NO" | 3 | 1 |
+| Judge C: check each statement, then "VERDICT: …" | 4 | 1 (and sometimes gives no verdict) |
+| Rules **or** judge C | 5 | 1 |
+
+What this shows:
+
+- **Judge A looks perfect if you only count catches.** It caught all 8 by rejecting
+  everything. That's why you always measure false alarms too.
+- **Asking the model to reason step by step first (C) helps,** but a 3-billion-parameter
+  model is a weak judge. Bigger models judge much better; that's why production systems
+  usually use a stronger model as the judge.
+- **The rules catch only what they're built for** (invented names, false "verified"), but
+  they *never* threw away a good answer. A misreading that reuses the notes' own words
+  ("Kubernetes is on your CV") passes them.
+
+### The decision
+
+- **The rules run on every AI answer.** If one fails, the chat shows the notes themselves
+  with the reason, e.g. "The AI's answer didn't match your notes (it mentions Terraform,
+  which isn't in your notes)". Live check: on 18 real llama3.2 answers about your data,
+  the rules rejected **none**.
+- **The judge stays a measuring tool.** It would catch 2 more mistakes but throw away
+  about 1 good answer in 8, and add many seconds per answer on this computer.
+
+### Interview questions you can now answer
+
+- *How do you evaluate a RAG answer, not just retrieval?* Measure **faithfulness**
+  (groundedness): is every claim supported by the retrieved context? Also measure
+  answer relevance, and citation accuracy.
+- *What is LLM-as-a-judge, and what are its pitfalls?* A model grades another model's
+  output. Pitfalls: bias towards one verdict (ours said NO to everything), randomness
+  (run it several times, take the majority), position and length bias, and a judge that
+  is weaker than the task. Always measure it against human labels.
+- *Why report both catches and false alarms?* A checker that flags everything catches
+  everything. That's precision versus recall: you need both.
+- *Rules or a model for guardrails?* Rules for hard, cheap, testable invariants (no
+  invented skills, no unproven "verified"); a model for fuzzy meaning, if it measures
+  well enough to justify its cost.

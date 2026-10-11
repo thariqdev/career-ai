@@ -20,7 +20,9 @@ streams as events (see app/api/assistant.py): meta (sources first), deltas (text
 optional `replace` (the final text, when the checks changed it), then done (who wrote it).
 Checks: invalid citations are removed; an answer citing nothing falls back to the notes;
 an unavailable model falls back to the notes with a note. A question with no matching
-notes never reaches the model.
+notes never reaches the model. Stage 68 adds faithfulness rules (app/rag/faithfulness.py):
+an answer naming a skill its notes don't, or calling something verified that isn't, also
+falls back to the notes, with the reason.
 """
 
 import os
@@ -44,6 +46,8 @@ from app.rag.embeddings import (
     VectorIndex,
     reciprocal_rank_fusion,
 )
+from app.rag.faithfulness import check as check_faithfulness
+from app.rag.faithfulness import vocabulary
 from app.rag.generate import (
     ChatModel,
     GenerationUnavailableError,
@@ -98,6 +102,7 @@ class Prepared:
     searched: int
     retrieval: Mode
     note: str | None
+    known_names: tuple[str, ...] = ()  # this user's skill and gap names, for the faithfulness rules
 
 
 @dataclass(frozen=True)
@@ -203,7 +208,7 @@ def prepare(
     chunks = build_chunks(db, user)
     found = retrieve(chunks, search_text, top_k, embedder if embedder is not None else configured_embedder())
     sources = [Source(n, chunks[i], score) for n, (i, score) in enumerate(found.hits, start=1)]
-    return Prepared(question, sources, len(chunks), found.mode, found.note)
+    return Prepared(question, sources, len(chunks), found.mode, found.note, vocabulary(chunks))
 
 
 def _join_notes(*notes: str | None) -> str | None:
@@ -255,6 +260,12 @@ def answer_events(
     if not cited_numbers(cleaned, len(notes)):
         yield {"type": "replace", "text": extractive}
         yield {"type": "done", "written_by": "notes", "note": _join_notes(prepared.note, UNCITED_NOTE)}
+        return
+    verdict = check_faithfulness(cleaned, notes, prepared.known_names)
+    if not verdict.ok:
+        note = f"The AI's answer didn't match your notes ({'; '.join(verdict.problems)}), so here are the notes themselves."
+        yield {"type": "replace", "text": extractive}
+        yield {"type": "done", "written_by": "notes", "note": _join_notes(prepared.note, note)}
         return
     if cleaned != text:
         yield {"type": "replace", "text": cleaned}

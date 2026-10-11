@@ -11,6 +11,7 @@ case-sensitive for terms of 2 characters or fewer and for EXACT_CASE everyday wo
 """
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -43,6 +44,20 @@ def _pattern(term: str) -> re.Pattern[str] | None:
 _PATTERNS: list[tuple[CatalogSkill, list[re.Pattern[str]]]] = [
     (skill, [p for p in map(_pattern, skill.terms) if p is not None]) for skill in CATALOG
 ]
+
+
+def mentioned(text: str, extra_names: Iterable[str] = ()) -> set[str]:
+    """Canonical names of the catalogue skills (and of `extra_names`) that `text` mentions.
+
+    Aliases count as their skill ("JS" -> "JavaScript"). Used by the assistant's
+    faithfulness check to spot skill names an answer uses that its notes don't.
+    """
+    found = {skill.name for skill, patterns in _PATTERNS if any(p.search(text) for p in patterns)}
+    catalogue = {skill.name.lower() for skill in CATALOG}
+    for name in extra_names:
+        if name.lower() not in catalogue and (pattern := _pattern(name)) and pattern.search(text):
+            found.add(name)
+    return found
 
 
 def suggest(db: Session, text: str) -> list[Suggestion]:

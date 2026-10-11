@@ -133,9 +133,9 @@ def test_a_good_answer_streams_and_is_marked_ai() -> None:
 
 
 def test_citations_to_notes_that_dont_exist_are_removed() -> None:
-    text, done, _ = _run(_prepared(), FakeChat(["Learn Kubernetes [1] and Rust [9]."]))
+    text, done, _ = _run(_prepared(), FakeChat(["Learn Kubernetes [1] and practise daily [9]."]))
 
-    assert text == "Learn Kubernetes [1] and Rust ."
+    assert text == "Learn Kubernetes [1] and practise daily ."
     assert done["written_by"] == "ai"
 
 

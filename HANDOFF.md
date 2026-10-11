@@ -2497,7 +2497,21 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
 - **Next:**
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
-  - 68: evaluating generation (faithfulness)
+  - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 68 (faithfulness):**
+  - **`app/rag/faithfulness.py`:**
+    - `check(answer, notes, known_names) -> Verdict(problems)` runs two rules:
+      - `suggestion_service.mentioned()` (catalogue skills plus aliases, plus `known_names`) on the answer, minus the same on the notes text, flags any skill the notes don't name.
+      - A sentence with verified/proven/proved and no negation (`not`, `no`, `never`, `none`, `zero`, `without`, `unverified`, `unproven`, `yet`, `n't`, `0`) needs a note with `status: verified|partially proven` that mentions that skill.
+    - `vocabulary(chunks)` returns skill titles plus gap names.
+    - `judge()` uses prompt C (per-statement lines, then `VERDICT: FAITHFUL|UNFAITHFUL`; None if absent or unavailable). It is **not** used live.
+  - **`assistant.py`:**
+    - `Prepared.known_names` (default `()`), filled by `prepare()`.
+    - `answer_events` runs the rules after the citation checks. On failure it emits `replace` with the extractive answer and `done notes` with "The AI's answer didn't match your notes (…)".
+  - **`app/rag/faithfulness_eval.py`:** 16 `LABELLED` answers (8/8) over `build_fixture_chunks()`, plus `score()`. The judge runs 3 times with a majority vote. Results: rules caught 3/8 with 0/8 false alarms; judge A 8/8 with 8/8; B 3/8 with 1/8; C 4/8 with 1/8.
+  - Live: 18 real answers, 0 rejected by the rules.
+  - **Tests:** `tests/test_rag_faithfulness.py` (15): the labelled set runs through the rules (0 false alarms, at least 3 caught), plus rule cases, judge parsing and the gate. Mutation: disabling the gate fails 1 test.
+  - The stage-67 citation test now uses "practise daily [9]" instead of "Rust [9]", since Rust would now be rejected as an unnamed skill.
 - **Your name (fix after 67):** the assistant had no note about the user, and `users.full_name` was never set.
   - `cv_profile_service.read_name(text)` checks the first 5 lines, split at `| • · – — tab " - " ,`, and takes the first part with 2 to 4 letter words that contains no digit, `@` or link, and no heading, role, degree, school or contact word. All-caps is title-cased. It's copied, never guessed.
   - `ProfileDrafts.name`.
