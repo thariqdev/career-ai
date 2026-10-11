@@ -2498,6 +2498,23 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 73 (query rewriting):**
+  - **`app/rag/rewrite.py`:** `standalone_question(question, history, chat)` returns None when there is no user turn in the history, when the model is unavailable, or when the reply is empty, multi-line or longer than 300 characters. It strips "Rewritten question:" prefixes and quotes. The prompt contains the last 2 turns (each up to 400 characters) plus the follow-up.
+  - **`OllamaChat`** takes `temperature` (default 0.2).
+  - **`assistant.configured_rewriter()`** returns the same model at temperature 0.
+  - **`assistant.prepare(..., rewriter=None)`:**
+    - search text: the rewrite, or else the follow-up plus the previous question
+    - routing: on the rewrite, or else the question
+    - `Prepared.question` stays the real question
+  - **`app/rag/rewrite_eval.py`:** `FOLLOW_UPS` (20) was committed in `3b4e0aa` before any code. Hybrid search, recall@4 and MRR:
+    | Strategy | recall@4 | MRR | Right tool |
+    |---|---|---|---|
+    | alone | 0.700 | 0.546 | 17 |
+    | glued | 0.900 | 0.637 | 17 |
+    | rewritten | 0.900 | 0.717 | 18 |
+    - 0 wrong tools in every strategy; the rewrite takes 1.22 s per follow-up.
+  - **Tests:** `tests/test_rag_rewrite.py` (9). Mutation: not using the rewrite fails 1 test.
+  - **Seen live:** the right notes and tool for a follow-up, but llama3.2's wording varies between runs (once garbled). That's answer quality, a candidate for a later stage.
 - **Stage 72 (speed):**
   - **`app/rag/warmup.py`:**
     - `keep_alive()` reads `OLLAMA_KEEP_ALIVE`, default `"30m"`. It's sent on `/api/chat` (OllamaChat) and `/api/embed` (OllamaEmbedder).

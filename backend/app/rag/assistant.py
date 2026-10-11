@@ -60,6 +60,7 @@ from app.rag.generate import (
     clean_citations,
     fit_notes,
 )
+from app.rag.rewrite import standalone_question
 from app.rag.router import guarded_keyword_route
 
 TOP_K = 4
@@ -143,6 +144,14 @@ def configured_chat() -> ChatModel | None:
     return OllamaChat(model, base_url=os.getenv("OLLAMA_BASE_URL") or DEFAULT_BASE_URL)
 
 
+def configured_rewriter() -> ChatModel | None:
+    """The same local model, at temperature 0, for rewriting follow-ups (stage 73)."""
+    model = (os.getenv("OLLAMA_CHAT_MODEL") or "").strip()
+    if not model:
+        return None
+    return OllamaChat(model, base_url=os.getenv("OLLAMA_BASE_URL") or DEFAULT_BASE_URL, temperature=0.0)
+
+
 def note_texts(chunks: list[Chunk]) -> list[str]:
     """The text each note is searched by (and embedded as). One place, so the startup
     warm-up fills the embedding cache with exactly what search will ask for."""
@@ -211,11 +220,15 @@ def prepare(
     top_k: int = TOP_K,
     embedder: Embedder | None = None,
     history: list[Turn] | None = None,
+    rewriter: ChatModel | None = None,
 ) -> Prepared:
     """All database work: CHUNK (fresh from PostgreSQL) and RETRIEVE.
 
-    For a follow-up ("and how do I learn it?"), the previous question is added to the
-    SEARCH text so "it" can find the right notes; the model still sees the real question.
+    A follow-up ("And for Globex?") is rewritten by the model into a standalone question
+    ("What am I missing for the Globex job?") for SEARCH and tool ROUTING (stage 73,
+    app/rag/rewrite.py; measured better than gluing on the previous question). Without a
+    model, or if the rewrite fails, the previous question is glued on as before. The model
+    that writes the answer always sees the real question.
 
     Stage 69: a "list" question ("Which skills have no proof yet?") is routed to a TOOL
     (app/rag/tools.py) that computes the exact answer; its result becomes note [1], and
@@ -228,11 +241,13 @@ def prepare(
         raise EmptyQuestionError()
     question = question[:MAX_QUESTION_CHARS]
     previous = next((t.text for t in reversed(history or []) if t.role == "user"), "")
-    search_text = f"{question} {previous[:MAX_QUESTION_CHARS]}".strip()
+    rewriter = rewriter if rewriter is not None else configured_rewriter()
+    rewritten = standalone_question(question, history or [], rewriter) if rewriter is not None else None
+    search_text = rewritten or f"{question} {previous[:MAX_QUESTION_CHARS]}".strip()
 
     chunks = build_chunks(db, user)
     known_names = vocabulary(chunks)
-    call = guarded_keyword_route(question, [c.title for c in chunks if c.kind == "job"], known_names)
+    call = guarded_keyword_route(rewritten or question, [c.title for c in chunks if c.kind == "job"], known_names)
     tool_chunk = tools.run(db, user, call) if call is not None else None
     found = retrieve(
         chunks, search_text, top_k - 1 if tool_chunk else top_k, embedder if embedder is not None else configured_embedder()

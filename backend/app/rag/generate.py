@@ -130,17 +130,19 @@ class OllamaChat:
         model: str = DEFAULT_CHAT_MODEL,
         base_url: str = DEFAULT_BASE_URL,
         transport: httpx.BaseTransport | None = None,  # tests only
+        temperature: float = TEMPERATURE,
     ) -> None:
         self.name = model
         self._base_url = base_url.rstrip("/")
         self._transport = transport
+        self.temperature = temperature
 
     def stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
         body = {
             "model": self.name,
             "messages": messages,
             "stream": True,
-            "options": {"temperature": TEMPERATURE},
+            "options": {"temperature": self.temperature},
             "keep_alive": keep_alive(),
         }
         try:

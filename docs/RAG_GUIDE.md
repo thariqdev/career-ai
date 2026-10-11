@@ -753,3 +753,56 @@ the model reading the prompt and starting to write (0.5 s; it read 556 prompt to
   model at all, but embedding the notes.
 - *What's the cost of keeping models warm?* Memory (3.2 GB here) held while idle. It's a
   time-for-memory trade-off you choose with the keep-alive setting.
+
+## Stage 73: follow-up questions and query rewriting ✅
+
+**Run it:** `.venv/Scripts/python -m app.rag.rewrite_eval` (from `backend/`).
+
+"And for Globex?" means nothing to search on its own. Until now, the search text was the
+follow-up **glued** to the previous question. That finds the topic, but drags the old one
+along (Acme), and it breaks when the follow-up changes topic.
+
+**Query rewriting:** before searching, the model turns the follow-up into a **standalone
+question** ("What am I missing for the Globex job?"), at temperature 0
+(`app/rag/rewrite.py`). The rewrite is used **only for search and tool routing**. The model
+that writes the answer still sees the real question and the history, so a bad rewrite can
+at worst fetch the wrong notes, which the citation and faithfulness checks still guard.
+With no history, nothing is rewritten. If the rewrite fails or is unusable (empty,
+several lines, or too long), the old glued text is used.
+
+### Measured on 20 follow-ups, committed before any rewrite code (commit `3b4e0aa`)
+
+The set includes follow-ups that change topic, and first questions with no history.
+
+| How the follow-up is searched | recall@4 | MRR | Right tool | Wrong tool |
+|---|---|---|---|---|
+| Alone | 0.700 | 0.546 | 17/20 | 0 |
+| Glued to the last question (before) | 0.900 | 0.637 | 17/20 | 0 |
+| **Rewritten** | **0.900** | **0.717** | **18/20** | **0** |
+
+The bar was written down in advance: better retrieval than gluing, and no wrong tools.
+Recall is tied, MRR is higher (+0.08), and it gets one more right tool, so the rewrite is
+live. The cost is about **1.2 s, only on follow-ups**. With 20 cases, +0.08 MRR is about
+two questions ranking better: a real but small win.
+
+**Most rewrites are good:**
+
+- "And for Globex?" → "What am I missing for the Globex job?"
+- "Is it verified?" → "Is React verified?"
+
+**Some drift:**
+
+- "How do I prove it?" → "Can Docker provide proof of its security and integrity?"
+
+That drift is why the answer still uses the real question. On your data, "How do I learn the
+first one?" was correctly resolved to GraphQL, the first gap in the previous answer.
+
+### Interview questions you can now answer
+
+- *How does RAG handle multi-turn chat?* Rewrite the follow-up into a standalone query
+  (sometimes called **condense question** or **query rewriting**), retrieve with that,
+  and answer with the full history. Simpler fallbacks: concatenate recent turns, or embed
+  the conversation.
+- *What can go wrong with query rewriting?* Drift (the rewrite changes the meaning),
+  extra latency, and a model that fails or rambles. So use it for retrieval only, validate
+  its output, fall back to a simpler method, and measure against the simple baseline.
