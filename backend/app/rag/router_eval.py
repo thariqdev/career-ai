@@ -80,6 +80,33 @@ HELD_OUT: list[tuple[str, ToolCall | None]] = [
 ]
 
 
+# Written in stage 70 BEFORE the cascade and its guards existed, and run once at the end.
+# HELD_OUT had been looked at by then (its mistakes shaped the stage-70 idea), so it no
+# longer counts as unseen; TEST is the honest score.
+TEST: list[tuple[str, ToolCall | None]] = [
+    ("Show me everything I haven't backed with evidence", T("skills_without_proof")),
+    ("Which of my skills are still unconfirmed?", T("skills_without_proof")),
+    ("What skills do I have proof for?", T("verified_skills")),
+    ("List what I've already verified", T("verified_skills")),
+    ("Read my CV skills back to me", T("skills_on_cv")),
+    ("What's listed on my CV?", T("skills_on_cv")),
+    ("What does Globex want that I don't have?", T("job_gaps", "Globex")),
+    ("Am I qualified for the backend engineer job?", T("job_gaps", "Acme")),
+    ("What's stopping me from getting the Acme role?", T("job_gaps", "Acme")),
+    ("Summarise my gaps across every job", T("job_gaps")),
+    ("Which skill would help me with the most jobs?", T("learn_first")),
+    ("What should be my next skill?", T("learn_first")),
+    ("Is Docker on my CV?", None),
+    ("Do I have GraphQL?", None),
+    ("Why is React not verified?", None),
+    ("How do I mark a skill as verified?", None),
+    ("What projects have I built?", None),
+    ("Tell me about the Acme job", None),
+    ("Is Python proven?", None),
+    ("What did I do at Initech?", None),
+]
+
+
 def same(got: ToolCall | None, want: ToolCall | None) -> bool:
     if got is None or want is None:
         return got is None and want is None
