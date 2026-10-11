@@ -256,7 +256,7 @@ def test_the_api_returns_an_ai_answer_when_a_model_is_configured(
     chat = FakeChat()
     monkeypatch.setattr(assistant, "configured_chat", lambda: chat)
 
-    body = client.post("/assistant/ask", json={"question": "What am I missing for the Acme job?"}).json()
+    body = client.post("/assistant/ask", json={"question": "Do I have a Kubernetes gap?"}).json()
 
     assert body["written_by"] == "ai"
     assert body["answer"] == "You're missing Kubernetes [1]."
@@ -268,7 +268,7 @@ def test_the_stream_sends_replace_when_the_checks_change_the_answer(
 ) -> None:
     monkeypatch.setattr(assistant, "configured_chat", lambda: FakeChat(["No citations at all."]))
 
-    response = client.post("/assistant/ask/stream", json={"question": "What am I missing for the Acme job?"})
+    response = client.post("/assistant/ask/stream", json={"question": "Do I have a Kubernetes gap?"})
 
     events = [json.loads(line) for line in response.text.splitlines()]
     kinds = [e["type"] for e in events]

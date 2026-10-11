@@ -38,6 +38,11 @@ TOOLS: dict[str, str] = {
 }
 
 
+def _note(name: str, title: str, lines: tuple[str, ...], link: str) -> Chunk:
+    """A tool's result as a note: the lines joined for the model, and kept for display."""
+    return Chunk(f"tool:{name}", "tool", title, " ".join(lines), link, lines)
+
+
 def _join(names: list[str]) -> str:
     return ", ".join(names) if names else "none"
 
@@ -70,12 +75,12 @@ def _skills_without_proof(db: Session, user: User) -> Chunk:
             claimed.append(skill.name)
         elif claim is None and skill.id in on_cv:
             cv_only.append(skill.name)
-    text = (
-        f"Skills with no proof yet: {len(claimed) + len(cv_only)}. "
-        f"Claimed but no proof linked: {_join(claimed)}. "
-        f"On your CV but not claimed or proven: {_join(cv_only)}."
+    lines = (
+        f"Skills with no proof yet: {len(claimed) + len(cv_only)}.",
+        f"Claimed but no proof linked: {_join(claimed)}.",
+        f"On your CV but not claimed or proven: {_join(cv_only)}.",
     )
-    return Chunk("tool:skills_without_proof", "tool", "Skills with no proof yet", text, "/skills")
+    return _note("skills_without_proof", "Skills with no proof yet", lines, "/skills")
 
 
 def _verified_skills(db: Session, user: User) -> Chunk:
@@ -85,8 +90,8 @@ def _verified_skills(db: Session, user: User) -> Chunk:
     parts = sorted(
         f"{c.skill.name} (proof: {_join(sorted(link.evidence.title for link in c.evidence_links))})" for c in claims
     )
-    text = f"Verified (proven) skills: {len(parts)}. {_join(parts)}."
-    return Chunk("tool:verified_skills", "tool", "Your verified skills", text, "/skills")
+    lines = (f"Verified (proven) skills: {len(parts)}.", f"{_join(parts)}.")
+    return _note("verified_skills", "Your verified skills", lines, "/skills")
 
 
 def _skills_on_cv(db: Session, user: User) -> Chunk:
@@ -98,24 +103,23 @@ def _skills_on_cv(db: Session, user: User) -> Chunk:
             .order_by(Skill.name)
         )
     )
-    text = f"Skills on your CV: {len(names)}. {_join(names)}."
-    return Chunk("tool:skills_on_cv", "tool", "Skills on your CV", text, "/cv")
+    lines = (f"Skills on your CV: {len(names)}.", f"{_join(names)}.")
+    return _note("skills_on_cv", "Skills on your CV", lines, "/cv")
 
 
 def _job_gaps(db: Session, user: User, job: str | None) -> Chunk:
     jobs = _jobs(db, user)
     chosen = find_jobs(jobs, job) if job else jobs
     if job and not chosen:
-        text = f"No job matches \"{job}\". Your jobs: {_join([job_label(j) for j in jobs])}."
-        return Chunk("tool:job_gaps", "tool", "Missing skills per job", text, "/job-descriptions")
-    lines = []
-    for j in chosen:
-        missing = [item.name for item in match_service.job_match(db, user, j).missing]
-        lines.append(f"Missing for {job_label(j)}: {_join(missing)}.")
-    text = " ".join(lines) if lines else "No job descriptions pasted yet."
+        lines = (f"No job matches \"{job}\". Your jobs: {_join([job_label(j) for j in jobs])}.",)
+        return _note("job_gaps", "Missing skills per job", lines, "/job-descriptions")
+    lines = tuple(
+        f"Missing for {job_label(j)}: {_join([item.name for item in match_service.job_match(db, user, j).missing])}."
+        for j in chosen
+    ) or ("No job descriptions pasted yet.",)
     link = f"/job-descriptions/{chosen[0].id}" if len(chosen) == 1 else "/job-descriptions"
     title = f"Missing skills for {job_label(chosen[0])}" if len(chosen) == 1 else "Missing skills per job"
-    return Chunk("tool:job_gaps", "tool", title, text, link)
+    return _note("job_gaps", title, lines, link)
 
 
 def _learn_first(db: Session, user: User) -> Chunk:
@@ -126,8 +130,8 @@ def _learn_first(db: Session, user: User) -> Chunk:
     ranked = sorted(needed, key=lambda name: (-len(needed[name]), name.lower()))[:10]
     parts = [f"{i}. {name} (needed by {len(needed[name])} job{'s' if len(needed[name]) != 1 else ''})"
              for i, name in enumerate(ranked, start=1)]
-    text = f"Missing skills to learn first, most needed first: {_join(parts)}."
-    return Chunk("tool:learn_first", "tool", "What to learn first", text, "/")
+    lines = ("Missing skills to learn first, most needed first:", *parts) if parts else ("No missing skills to learn.",)
+    return _note("learn_first", "What to learn first", lines, "/")
 
 
 def run(db: Session, user: User, call: ToolCall) -> Chunk:

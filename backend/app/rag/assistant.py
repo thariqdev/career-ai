@@ -79,6 +79,18 @@ NOT_FOUND = (
     "a job, your proof, or what to learn next."
 )
 UNCITED_NOTE = "The AI's answer didn't cite your notes, so here are the notes themselves."
+# Stage 74: for an exact-list question (a tool answered), code writes the list itself and
+# the model writes only a one-sentence introduction. Measured (app/rag/answer_eval.py):
+# completeness 1.000 vs 0.982, same facts every run 15/15 vs 13/15; on real data the AI
+# alone mentioned 4, 25 and 24 of 28 missing skills in three runs, code-written all 28.
+EXACT_LISTS = True
+DEFAULT_INTRO = "Here's the exact answer from your data:"
+MAX_INTRO_CHARS = 200
+INTRO_SYSTEM = (
+    "Write one short, friendly sentence that introduces a list answering the person's "
+    "question. Do not name or list any items, and add no numbers or citations. Reply with "
+    "the sentence only."
+)
 
 Mode = Literal["bm25", "vector", "hybrid"]
 WrittenBy = Literal["ai", "notes"]
@@ -262,16 +274,36 @@ def _join_notes(*notes: str | None) -> str | None:
     return " ".join(kept) if kept else None
 
 
+def _intro(question: str, tool: Chunk, chat: ChatModel) -> str:
+    """The model's one-sentence introduction to an exact list, or DEFAULT_INTRO if it fails
+    or misbehaves (several lines, too long, or names a skill the list doesn't)."""
+    messages = [
+        {"role": "system", "content": INTRO_SYSTEM},
+        {"role": "user", "content": f"Question: {question}\nThe list is titled: {tool.title}"},
+    ]
+    try:
+        intro = "".join(chat.stream(messages)).strip().strip('"')
+    except GenerationUnavailableError:
+        return DEFAULT_INTRO
+    if not intro or "\n" in intro or len(intro) > MAX_INTRO_CHARS or "[" in intro:
+        return DEFAULT_INTRO
+    if not check_faithfulness(intro, [Note(1, tool.kind, tool.title, tool.text)]).ok:
+        return DEFAULT_INTRO
+    return intro
+
+
 def answer_events(
     prepared: Prepared,
     history: list[Turn] | None = None,
     chat: ChatModel | None = None,
+    exact_lists: bool | None = None,
 ) -> Iterator[dict]:
     """GENERATE, as events. No database access here, so it's safe to stream.
 
     meta -> delta... -> (replace) -> done. `replace` carries the final text whenever the
     checks changed what was streamed; `done` says who wrote the answer.
     """
+    exact_lists = EXACT_LISTS if exact_lists is None else exact_lists
     sources = prepared.sources
     yield {
         "type": "meta",
@@ -284,6 +316,16 @@ def answer_events(
 
     if not sources or chat is None:  # nothing to ground an answer on, or no model: the notes
         for piece in stream_pieces(extractive):
+            yield {"type": "delta", "text": piece}
+        yield {"type": "done", "written_by": "notes", "note": prepared.note}
+        return
+
+    tool = sources[0].chunk if sources[0].chunk.kind == "tool" and sources[0].chunk.lines else None
+    if exact_lists and tool is not None:  # the list from the data, word for word
+        lines = list(tool.lines)
+        lines[0] = f"{lines[0]} [1]"
+        text = _intro(prepared.question, tool, chat) + "\n\n" + "\n".join(lines)
+        for piece in stream_pieces(text):
             yield {"type": "delta", "text": piece}
         yield {"type": "done", "written_by": "notes", "note": prepared.note}
         return

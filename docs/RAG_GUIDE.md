@@ -806,3 +806,64 @@ first one?" was correctly resolved to GraphQL, the first gap in the previous ans
 - *What can go wrong with query rewriting?* Drift (the rewrite changes the meaning),
   extra latency, and a model that fails or rambles. So use it for retrieval only, validate
   its output, fall back to a simpler method, and measure against the simple baseline.
+
+## Stage 74: answer quality, complete and consistent ✅
+
+**Run it:** `.venv/Scripts/python -m app.rag.answer_eval` (from `backend/`).
+
+Earlier stages measured *finding* notes. This one measures the *written answer*.
+
+### Measures (all automatic)
+
+- **Completeness:** the share of the facts an answer must mention that it does mention.
+- **Consistency:** asked 3 times, does it give the same facts each time?
+- **Forbidden words:** for example, GraphQL in an answer about the Acme job.
+
+They are scored on 15 questions committed before any change (commit `0eebabb`), with
+3 runs each.
+
+### Four candidates, measured
+
+| Candidate | Completeness | Same facts every run | Forbidden words | Time per answer |
+|---|---|---|---|---|
+| A: today (temperature 0.2) | 0.982 | 13/15 | 0 | 1.9 s |
+| B: temperature 0 | 0.982 | 14/15 | 0 | 1.5 s |
+| **C: exact lists written by code** | **1.000** | **15/15** | 0 | 1.4 s |
+| B + C | 0.982 | 14/15 | 0 | 1.3 s |
+
+**C:** when a tool answered (an exact list), **code writes the list word for word**, and
+the model writes only a one-sentence introduction. If the introduction misbehaves (it
+names a skill, cites, runs to several lines, or is too long), a fixed sentence is used.
+Search answers are still written by the model.
+
+### The real test: your data
+
+The made-up career has short lists, so A already reached 98%. Your real lists are long:
+
+| Question | Items in the exact list | A: AI-written, 3 runs | C: code-written |
+|---|---|---|---|
+| Which skills have no proof yet? | 23 | 23, 22, 22 | **23** |
+| What am I missing for my jobs? | 28 | **4**, 25, 24 | **28** |
+
+Small models **drop items from long lists**: once, only 4 of 28. That's not a
+hallucination the faithfulness rules can catch, because everything it *did* say was true.
+It's an **omission**. **C is live** (`EXACT_LISTS = True`).
+
+**Two lessons:**
+
+- **Temperature 0 isn't fully deterministic.** One answer still varied between runs.
+- **Use the model for language, and code for data.** When the answer *is* data, let code
+  write it.
+
+### Interview questions you can now answer
+
+- *How do you evaluate generated answers automatically?* Keep a fixed question set with
+  required facts (completeness or recall of key facts), forbidden content, and
+  consistency across repeated runs. Then add faithfulness checks and human review of
+  samples.
+- *What's the difference between hallucination and omission?* A hallucination says
+  something unsupported; an omission leaves out something required. Faithfulness checks
+  catch the first, and completeness metrics catch the second.
+- *When should an LLM not write the answer?* When the answer is structured data
+  (lists, numbers, tables). Render it with code (this is also called **templated** or
+  **structured output**), and let the model add the language around it.

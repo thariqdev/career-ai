@@ -2498,6 +2498,22 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 74 (answer quality):**
+  - **`Chunk.lines`** (default `()`) holds display lines for tool results. `tools._note(name, title, lines, link)` sets text to the joined lines.
+  - **`assistant`:**
+    - `EXACT_LISTS = True` and `answer_events(..., exact_lists=None)`.
+    - When source [1] is a tool chunk with lines, the text is `_intro()` plus the lines (the first ends with `[1]`). It streams via `stream_pieces`, and `done` has `written_by` "notes".
+    - `_intro` uses `INTRO_SYSTEM`. It falls back to `DEFAULT_INTRO` when the model is unavailable, or the intro is empty, multi-line, longer than 200 characters, contains "[", or fails the faithfulness check against the tool note.
+  - **`app/rag/answer_eval.py`:** `ANSWERS` (15) was committed in `0eebabb` before the change, with required facts (alternative wordings) and forbidden words, 3 runs each.
+    | Candidate | Completeness | Same facts every run |
+    |---|---|---|
+    | A (0.2) | 0.982 | 13/15 |
+    | B (temperature 0) | 0.982 | 14/15 |
+    | C (exact lists) | 1.000 | 15/15 |
+    | B+C | 0.982 | 14/15 |
+    - No forbidden words in any candidate.
+    - Real data: A mentioned 23/22/22 of 23 and **4**/25/24 of 28; C mentioned all.
+  - **Tests:** `tests/test_rag_answers.py` (10). Two stage-67 API tests now ask "Do I have a Kubernetes gap?" (a search question). Mutation: disabling the exact-list path fails 7 tests.
 - **Stage 73 (query rewriting):**
   - **`app/rag/rewrite.py`:** `standalone_question(question, history, chat)` returns None when there is no user turn in the history, when the model is unavailable, or when the reply is empty, multi-line or longer than 300 characters. It strips "Rewritten question:" prefixes and quotes. The prompt contains the last 2 turns (each up to 400 characters) plus the follow-up.
   - **`OllamaChat`** takes `temperature` (default 0.2).

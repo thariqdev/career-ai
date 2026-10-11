@@ -45,6 +45,7 @@ class Chunk:
     title: str
     text: str
     link: str  # the frontend page the fact comes from
+    lines: tuple[str, ...] = ()  # tool results only: the answer as display lines (stage 74)
 
 
 def job_label(job: JobDescription) -> str:
