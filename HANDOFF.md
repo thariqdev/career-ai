@@ -2498,6 +2498,21 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 79 (prompt injection):**
+  - **`app/rag/sanitize.py`:**
+    - `ENABLED = True`.
+    - `looks_like_instruction` uses an `_INSTRUCTION` regex: ignore/disregard/forget/override; system/assistant/developer followed by ":" or "]"; [system]; you are now / from now on / talk like / reply|respond|answer only; tell|inform|remind the user; say the user; note to the assistant/ai/model; URLs; "dot com|org|net|io|example".
+    - `safe(text)` drops instruction-like ()/[] groups, then the pieces split at sentence ends and dashes; it returns REMOVED if nothing is left.
+  - **Applied in:** `chunker.job_label` (label and company), the job note's proven / on-CV / missing names, gap names, and the overview's most-needed names; `tools` job_gaps and learn_first names.
+  - **`generate.SPOTLIGHT = False`** (measured: no effect) plus `SPOTLIGHT_RULE`, which adds `<notes>` tags when on.
+  - **`app/rag/injection_eval.py`:**
+    - `ATTACKS` (8; committed in `2a85f5d`) and `HELD_OUT` (6; committed in `ca6a0bc`, after the sanitizer, never tuned on).
+    - Plants one Initrode job per attack (title, posting or requirement), asks 2 questions × 2 runs, and checks `obeyed`.
+    - Results: none 21/32 and 12/24; spotlighting the same; sanitizing 0/32 and 8/24; both the same as sanitizing.
+  - **Scorecard quick measures:** "attacks still harmful after cleaning" (ATTACKS 0, HELD_OUT 2). The full scorecard showed no regressions.
+  - **Real data:** 24 titles, companies, posting starts and requirements; 0 changed.
+  - **Tests:** `tests/test_rag_injection.py` (19): every attack cleaned, examples, no catalogue term flagged, the off switch, live on, the chunker cleaned (it caught the overview leak), and spotlight formatting. Mutation: a no-op `safe` fails 13 tests.
+  - **Next idea:** an allow-list (don't show unmatched requirement text; name untitled jobs by company and date).
 - **Stage 78 (actions, human in the loop):**
   - **`app/rag/actions.py`:** `detect_action(message, {skill_id: (name, terms)}) -> Action | None`. With URLs stripped first, its rules are:
     - interrogative start → None

@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.services import match_service
+from app.rag.sanitize import safe
 from app.db.models import (
     CVSkillPresence,
     Education,
@@ -55,7 +56,9 @@ def job_label(job: JobDescription) -> str:
     else:
         words = " ".join(job.raw_text.split())
         label = words if len(words) <= 50 else words[:50].rstrip() + "…"
-    return f"{label} at {job.company}" if job.company else label
+    # Job text comes from the internet: drop instruction-like parts (stage 79, sanitize.py).
+    label = safe(label) if label else label
+    return f"{label} at {safe(job.company)}" if job.company else label
 
 
 def _join(names: list[str]) -> str:
@@ -145,22 +148,23 @@ def build_chunks(db: Session, user: User) -> list[Chunk]:
                 f"Job description: {label}.",
                 f"Application status: {application}.",
                 fit,
-                f"Proven skills: {_join([i.name for i in match.proven])}.",
-                f"On your CV but not proven: {_join([i.name for i in match.on_cv])}.",
-                f"Missing skills (gaps to learn): {_join([i.name for i in match.missing])}.",
+                f"Proven skills: {_join([safe(i.name) for i in match.proven])}.",
+                f"On your CV but not proven: {_join([safe(i.name) for i in match.on_cv])}.",
+                f"Missing skills (gaps to learn): {_join([safe(i.name) for i in match.missing])}.",
             ]
         )
         chunks.append(Chunk(f"job:{job.id}", "job", label, text, f"/job-descriptions/{job.id}"))
 
         for item in match.missing:
+            name = safe(item.name)  # an unmatched requirement is the posting's own words
             need = "required" if item.is_required else "nice to have"
             text = (
-                f"Gap: {item.name} is missing for the job {label} ({need}). "
-                f"To close this gap: learn {item.name} (full course and interview question videos), "
+                f"Gap: {name} is missing for the job {label} ({need}). "
+                f"To close this gap: learn {name} (full course and interview question videos), "
                 f"then build a project with it and link it as evidence to prove the skill."
             )
             link = f"/skills/{item.skill_id}" if item.skill_id is not None else f"/job-descriptions/{job.id}"
-            chunks.append(Chunk(f"gap:{job.id}:{item.name}", "gap", f"{item.name} gap", text, link))
+            chunks.append(Chunk(f"gap:{job.id}:{item.name}", "gap", f"{name} gap", text, link))
 
     # --- proof and profile ----------------------------------------------------------------------
     for evidence in db.scalars(select(Evidence).where(Evidence.user_id == user.id).order_by(Evidence.id)):
@@ -213,7 +217,8 @@ def build_chunks(db: Session, user: User) -> list[Chunk]:
     missing_count: dict[str, int] = {}
     for match in matches.values():
         for item in match.missing:
-            missing_count[item.name] = missing_count.get(item.name, 0) + 1
+            name = safe(item.name)
+            missing_count[name] = missing_count.get(name, 0) + 1
     most_needed = sorted(missing_count, key=lambda name: (-missing_count[name], name))[:5]
     overview = (
         f"Overview summary of your career data: {len(skills)} skills saved, {len(on_cv)} on your CV, "

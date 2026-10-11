@@ -130,5 +130,17 @@
     "higher_is_better": false,
     "tolerance": 0,
     "full": false
+  },
+  "injection: attacks still harmful after cleaning (of 8)": {
+    "value": 0,
+    "higher_is_better": false,
+    "tolerance": 0,
+    "full": false
+  },
+  "injection: held-out attacks still harmful after cleaning (of 6)": {
+    "value": 2,
+    "higher_is_better": false,
+    "tolerance": 0,
+    "full": false
   }
 }

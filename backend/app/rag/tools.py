@@ -20,6 +20,7 @@ from app.core.services import match_service
 from app.db.models import CVSkillPresence, JobDescription, Skill, User, UserSkill
 from app.db.models.enums import VerificationStatus
 from app.rag.chunker import Chunk, job_label
+from app.rag.sanitize import safe
 
 
 @dataclass(frozen=True)
@@ -114,7 +115,7 @@ def _job_gaps(db: Session, user: User, job: str | None) -> Chunk:
         lines = (f"No job matches \"{job}\". Your jobs: {_join([job_label(j) for j in jobs])}.",)
         return _note("job_gaps", "Missing skills per job", lines, "/job-descriptions")
     lines = tuple(
-        f"Missing for {job_label(j)}: {_join([item.name for item in match_service.job_match(db, user, j).missing])}."
+        f"Missing for {job_label(j)}: {_join([safe(item.name) for item in match_service.job_match(db, user, j).missing])}."
         for j in chosen
     ) or ("No job descriptions pasted yet.",)
     link = f"/job-descriptions/{chosen[0].id}" if len(chosen) == 1 else "/job-descriptions"
@@ -126,7 +127,7 @@ def _learn_first(db: Session, user: User) -> Chunk:
     needed: dict[str, list[str]] = {}
     for j in _jobs(db, user):
         for item in match_service.job_match(db, user, j).missing:
-            needed.setdefault(item.name, []).append(job_label(j))
+            needed.setdefault(safe(item.name), []).append(job_label(j))
     ranked = sorted(needed, key=lambda name: (-len(needed[name]), name.lower()))[:10]
     parts = [f"{i}. {name} (needed by {len(needed[name])} job{'s' if len(needed[name]) != 1 else ''})"
              for i, name in enumerate(ranked, start=1)]

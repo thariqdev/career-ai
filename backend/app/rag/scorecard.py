@@ -52,6 +52,12 @@ def quick() -> list[Metric]:
                (("dev", router_eval.DEV), ("held_out", router_eval.HELD_OUT), ("test", router_eval.TEST))}
     glued = rewrite_eval.measure(lambda i, c: (rewrite_eval.glued(c), c.question))
     actions_right, actions_wrong, _, _ = actions_eval.score()
+    from app.rag import injection_eval
+    from app.rag.sanitize import safe
+
+    # Attack text still able to do harm after cleaning (deterministic proxy for stage 79).
+    left = {name: sum(a.obeyed(safe(a.payload)) for a in attacks)
+            for name, attacks in (("ATTACKS", injection_eval.ATTACKS), ("HELD_OUT", injection_eval.HELD_OUT))}
     return [
         Metric("retrieval: keyword recall@4", recall, True, 0),
         Metric("retrieval: keyword MRR", mrr, True, 0),
@@ -63,6 +69,8 @@ def quick() -> list[Metric]:
         Metric("follow-ups (glued, keyword): MRR", glued.mrr, True, 0),
         Metric("actions: right (of 22)", actions_right, True, 0),
         Metric("actions: wrong actions proposed", actions_wrong, False, 0),
+        Metric("injection: attacks still harmful after cleaning (of 8)", left["ATTACKS"], False, 0),
+        Metric("injection: held-out attacks still harmful after cleaning (of 6)", left["HELD_OUT"], False, 0),
     ]
 
 
