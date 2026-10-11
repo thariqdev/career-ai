@@ -61,29 +61,77 @@ def facts_found(answer: str, case: AnswerCase) -> tuple[frozenset[int], list[str
     return found, [w for w in case.must_not if w.lower() in low]
 
 
-def main() -> int:
-    import os
-    import sys
-    import time
+@dataclass
+class AnswerScores:
+    completeness: float  # share of required facts mentioned, over every run
+    steady: int  # questions with the same facts in every run
+    forbidden: int  # forbidden words found, over every run
+    ai_kept: int  # answers written by the AI and kept (not replaced by the notes)
+    seconds: float  # per answer
+    weak: list[str] = field(default_factory=list)
 
+
+def prepare_all(embedder=None) -> list:
+    """Retrieve for every question once, on the fixed made-up career."""
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
     from sqlalchemy.pool import StaticPool
 
-    from app.rag.assistant import answer_events, prepare
-    from app.rag.evaluate import _ollama_embedder, fill_fixture
-    from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
+    from app.rag.assistant import prepare
+    from app.rag.evaluate import fill_fixture
     from database import Base
 
-    model = os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL
-    embedder, _ = _ollama_embedder()
     engine = create_engine("sqlite://", poolclass=StaticPool)
     Base.metadata.create_all(engine)
     with Session(engine, autoflush=False) as db:
         user = fill_fixture(db)
         prepared = [prepare(db, user, c.question, embedder=embedder, rewriter=None) for c in ANSWERS]
     engine.dispose()
+    return prepared
 
+
+def measure(prepared: list, chat, exact_lists: bool, runs: int = RUNS) -> AnswerScores:
+    """Ask every question `runs` times and score the answers."""
+    import time
+
+    from app.rag.assistant import answer_events
+
+    complete = total = steady = forbidden = ai_kept = 0
+    weak: list[str] = []
+    start = time.time()
+    for case, ready in zip(ANSWERS, prepared):
+        found_per_run = []
+        for _ in range(runs):
+            text, written_by = "", "notes"
+            for e in answer_events(ready, [], chat, exact_lists=exact_lists):
+                if e["type"] == "delta":
+                    text += e["text"]
+                elif e["type"] == "replace":
+                    text = e["text"]
+                elif e["type"] == "done":
+                    written_by = e["written_by"]
+            found, bad = facts_found(text, case)
+            found_per_run.append(found)
+            complete += len(found)
+            total += len(case.must)
+            forbidden += len(bad)
+            ai_kept += written_by == "ai"
+        steady += len(set(found_per_run)) == 1
+        if min(len(r) for r in found_per_run) < len(case.must):
+            weak.append(f"    {case.question!r}: facts found per run {[len(r) for r in found_per_run]} of {len(case.must)}")
+    seconds = (time.time() - start) / (len(ANSWERS) * runs)
+    return AnswerScores(complete / total, steady, forbidden, ai_kept, seconds, weak)
+
+
+def main() -> int:
+    import os
+
+    from app.rag.evaluate import _ollama_embedder
+    from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
+
+    model = os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL
+    embedder, _ = _ollama_embedder()
+    prepared = prepare_all(embedder)
     candidates = {
         "A  today (temperature 0.2)": (0.2, False),
         "B  temperature 0": (0.0, False),
@@ -91,36 +139,12 @@ def main() -> int:
         "B+C  both": (0.0, True),
     }
     for name, (temperature, exact) in candidates.items():
-        chat = OllamaChat(model, temperature=temperature)
-        complete = total = steady = forbidden = ai_kept = 0
-        start = time.time()
-        weak: list[str] = []
-        for case, ready in zip(ANSWERS, prepared):
-            runs = []
-            for _ in range(RUNS):
-                text, written_by = "", "notes"
-                for e in answer_events(ready, [], chat, exact_lists=exact):
-                    if e["type"] == "delta":
-                        text += e["text"]
-                    elif e["type"] == "replace":
-                        text = e["text"]
-                    elif e["type"] == "done":
-                        written_by = e["written_by"]
-                found, bad = facts_found(text, case)
-                runs.append(found)
-                complete += len(found)
-                total += len(case.must)
-                forbidden += len(bad)
-                ai_kept += written_by == "ai"
-            steady += len(set(runs)) == 1
-            if min(len(r) for r in runs) < len(case.must):
-                weak.append(f"    {case.question!r}: facts found per run {[len(r) for r in runs]} of {len(case.must)}")
-        seconds = (time.time() - start) / (len(ANSWERS) * RUNS)
+        s = measure(prepared, OllamaChat(model, temperature=temperature), exact)
         print(
-            f"{name:<30} completeness {complete / total:.3f}   same facts every run {steady}/{len(ANSWERS)}   "
-            f"forbidden words {forbidden}   AI-written kept {ai_kept}/{len(ANSWERS) * RUNS}   {seconds:.1f}s/answer"
+            f"{name:<30} completeness {s.completeness:.3f}   same facts every run {s.steady}/{len(ANSWERS)}   "
+            f"forbidden words {s.forbidden}   AI-written kept {s.ai_kept}/{len(ANSWERS) * RUNS}   {s.seconds:.1f}s/answer"
         )
-        for line in weak:
+        for line in s.weak:
             print(line)
     return 0
 

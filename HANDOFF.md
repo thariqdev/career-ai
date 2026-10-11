@@ -2498,6 +2498,15 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 75 (scorecard):**
+  - **`app/rag/scorecard.py`:**
+    - `Metric(name, value, higher_is_better, tolerance, full)`.
+    - `quick()` (no model, tolerance 0): keyword recall and MRR; faithfulness rules caught and rejected on `LABELLED`; `guarded_keyword_route` right on dev/held_out/test, plus total wrong tools; glued follow-ups (keyword) recall and MRR.
+    - `full()` (Ollama): hybrid recall and MRR; follow-ups rewritten and glued (hybrid) plus rewritten wrong tools; answers completeness, steady and forbidden (live config).
+    - `compare` marks ✅/❌/🆕. `save_baseline` merges into `scorecard_baseline.json`. `main` exits 1 on a regression.
+  - Refactored `answer_eval.measure` / `prepare_all` and `rewrite_eval.measure` / `rewrite_all` / `glued` (their printed output is unchanged).
+  - **`tests/test_rag_scorecard.py`** (3) runs quick mode against the baseline in pytest. Weakening the skill guard failed it.
+  - **Finding:** follow-up rewrite is now recall 0.850 / MRR 0.633, versus glued 0.900 / 0.637 (stage 73 measured 0.900 / 0.717 once). Two rewrites changed at temperature 0 ("Which job needs it?" became "Backend Engineer"; "What about AWS?" became a Globex question). **Open decision** for the user: keep or turn off the rewrite (or pin a seed).
 - **Stage 74 (answer quality):**
   - **`Chunk.lines`** (default `()`) holds display lines for tool results. `tools._note(name, title, lines, link)` sets text to the joined lines.
   - **`assistant`:**

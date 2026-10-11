@@ -81,16 +81,25 @@ FOLLOW_UPS: list[FollowUp] = [
 # --- the measurement (written after FOLLOW_UPS was committed) -----------------------------
 
 
-def main() -> int:
-    import os
-    import sys
-    import time
+@dataclass
+class FollowUpScores:
+    recall: float
+    mrr: float
+    tools_right: int
+    tools_wrong: int
+    tools_missed: int
 
+
+def glued(case: FollowUp) -> str:
+    previous = next((t.text for t in reversed(case.history) if t.role == "user"), "")
+    return f"{case.question} {previous}".strip()
+
+
+def measure(texts, embedder=None) -> FollowUpScores:
+    """Score one strategy. texts(i, case) -> (search text, routing text)."""
     from app.rag.assistant import retrieve
-    from app.rag.evaluate import K, _ollama_embedder, build_fixture_chunks, reciprocal_rank, recall_at_k
+    from app.rag.evaluate import K, build_fixture_chunks, reciprocal_rank, recall_at_k
     from app.rag.faithfulness import vocabulary
-    from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
-    from app.rag.rewrite import standalone_question
     from app.rag.router import guarded_keyword_route
     from app.rag.router_eval import same
 
@@ -98,13 +107,29 @@ def main() -> int:
     keys = [(c.kind, c.title) for c in chunks]
     jobs = [c.title for c in chunks if c.kind == "job"]
     known = vocabulary(chunks)
-    embedder, info = _ollama_embedder()
-    chat = OllamaChat(os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL, temperature=0.0)
-    print(f"search: {'hybrid (' + info + ')' if embedder else 'bm25 (' + info + ')'}, top {K}\n")
+    recall = mrr = 0.0
+    right = wrong = missed = 0
+    for i, case in enumerate(FOLLOW_UPS):
+        search_text, route_text = texts(i, case)
+        found = [keys[j] for j, _ in retrieve(chunks, search_text, K, embedder).hits]
+        recall += recall_at_k(found, set(case.expected), K)
+        mrr += reciprocal_rank(found, set(case.expected), K)
+        call = guarded_keyword_route(route_text, jobs, known)
+        if same(call, case.tool):
+            right += 1
+        elif call is None:
+            missed += 1
+        else:
+            wrong += 1
+    n = len(FOLLOW_UPS)
+    return FollowUpScores(recall / n, mrr / n, right, wrong, missed)
 
-    def glued(case: FollowUp) -> str:
-        previous = next((t.text for t in reversed(case.history) if t.role == "user"), "")
-        return f"{case.question} {previous}".strip()
+
+def rewrite_all(chat) -> tuple[dict[int, str | None], float]:
+    """The model's rewrite of every follow-up, and the seconds per rewrite."""
+    import time
+
+    from app.rag.rewrite import standalone_question
 
     rewrites: dict[int, str | None] = {}
     seconds: list[float] = []
@@ -113,33 +138,30 @@ def main() -> int:
         rewrites[i] = standalone_question(case.question, list(case.history), chat)
         if case.history:
             seconds.append(time.time() - start)
+    return rewrites, sum(seconds) / max(len(seconds), 1)
 
+
+def main() -> int:
+    import os
+
+    from app.rag.evaluate import K, _ollama_embedder
+    from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
+
+    embedder, info = _ollama_embedder()
+    chat = OllamaChat(os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL, temperature=0.0)
+    print(f"search: {'hybrid (' + info + ')' if embedder else 'bm25 (' + info + ')'}, top {K}\n")
+    rewrites, seconds = rewrite_all(chat)
     strategies = {
-        # (search text, routing text) per case
         "alone": lambda i, c: (c.question, c.question),
         "glued (live before 73)": lambda i, c: (glued(c), c.question),
         "rewritten": lambda i, c: (rewrites[i] or glued(c), rewrites[i] or c.question),
     }
     for name, texts in strategies.items():
-        recall = mrr = 0.0
-        right = wrong = missed = 0
-        for i, case in enumerate(FOLLOW_UPS):
-            search_text, route_text = texts(i, case)
-            found = [keys[j] for j, _ in retrieve(chunks, search_text, K, embedder).hits]
-            recall += recall_at_k(found, set(case.expected), K)
-            mrr += reciprocal_rank(found, set(case.expected), K)
-            call = guarded_keyword_route(route_text, jobs, known)
-            if same(call, case.tool):
-                right += 1
-            elif call is None:
-                missed += 1
-            else:
-                wrong += 1
+        s = measure(texts, embedder)
         n = len(FOLLOW_UPS)
-        print(f"{name:<24} recall@{K} {recall / n:.3f}   MRR {mrr / n:.3f}   "
-              f"tool right {right}/{n}, wrong {wrong}, missed {missed}")
-
-    print(f"\nrewrite time: {sum(seconds) / max(len(seconds), 1):.2f}s per follow-up (model: {chat.name})")
+        print(f"{name:<24} recall@{K} {s.recall:.3f}   MRR {s.mrr:.3f}   "
+              f"tool right {s.tools_right}/{n}, wrong {s.tools_wrong}, missed {s.tools_missed}")
+    print(f"\nrewrite time: {seconds:.2f}s per follow-up (model: {chat.name})")
     print("\nrewrites:")
     for i, case in enumerate(FOLLOW_UPS):
         if case.history:

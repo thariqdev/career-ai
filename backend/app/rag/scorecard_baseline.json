@@ -1,0 +1,122 @@
+{
+  "retrieval: keyword recall@4": {
+    "value": 1.0,
+    "higher_is_better": true,
+    "tolerance": 0,
+    "full": false
+  },
+  "retrieval: keyword MRR": {
+    "value": 0.9111111111111111,
+    "higher_is_better": true,
+    "tolerance": 0,
+    "full": false
+  },
+  "faithfulness rules: wrong answers caught (of 8)": {
+    "value": 3,
+    "higher_is_better": true,
+    "tolerance": 0,
+    "full": false
+  },
+  "faithfulness rules: right answers rejected (of 8)": {
+    "value": 0,
+    "higher_is_better": false,
+    "tolerance": 0,
+    "full": false
+  },
+  "routing (dev): right": {
+    "value": 27,
+    "higher_is_better": true,
+    "tolerance": 0,
+    "full": false
+  },
+  "routing (held_out): right": {
+    "value": 8,
+    "higher_is_better": true,
+    "tolerance": 0,
+    "full": false
+  },
+  "routing (test): right": {
+    "value": 12,
+    "higher_is_better": true,
+    "tolerance": 0,
+    "full": false
+  },
+  "routing (all sets): wrong tools": {
+    "value": 0,
+    "higher_is_better": false,
+    "tolerance": 0,
+    "full": false
+  },
+  "follow-ups (glued, keyword): recall@4": {
+    "value": 0.9,
+    "higher_is_better": true,
+    "tolerance": 0,
+    "full": false
+  },
+  "follow-ups (glued, keyword): MRR": {
+    "value": 0.6625,
+    "higher_is_better": true,
+    "tolerance": 0,
+    "full": false
+  },
+  "retrieval: hybrid recall@4": {
+    "value": 1.0,
+    "higher_is_better": true,
+    "tolerance": 0.05,
+    "full": true
+  },
+  "retrieval: hybrid MRR": {
+    "value": 0.9333333333333333,
+    "higher_is_better": true,
+    "tolerance": 0.05,
+    "full": true
+  },
+  "follow-ups (rewritten, hybrid): recall@4": {
+    "value": 0.85,
+    "higher_is_better": true,
+    "tolerance": 0.05,
+    "full": true
+  },
+  "follow-ups (rewritten, hybrid): MRR": {
+    "value": 0.6333333333333334,
+    "higher_is_better": true,
+    "tolerance": 0.05,
+    "full": true
+  },
+  "follow-ups (rewritten): wrong tools": {
+    "value": 0,
+    "higher_is_better": false,
+    "tolerance": 0,
+    "full": true
+  },
+  "follow-ups (glued, hybrid): recall@4": {
+    "value": 0.9,
+    "higher_is_better": true,
+    "tolerance": 0.05,
+    "full": true
+  },
+  "follow-ups (glued, hybrid): MRR": {
+    "value": 0.6375,
+    "higher_is_better": true,
+    "tolerance": 0.05,
+    "full": true
+  },
+  "answers: completeness": {
+    "value": 1.0,
+    "higher_is_better": true,
+    "tolerance": 0.03,
+    "full": true
+  },
+  "answers: same facts every run (of 15)": {
+    "value": 15,
+    "higher_is_better": true,
+    "tolerance": 2,
+    "full": true
+  },
+  "answers: forbidden words": {
+    "value": 0,
+    "higher_is_better": false,
+    "tolerance": 0,
+    "full": true
+  }
+}

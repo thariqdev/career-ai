@@ -30,6 +30,36 @@ In Career AI, **PostgreSQL stays the source of truth**. RAG only *reads* it and 
 
 ---
 
+## The whole system on one page (stages 65–75)
+
+```
+question ─► (follow-up?) rewrite into a standalone question ─────────── stage 73
+         ─► route: an exact-list question? ── yes ─► read-only TOOL ─── stages 69–70
+         │                                            (SQL, exact)
+         ─► search the notes: BM25 + meaning, fused (RRF) ───────────── stages 65–66
+         ─► write: list? code writes it, the model adds one sentence ── stage 74
+         │         otherwise the model writes from the notes only ───── stage 67
+         ─► check: citations valid, rules on skills/"verified" ──────── stages 67–68
+         │         fail → show the notes themselves, with the reason
+         ─► stream to the chat (sources first), models kept warm ────── stages 67a, 72
+```
+
+| Decision | Chosen because (measured) |
+|---|---|
+| BM25 without stemming | stemming lowered MRR from 0.889 to 0.672 |
+| Hybrid search, `MIN_COSINE` 0.6 | MRR 0.933 vs 0.911 for BM25; at 0.5, 4 of 6 off-topic questions got notes |
+| Repeat the citation rule after the question | cited answers rose from 9/18 to 18/18 |
+| Rule checks live, AI judge only for measuring | rules: 3/8 caught with 0 false alarms; the best judge rejected 1 right answer in 8 |
+| Keyword routing behind guards (not the model) | 0 wrong tools on every set; the model picked 7 wrong tools |
+| Code writes exact lists | the model alone listed 4, 25 and 24 of 28 gaps; code lists all 28 every time |
+| Keep-alive and warm-up | first word in about 2 s instead of about 19 s |
+| Follow-up rewrite | won in stage 73, but **didn't reproduce** in stage 75 (see there) |
+
+**Check everything still works:** `.venv/Scripts/python -m app.rag.scorecard` (add `--full`
+for the real-model measures). Its quick part also runs with the test suite.
+
+---
+
 ## Stage 65: chunking + BM25 keyword search (no AI yet) ✅
 
 **What you can do:** open **Assistant** in the top menu and ask "What am I missing for my
@@ -867,3 +897,61 @@ It's an **omission**. **C is live** (`EXACT_LISTS = True`).
 - *When should an LLM not write the answer?* When the answer is structured data
   (lists, numbers, tables). Render it with code (this is also called **templated** or
   **structured output**), and let the model add the language around it.
+
+## Stage 75: one scorecard for everything, and a result that didn't reproduce ✅
+
+**Run it:** `.venv/Scripts/python -m app.rag.scorecard` (quick, no Ollama), `--full` (with
+the real models), and `--save` to record a new baseline after a deliberate improvement.
+
+Every stage measured *one* thing, but a change that helps one measure can quietly hurt
+another. So the scorecard runs **every** measure and compares it with a saved **baseline**
+(`app/rag/scorecard_baseline.json`). Anything worse than its tolerance is marked ❌, and
+the command exits with code 1. This is **regression testing for AI**: it's how teams
+change prompts or models without fear.
+
+- **Quick measures** (no model): keyword retrieval, the faithfulness rules on the labelled
+  answers, routing on all three question sets, and follow-up search with the glued
+  method. They're deterministic, so their tolerance is **0**, and
+  `tests/test_rag_scorecard.py` runs them **with every test run**. Weakening the skill guard
+  failed it at once: "routing (test): right: 11 (baseline 12)", "wrong tools: 1
+  (baseline 0)".
+- **Full measures** (real models): hybrid retrieval, follow-ups (rewritten and glued, side
+  by side), and answer completeness and consistency. Models vary, so these get a small
+  tolerance, and they're run by hand.
+
+### What the scorecard found: the follow-up rewrite didn't reproduce
+
+Stage 73 measured the rewrite once and switched it on (MRR 0.717 vs 0.637 for gluing).
+Re-measured in stage 75 (three runs, identical to each other):
+
+| Follow-ups, hybrid search | recall@4 | MRR | Right tool |
+|---|---|---|---|
+| Glued (simple) | **0.900** | **0.637** | 17/20 |
+| Rewritten (live) | 0.850 | 0.633 | **18/20** |
+
+**The same model, prompt and temperature 0 rewrote two questions differently:**
+
+- "Which job needs it?" → "**Backend Engineer**". The model answered instead of rewriting.
+- "What about AWS?" → "Do I have a job opening at **Globex**?" The wrong topic.
+
+**Lessons:**
+
+- **One run isn't evidence for a model-based component.** Measure several times, on
+  different days, before switching something on.
+- **Temperature 0 doesn't mean reproducible.** Small numeric differences when a model is
+  reloaded can change its outputs. (Ollama also takes a fixed `seed`.)
+- **A baseline turns a surprise into a visible ❌** instead of a silent change.
+
+The rewrite is still on for now; whether to keep it is an open decision (see
+PROJECT_PROGRESS).
+
+### Interview questions you can now answer
+
+- *How do you regression-test an LLM app?* Use a fixed evaluation set with saved baseline
+  scores and per-metric tolerances. Run the deterministic parts in CI on every change, and
+  the model-based parts on demand or nightly. Fail when any metric drops beyond its
+  tolerance.
+- *Why did a result fail to reproduce, and what do you do?* Model outputs vary (reloads,
+  hardware, versions), and a single measurement is noisy. Repeat the runs, report the
+  variance, pin seeds and versions where possible, and only trust gains larger than the
+  run-to-run noise.
