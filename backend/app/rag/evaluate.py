@@ -74,33 +74,39 @@ def reciprocal_rank(retrieved: list[tuple[str, str]], expected: set[tuple[str, s
 
 def build_fixture_chunks() -> list[Chunk]:
     """The fixed made-up career, chunked by the real chunker."""
-    # Imported here so `import app.rag.evaluate` stays light for the API.
-    from app.core.services import cv_adopt_service, user_service
-    from app.db.models import Education, Evidence, JobDescription, LearningProgress, Project, UserSkillEvidence, WorkExperience
-    from app.db.models.enums import EvidenceType, LearningStatus, VerificationStatus
     from database import Base
 
     engine = create_engine("sqlite://", poolclass=StaticPool)
     Base.metadata.create_all(engine)
     with Session(engine, autoflush=False) as db:
-        user = user_service.get_or_create_default_user(db)
-        cv_adopt_service.add_all_from_cv(db, user, CV)
-        claims = {c.skill.name: c for c in user.user_skills}
-        project = Project(user=user, name="FundsApp", description="A budgeting API built with Python and PostgreSQL.")
-        evidence = Evidence(user=user, evidence_type=EvidenceType.PROJECT, title="FundsApp repo", project=project)
-        db.add_all([project, evidence])
-        db.flush()
-        db.add(UserSkillEvidence(user_skill_id=claims["Python"].id, evidence_id=evidence.id))
-        claims["Python"].status = VerificationStatus.VERIFIED
-        db.add(LearningProgress(user=user, skill_id=claims["React"].skill_id, status=LearningStatus.STUDYING))
-        db.add(WorkExperience(user=user, company="Initech", role="Backend Intern", start_date=date(2023, 1, 1), end_date=date(2023, 6, 1)))
-        db.add(Education(user=user, institution="Chinmaya College", degree="BCA", start_date=date(2020, 6, 1), end_date=date(2023, 3, 1)))
-        db.add(JobDescription(user=user, title="Backend Engineer", company="Acme", raw_text="Backend role: Python, PostgreSQL, Kubernetes and AWS."))
-        db.add(JobDescription(user=user, title="Frontend Developer", company="Globex", raw_text="Frontend role: React, TypeScript and GraphQL."))
-        db.flush()
-        chunks = build_chunks(db, user)
+        chunks = build_chunks(db, fill_fixture(db))
     engine.dispose()
     return chunks
+
+
+def fill_fixture(db: Session):
+    """Write the fixed made-up career into `db` (an empty test database); returns the user."""
+    # Imported here so `import app.rag.evaluate` stays light for the API.
+    from app.core.services import cv_adopt_service, user_service
+    from app.db.models import Education, Evidence, JobDescription, LearningProgress, Project, UserSkillEvidence, WorkExperience
+    from app.db.models.enums import EvidenceType, LearningStatus, VerificationStatus
+
+    user = user_service.get_or_create_default_user(db)
+    cv_adopt_service.add_all_from_cv(db, user, CV)
+    claims = {c.skill.name: c for c in user.user_skills}
+    project = Project(user=user, name="FundsApp", description="A budgeting API built with Python and PostgreSQL.")
+    evidence = Evidence(user=user, evidence_type=EvidenceType.PROJECT, title="FundsApp repo", project=project)
+    db.add_all([project, evidence])
+    db.flush()
+    db.add(UserSkillEvidence(user_skill_id=claims["Python"].id, evidence_id=evidence.id))
+    claims["Python"].status = VerificationStatus.VERIFIED
+    db.add(LearningProgress(user=user, skill_id=claims["React"].skill_id, status=LearningStatus.STUDYING))
+    db.add(WorkExperience(user=user, company="Initech", role="Backend Intern", start_date=date(2023, 1, 1), end_date=date(2023, 6, 1)))
+    db.add(Education(user=user, institution="Chinmaya College", degree="BCA", start_date=date(2020, 6, 1), end_date=date(2023, 3, 1)))
+    db.add(JobDescription(user=user, title="Backend Engineer", company="Acme", raw_text="Backend role: Python, PostgreSQL, Kubernetes and AWS."))
+    db.add(JobDescription(user=user, title="Frontend Developer", company="Globex", raw_text="Frontend role: React, TypeScript and GraphQL."))
+    db.flush()
+    return user
 
 
 def evaluate(

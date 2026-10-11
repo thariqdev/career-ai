@@ -141,8 +141,9 @@ def test_chunks_cover_every_kind_of_data_and_only_this_user(client: TestClient, 
 def test_a_question_about_a_jobs_gaps_finds_them(client: TestClient, filled: None) -> None:
     body = _ask(client, "What am I missing for the Acme backend job? Kubernetes?")
 
-    kinds = [s["kind"] for s in body["sources"]]
-    assert kinds[0] in {"gap", "job"}
+    # Stage 69: a "what am I missing for <job>" question gets the exact list from a tool first.
+    first = body["sources"][0]
+    assert first["kind"] == "tool" and "Kubernetes" in first["text"]
     assert any(s["kind"] == "gap" and "Kubernetes" in s["text"] for s in body["sources"])
     assert body["answer"].startswith("Here's what I found in your data:")
     assert "[1]" in body["answer"]
@@ -268,3 +269,18 @@ def test_a_bad_question_fails_before_streaming(client: TestClient) -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"] == "Type a question first."
+
+
+def test_a_list_question_gets_the_exact_list_from_a_tool(client: TestClient, filled: None) -> None:
+    body = _ask(client, "Which skills have no proof yet?")
+
+    first = body["sources"][0]
+    assert first["kind"] == "tool" and first["title"] == "Skills with no proof yet"
+    assert "Claimed but no proof linked: Docker, FastAPI, Git, PostgreSQL." in first["text"]
+    assert len(body["sources"]) <= 4  # the tool's note plus search's best notes
+
+
+def test_other_questions_use_search_only(client: TestClient, filled: None) -> None:
+    body = _ask(client, "Tell me about Python")
+
+    assert all(s["kind"] != "tool" for s in body["sources"])

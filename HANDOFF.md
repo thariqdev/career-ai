@@ -2498,6 +2498,18 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 69 (tools and routing):**
+  - **`app/rag/tools.py`** (read-only):
+    - `ToolCall(name, job)` and `TOOLS` (name to description).
+    - `run(db, user, call) -> Chunk(kind="tool", id "tool:<name>")` supports `skills_without_proof` (claimed, unverified, no evidence, plus on the CV but unclaimed), `verified_skills`, `skills_on_cv` (link `/cv`), `job_gaps` (`match_service.job_match().missing`, one job via `matches_job`/`find_jobs` or all jobs, with "No job matches" handling) and `learn_first` (top 10 by job count, then name). An unknown name raises `ValueError`.
+  - **`app/rag/router.py`:**
+    - `keyword_route(question, job_labels)` checks ordered rules: no-proof, then verified list, then CV list (not "name"), then a named job plus missing/need/learn, then learn-first, then gaps plus jobs. It returns None for search.
+    - `OllamaRouter.route` POSTs `/api/chat` with `tools=tool_schemas()`, `stream False`, `temperature 0` and the job labels in the system prompt; it returns None on no or unknown tool, an HTTP error, or a non-200 status.
+  - **`assistant.prepare`:** `keyword_route` runs on the question alone, with job labels taken from the job chunk titles. With a tool, `sources = [tool chunk] + retrieve(top_k - 1)`.
+  - **`app/rag/router_eval.py`:** `DEV` (27) and `HELD_OUT` (16), plus `score` returning right, wrong tool and missed tool. Results: keyword 27/27 and 8/16 with 0 wrong tools; llama3.2 tool calling 24/27 and 12/16 with 3+4 wrong tools. The rules were fixed once, on dev only ("haven't I proven").
+  - `evaluate.fill_fixture(db)` was split out of `build_fixture_chunks`.
+  - **Frontend:** `ChatPanel` `KIND_LABEL` adds `tool: "Exact list"` and `profile`.
+  - **Tests:** `tests/test_rag_tools.py` (20), plus 2 API tests in `test_rag_assistant.py`. The Acme-gaps test now expects the tool note first. Mutation: disabling routing fails 2 tests.
 - **Stage 68 (faithfulness):**
   - **`app/rag/faithfulness.py`:**
     - `check(answer, notes, known_names) -> Verdict(problems)` runs two rules:

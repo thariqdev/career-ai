@@ -16,6 +16,8 @@ const KIND_LABEL: Record<string, string> = {
   project: "Project",
   work: "Work",
   education: "Education",
+  profile: "Profile",
+  tool: "Exact list", // computed from your data by a tool, not found by search
 };
 
 const RETRIEVAL_LABEL = { bm25: "keyword search", vector: "meaning search", hybrid: "keyword + meaning search" };

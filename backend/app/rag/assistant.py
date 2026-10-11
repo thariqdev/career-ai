@@ -35,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import EmptyQuestionError
 from app.db.models import User
+from app.rag import tools
 from app.rag.bm25 import BM25Index
 from app.rag.chunker import Chunk, build_chunks
 from app.rag.embeddings import (
@@ -59,6 +60,7 @@ from app.rag.generate import (
     clean_citations,
     fit_notes,
 )
+from app.rag.router import keyword_route
 
 TOP_K = 4
 # Stemming measured worse on our notes (app/rag/evaluate.py), so it's off.
@@ -197,6 +199,12 @@ def prepare(
 
     For a follow-up ("and how do I learn it?"), the previous question is added to the
     SEARCH text so "it" can find the right notes; the model still sees the real question.
+
+    Stage 69: a "list" question ("Which skills have no proof yet?") is routed to a TOOL
+    (app/rag/tools.py) that computes the exact answer; its result becomes note [1], and
+    search fills the rest. The keyword router is used because it never picked a wrong
+    tool when measured (app/rag/router_eval.py); a question it doesn't recognise simply
+    gets search, as before.
     """
     question = question.strip()
     if not question:
@@ -206,8 +214,13 @@ def prepare(
     search_text = f"{question} {previous[:MAX_QUESTION_CHARS]}".strip()
 
     chunks = build_chunks(db, user)
-    found = retrieve(chunks, search_text, top_k, embedder if embedder is not None else configured_embedder())
-    sources = [Source(n, chunks[i], score) for n, (i, score) in enumerate(found.hits, start=1)]
+    call = keyword_route(question, [c.title for c in chunks if c.kind == "job"])
+    tool_chunk = tools.run(db, user, call) if call is not None else None
+    found = retrieve(
+        chunks, search_text, top_k - 1 if tool_chunk else top_k, embedder if embedder is not None else configured_embedder()
+    )
+    picked = ([(tool_chunk, 1.0)] if tool_chunk else []) + [(chunks[i], score) for i, score in found.hits]
+    sources = [Source(n, chunk, score) for n, (chunk, score) in enumerate(picked, start=1)]
     return Prepared(question, sources, len(chunks), found.mode, found.note, vocabulary(chunks))
 
 

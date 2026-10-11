@@ -558,3 +558,77 @@ What this shows:
 - *Rules or a model for guardrails?* Rules for hard, cheap, testable invariants (no
   invented skills, no unproven "verified"); a model for fuzzy meaning, if it measures
   well enough to justify its cost.
+
+## Stage 69: tools, exact answers from the database (tool calling and routing) ✅
+
+**Run it:** `.venv/Scripts/python -m app.rag.router_eval` (from `backend/`).
+
+### Why search isn't enough
+
+Search hands the model the 4 notes that *look* most like the question. That's right for
+"Tell me about Python". It's wrong for **list and count questions**:
+
+- "Which skills have no proof yet?" needs **all 23** skills checked, not 4 similar-looking
+  notes. In stage 67 the model got the overview and misread *missing* skills as *unproven*.
+- "What am I missing for the Acme job?" needs that job's gaps, **all of them**.
+
+A **tool** is a plain function that computes the exact answer from PostgreSQL
+(`app/rag/tools.py`):
+
+| Tool | Answers |
+|---|---|
+| `skills_without_proof` | claimed with no proof, plus on your CV but not claimed |
+| `verified_skills` | each verified skill and its proof |
+| `skills_on_cv` | what your CV lists |
+| `job_gaps` | missing skills, for one named job or all jobs |
+| `learn_first` | missing skills, ranked by how many jobs need them |
+
+The tool's result becomes **note [1]**, and search fills the other three. So the model
+still only puts notes into words, and the stage-67 citation check and the stage-68
+faithfulness check apply unchanged. **Tools are read-only** (tested): the assistant can
+look things up, never change your data.
+
+### Routing: which tool, if any?
+
+Two **routers** were built and measured (`app/rag/router.py`):
+
+- **Keyword rules:** "no proof" or "unverified" goes to `skills_without_proof`; a job's name plus
+  "missing" or "need" goes to `job_gaps` for that job; and so on.
+- **Tool calling:** the model is shown each tool's name and description as a **JSON
+  schema** (this is how "function calling" works in every LLM API). It replies with a
+  tool and its arguments (`{"name": "job_gaps", "arguments": {"job": "Acme"}}`) or with no tool.
+
+Two question sets: **dev** (drafted while the rules were written) and **held-out**
+(different wording written afterwards, never used to change the rules: the honest test).
+
+| Router | Dev right | Held-out right | Wrong tool | Speed |
+|---|---|---|---|---|
+| **Keyword rules** | 27/27 | 8/16 | **0** | instant |
+| llama3.2 tool calling | 24/27 | 12/16 | 3 + 4 | 0.7 s per question |
+
+- **The model understands more phrasings** ("Am I ready for Acme?"), and the rules miss
+  half of the held-out set.
+- **But the model picks wrong tools.** It answered "Do I know Kubernetes?" with the list
+  of unproven skills, "Is TypeScript on my CV?" with the whole CV list, and "How do I add
+  evidence?" with the verified skills.
+- **The two mistakes cost different things.** A *missed* tool falls back to search,
+  which is how the assistant worked before. A *wrong* tool gives an exact-looking answer
+  to a different question, which is worse than no tool. So **the keyword rules are used**.
+- Note that the rules score 27/27 on dev but only 8/16 on held-out. **Scoring only on the
+  questions you tuned on flatters you.** That's why the held-out set exists.
+
+On your real data, "Which skills have no proof yet?" now lists all 23 of your CV skills
+exactly, and "What should I learn first?" ranks AWS first (needed by 2 jobs).
+
+### Interview questions you can now answer
+
+- *When is RAG the wrong tool?* For aggregation, counting, filtering and exact lists. Use
+  structured queries (SQL) for those, and keep retrieval for open-ended questions.
+  Combining both is often called **agentic RAG** or **hybrid structured + unstructured** retrieval.
+- *How does function calling work?* You send tool definitions (a name, a description, and a
+  JSON schema of arguments); the model replies with a structured call; **your code** runs
+  it and feeds the result back. The model never touches the database itself.
+- *How do you keep tools safe?* Read-only tools, a fixed allow-list (an unknown tool name
+  is ignored), validated arguments, and least privilege.
+- *Why a held-out set?* Rules or prompts tuned on the dev set overfit it. Only wording you
+  didn't tune on shows real-world accuracy.
