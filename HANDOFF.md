@@ -2498,6 +2498,14 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Job list match (after 70):**
+  - **Backend:** `GET /job-descriptions` returns `JobDescriptionListItemResponse` (the base fields plus `match_percent: int | None` and `match_total`), computed per job with `match_service.job_match`. The percentage is None unless `has_cv` is true and `total > 0`.
+  - **Frontend:**
+    - `lib/jobs.ts` provides `matchBand` (strong at 70 or more, partial at 40 or more, low below that, none for null), `MATCH_FILTERS` and `MATCH_CLASSES`.
+    - The jobs page has a second "Match" chip row that combines with the "Status" row; each row's counts are taken within the other's choice.
+    - Each row shows a badge ("62% match" or "Not compared", with a tooltip giving the reason) and **"N skills" (`match_total`) in place of "N requirements"**: saved requirement rows miss skills named in the posting itself (live example: 0 requirements but 8 skills).
+    - Type: `JobDescriptionListItem`.
+  - **Tests:** backend +2 (`test_job_descriptions_api.py`), frontend +1 (`jobs.test.mjs`).
 - **Stage 70 (cascade and guards):**
   - **`router.guard(question, call, known_names)`:**
     - "How do I…" questions return None.

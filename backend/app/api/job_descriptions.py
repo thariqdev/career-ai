@@ -32,6 +32,7 @@ from app.core.models import (
     InterviewPrepItemResponse,
     InterviewPrepResponse,
     JobDescriptionCreate,
+    JobDescriptionListItemResponse,
     JobDescriptionResponse,
     RejectedRequirementResponse,
     SkillResponse,
@@ -86,22 +87,34 @@ def create_job_description(
     return job_description
 
 
-@router.get("", response_model=list[JobDescriptionResponse])
+@router.get("", response_model=list[JobDescriptionListItemResponse])
 def list_job_descriptions(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[JobDescription]:
+) -> list[JobDescriptionListItemResponse]:
+    """Your jobs, newest first, each with its current match (so the list can show and
+    filter by it without one request per job)."""
     # Read-only: no commit needed beyond what get_current_user already did.
     # id.desc() breaks ties when created_at is identical (e.g. two inserts within the
     # same clock tick — SQLite's CURRENT_TIMESTAMP only has second resolution), so
     # "most recent first" stays deterministic even then.
-    return list(
-        db.scalars(
-            select(JobDescription)
-            .where(JobDescription.user_id == user.id)
-            .order_by(JobDescription.created_at.desc(), JobDescription.id.desc())
-        )
+    jobs = db.scalars(
+        select(JobDescription)
+        .where(JobDescription.user_id == user.id)
+        .order_by(JobDescription.created_at.desc(), JobDescription.id.desc())
     )
+    items = []
+    for job in jobs:
+        match = match_service.job_match(db, user, job)
+        comparable = match.has_cv and match.total > 0
+        items.append(
+            JobDescriptionListItemResponse(
+                **JobDescriptionResponse.model_validate(job).model_dump(),
+                match_percent=match.percent if comparable else None,
+                match_total=match.total,
+            )
+        )
+    return items
 
 
 # Declared before "/{job_description_id}" so "extractor" is never parsed as an id.

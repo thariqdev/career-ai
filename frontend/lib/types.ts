@@ -62,6 +62,14 @@ export type JobDescription = {
   requirements: JobRequirement[];
 };
 
+// Matches backend JobDescriptionListItemResponse: a job in GET /job-descriptions, with its
+// current match. match_percent is null when there's nothing to compare yet (no
+// requirements, or no CV and no claimed skill).
+export type JobDescriptionListItem = JobDescription & {
+  match_percent: number | null;
+  match_total: number;
+};
+
 // Matches backend LearningPathResponse.
 export type PathStep = {
   key: "start" | "finish" | "prove" | "verify";

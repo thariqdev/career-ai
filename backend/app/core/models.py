@@ -122,6 +122,17 @@ class JobDescriptionResponse(BaseModel):
     requirements: list[JobRequirementResponse]
 
 
+class JobDescriptionListItemResponse(JobDescriptionResponse):
+    """A job in the list, with how well you match it right now (see match_service).
+
+    match_percent is None when there's nothing to compare yet: no requirements, or no CV
+    and no claimed skill (the job's page then asks for the CV first).
+    """
+
+    match_percent: int | None
+    match_total: int  # skills the job asks for
+
+
 class RejectedRequirementResponse(BaseModel):
     """A proposal requirement_service dropped, and why."""
 

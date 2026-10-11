@@ -235,7 +235,7 @@ Job-description endpoints (all scoped to that one user automatically — no `use
 | Endpoint | Purpose |
 |----------|---------|
 | `POST /job-descriptions` | Paste a job description (`{"raw_text": "..."}`) |
-| `GET /job-descriptions` | List all of your job descriptions, most recently created first |
+| `GET /job-descriptions` | List all of your job descriptions, most recently created first, each with `match_percent` (null when there's nothing to compare yet: no requirements, or no CV) and `match_total` (skills the job asks for), from the same always-current match as `/job-descriptions/{id}/match` |
 | `GET /job-descriptions/{id}` | Read one back, with its requirements |
 | `DELETE /job-descriptions/{id}/requirements/{requirement_id}` | Remove one requirement with its own comparison results; the rest of the job is untouched. `404` if it isn't a requirement of that job. Its skill is remembered as "not for this job", so "Look for new skills" won't add it back |
 | `GET /job-descriptions/{id}/dismissed` | Skills removed from this job (re-reading the posting skips them) |

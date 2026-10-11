@@ -17,3 +17,28 @@ export function jobLabel(job: { title: string | null; raw_text?: string }, lengt
   if (!text) return "Untitled job";
   return text.length <= length ? text : `${text.slice(0, length).trimEnd()}…`;
 }
+
+export type MatchBand = "strong" | "partial" | "low" | "none";
+
+/** How well a job matches, in bands for the list's filter and badge. null = not compared yet. */
+export function matchBand(percent: number | null): MatchBand {
+  if (percent === null) return "none";
+  if (percent >= 70) return "strong";
+  if (percent >= 40) return "partial";
+  return "low";
+}
+
+export const MATCH_FILTERS: { key: MatchBand | "any"; label: string }[] = [
+  { key: "any", label: "Any match" },
+  { key: "strong", label: "Strong · 70%+" },
+  { key: "partial", label: "Partial · 40–69%" },
+  { key: "low", label: "Low · under 40%" },
+  { key: "none", label: "Not compared yet" },
+];
+
+export const MATCH_CLASSES: Record<MatchBand, string> = {
+  strong: "bg-verified-bg text-verified",
+  partial: "bg-partial-bg text-partial",
+  low: "bg-not-verified-bg text-not-verified",
+  none: "bg-ground text-ink-soft",
+};

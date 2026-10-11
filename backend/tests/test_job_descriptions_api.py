@@ -127,6 +127,36 @@ def test_list_is_scoped_to_the_current_user(client: TestClient, engine: Engine) 
     assert ids == [mine["id"]]
 
 
+def test_list_shows_each_jobs_match_once_there_is_something_to_compare(client: TestClient, monkeypatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    empty = _create_job(client, "Nothing to read here.")
+    job = _create_job(client, "Backend role: Python, Docker, Kubernetes and AWS.")
+    client.post("/cv/add-all", data={"text": "Python, Docker, Kubernetes and AWS."})  # saves the skills
+    client.post(f"/job-descriptions/{job['id']}/extract")
+
+    def listed() -> dict[int, dict]:
+        return {item["id"]: item for item in client.get("/job-descriptions").json()}
+
+    assert listed()[empty["id"]]["match_percent"] is None  # no requirements: nothing to compare
+    assert listed()[empty["id"]]["match_total"] == 0
+    assert listed()[job["id"]]["match_total"] == 4
+    assert listed()[job["id"]]["match_percent"] == 100  # every skill is on the CV
+    # The same number as the job's own page, which is always current.
+    assert listed()[job["id"]]["match_percent"] == client.get(f"/job-descriptions/{job['id']}/match").json()["percent"]
+
+
+def test_list_has_no_match_before_the_cv(client: TestClient, monkeypatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    job = _create_job(client, "Backend role: Python and SQL.")
+    client.post("/skills", json={"name": "Python"})  # a saved skill the reader can find, but no CV or claim
+    client.post(f"/job-descriptions/{job['id']}/extract")
+
+    item = client.get("/job-descriptions").json()[0]
+
+    assert item["match_total"] >= 1
+    assert item["match_percent"] is None  # nothing to compare with yet: the job page asks for the CV
+
+
 # --- create / read -------------------------------------------------------------
 
 

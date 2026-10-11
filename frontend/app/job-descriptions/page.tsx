@@ -8,7 +8,7 @@ import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
 import JobMatchSummary from "@/components/JobMatchSummary";
 import { shortDateTime } from "@/lib/interviews";
-import { jobLabel, sameText } from "@/lib/jobs";
+import { MATCH_CLASSES, MATCH_FILTERS, jobLabel, matchBand, sameText, type MatchBand } from "@/lib/jobs";
 import {
   ACTIVE_STATUSES,
   APPLICATION_CLASSES,
@@ -21,6 +21,7 @@ import type {
   ExtractionResponse,
   Gap,
   JobDescription,
+  JobDescriptionListItem,
   CVStatusResponse,
   JobMatch,
 } from "@/lib/types";
@@ -41,10 +42,19 @@ const FILTERS = {
 
 type FilterKey = keyof typeof FILTERS;
 
+/** The match badge: "72% match", or why there's no number yet. */
+function matchText(job: JobDescriptionListItem): { text: string; title: string } {
+  if (job.match_percent !== null) {
+    return { text: `${job.match_percent}% match`, title: `You have ${job.match_percent}% of the ${job.match_total} skills this job asks for.` };
+  }
+  if (job.match_total === 0) return { text: "Not compared", title: "No requirements found in this posting yet." };
+  return { text: "Not compared", title: "Add your CV first: there's nothing to compare this job with yet." };
+}
+
 // The user's job descriptions, newest first (GET /job-descriptions already orders
 // them). Refetched whenever reloadKey changes, i.e. after each new analysis.
 function PastJobs({ reloadKey, onDeleted }: { reloadKey: number; onDeleted: (jobId: number) => void }) {
-  const [jobs, setJobs] = useState<JobDescription[] | null>(null);
+  const [jobs, setJobs] = useState<JobDescriptionListItem[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<{ id: number; message: string } | null>(null);
@@ -75,10 +85,15 @@ function PastJobs({ reloadKey, onDeleted }: { reloadKey: number; onDeleted: (job
   // When the list was loaded: "upcoming" is judged against this, not read during render.
   const [loadedAt, setLoadedAt] = useState(0);
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [matchFilter, setMatchFilter] = useState<MatchBand | "any">("any");
+  const byMatch = (key: MatchBand | "any") => (j: JobDescriptionListItem) =>
+    key === "any" || matchBand(j.match_percent) === key;
+  // Both filters apply together; each row of chips counts within the other's choice.
+  const shown = jobs === null ? [] : jobs.filter(FILTERS[filter].match).filter(byMatch(matchFilter));
 
   useEffect(() => {
     let active = true;
-    apiGet<JobDescription[]>("/job-descriptions")
+    apiGet<JobDescriptionListItem[]>("/job-descriptions")
       .then((list) => {
         if (!active) return;
         setJobs(list);
@@ -92,26 +107,40 @@ function PastJobs({ reloadKey, onDeleted }: { reloadKey: number; onDeleted: (job
 
   return (
     <section className="mt-10">
-      <SectionHeading title="Pasted job descriptions" hint="Newest first. Open one to revisit or compare again." />
+      <SectionHeading
+        title="Pasted job descriptions"
+        hint="Newest first, with how well you match each one. Open one to revisit or compare again."
+      />
       <div className="mt-3">
         {failed && <p className="text-sm text-not-verified">Could not load your pasted job descriptions.</p>}
         {!failed && jobs === null && <p className="text-sm text-ink-soft">Loading…</p>}
         {jobs !== null && jobs.length === 0 && <EmptyState>None yet. Analyze one above.</EmptyState>}
         {jobs !== null && jobs.length > 0 && (
-          <div className="mb-3 flex flex-wrap gap-2">
-            {(Object.keys(FILTERS) as FilterKey[]).map((key) => (
-              <Pill key={key} selected={filter === key} onClick={() => setFilter(key)}>
-                {FILTERS[key].label} ({jobs.filter(FILTERS[key].match).length})
-              </Pill>
-            ))}
+          <div className="mb-3 flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by application status">
+              <span className="w-14 text-xs text-ink-soft">Status</span>
+              {(Object.keys(FILTERS) as FilterKey[]).map((key) => (
+                <Pill key={key} selected={filter === key} onClick={() => setFilter(key)}>
+                  {FILTERS[key].label} ({jobs.filter(byMatch(matchFilter)).filter(FILTERS[key].match).length})
+                </Pill>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by match">
+              <span className="w-14 text-xs text-ink-soft">Match</span>
+              {MATCH_FILTERS.map(({ key, label }) => (
+                <Pill key={key} selected={matchFilter === key} onClick={() => setMatchFilter(key)}>
+                  {label} ({jobs.filter(FILTERS[filter].match).filter(byMatch(key)).length})
+                </Pill>
+              ))}
+            </div>
           </div>
         )}
-        {jobs !== null && jobs.length > 0 && jobs.filter(FILTERS[filter].match).length === 0 && (
-          <EmptyState>No jobs with this status.</EmptyState>
+        {jobs !== null && jobs.length > 0 && shown.length === 0 && (
+          <EmptyState>No jobs match these filters.</EmptyState>
         )}
         {jobs !== null && jobs.length > 0 && (
           <ul className="flex flex-col gap-2">
-            {jobs.filter(FILTERS[filter].match).map((job) => (
+            {shown.map((job) => (
               <li
                 key={job.id}
                 className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface pr-3 text-sm shadow-sm transition-colors hover:border-accent"
@@ -128,6 +157,12 @@ function PastJobs({ reloadKey, onDeleted }: { reloadKey: number; onDeleted: (job
                     </span>
                   </span>
                   <span className="flex items-center gap-3 text-ink-soft">
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-medium ${MATCH_CLASSES[matchBand(job.match_percent)]}`}
+                      title={matchText(job).title}
+                    >
+                      {matchText(job).text}
+                    </span>
                     <span className={`rounded px-2 py-0.5 text-xs font-medium ${APPLICATION_CLASSES[job.application_status]}`}>
                       {APPLICATION_LABEL[job.application_status]}
                       {job.applied_on ? ` · ${job.applied_on}` : ""}
@@ -137,7 +172,9 @@ function PastJobs({ reloadKey, onDeleted }: { reloadKey: number; onDeleted: (job
                         📅 {shortDateTime(new Date(job.next_interview_at))}
                       </span>
                     )}
-                    {job.requirements.length} requirement{job.requirements.length === 1 ? "" : "s"}
+                    {/* The match's count (what the job's page says it asks for), not the saved
+                        requirement rows, which miss skills named in the posting itself. */}
+                    {job.match_total} skill{job.match_total === 1 ? "" : "s"}
                     <span className="text-accent">Open →</span>
                   </span>
                 </Link>
