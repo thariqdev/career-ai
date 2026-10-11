@@ -78,6 +78,43 @@ FOLLOW_UPS: list[FollowUp] = [
 ]
 
 
+# Stage 76: FOLLOW_UPS had been looked at twice (stages 73 and 75), so it's "used". FRESH
+# was written and committed BEFORE the seed and the stage-76 decision, and decides it.
+FRESH: list[FollowUp] = [
+    # --- follow-ups that need the previous turn ---------------------------------------------
+    _f(_h("Which skills are on my CV?", "Docker, Git, PostgreSQL, Python, React and TypeScript [1]."),
+       "Which of those are verified?", {("skill", "Python")}, T("verified_skills")),
+    _f(_h("Tell me about the Backend Engineer job", "It's at Acme; you match 50% of it [1]."),
+       "What does it need that I lack?", {("gap", "Kubernetes gap"), ("gap", "AWS gap")}, T("job_gaps", "Acme")),
+    _f(_h("Is React on my CV?", "Yes, React is on your CV [1]."),
+       "Am I learning it?", {("skill", "React")}),
+    _f(_h("What is FundsApp?", "A budgeting API built with Python and PostgreSQL [1]."),
+       "Is there proof linked to it?", {("evidence", "FundsApp repo")}),
+    _f(_h("Do I have a Kubernetes gap?", "Yes, for the Backend Engineer job at Acme [1]."),
+       "And GraphQL?", {("gap", "GraphQL gap")}),
+    _f(_h("Is Git on my CV?", "Yes, Git is on your CV [1]."),
+       "Is it proven?", {("skill", "Git")}),
+    _f(_h("Where did I work before?", "You were a Backend Intern at Initech [1]."),
+       "When was that?", {("work", "Backend Intern at Initech")}),
+    _f(_h("Tell me about my education", "You studied at Chinmaya College [1]."),
+       "What degree was it?", {("education", "Chinmaya College")}),
+    _f(_h("What am I missing for the Globex job?", "You're missing GraphQL [1]."),
+       "And for the Acme one?", {("gap", "Kubernetes gap"), ("gap", "AWS gap")}, T("job_gaps", "Acme")),
+    _f(_h("Which skills are verified?", "Python, proven by your FundsApp repo [1]."),
+       "What proves it?", {("evidence", "FundsApp repo")}),
+    _f(_h("Do I know TypeScript?", "TypeScript is on your CV but not proven [1]."),
+       "Which job needs it?", {("skill", "TypeScript")}),
+    # --- follow-ups that change topic -------------------------------------------------------
+    _f(_h("What am I missing for the Globex job?", "You're missing GraphQL [1]."),
+       "Is Docker verified?", {("skill", "Docker")}),
+    _f(_h("Tell me about my education", "You studied a BCA at Chinmaya College [1]."),
+       "Which skills have no proof yet?", {("overview", "Your overview")}, T("skills_without_proof")),
+    # --- no history ---------------------------------------------------------------------------
+    _f((), "Do I have a GraphQL gap?", {("gap", "GraphQL gap")}),
+    _f((), "What am I missing for the Acme job?", {("gap", "Kubernetes gap"), ("gap", "AWS gap")}, T("job_gaps", "Acme")),
+]
+
+
 # --- the measurement (written after FOLLOW_UPS was committed) -----------------------------
 
 
