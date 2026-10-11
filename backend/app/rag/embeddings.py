@@ -28,10 +28,13 @@ restarts); storing vectors in PostgreSQL with pgvector would be the production s
 
 import hashlib
 import math
+import threading
 from collections import OrderedDict
 from typing import Protocol
 
 import httpx
+
+from app.rag.warmup import keep_alive
 
 DEFAULT_MODEL = "nomic-embed-text"
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
@@ -75,7 +78,7 @@ class OllamaEmbedder:
             return []
         try:
             with httpx.Client(transport=self._transport, timeout=TIMEOUT_SECONDS) as client:
-                response = client.post(f"{self._base_url}/api/embed", json={"model": self.name, "input": texts})
+                response = client.post(f"{self._base_url}/api/embed", json={"model": self.name, "input": texts, "keep_alive": keep_alive()})
         except httpx.HTTPError as error:
             raise EmbeddingUnavailableError(f"Ollama isn't reachable ({type(error).__name__}).") from error
         if response.status_code != 200:
@@ -100,11 +103,18 @@ class CachedEmbedder:
         self._size = size
         self._cache: OrderedDict[str, list[float]] = OrderedDict()
         self.calls = 0  # texts actually sent to the model (for tests and curiosity)
+        # The startup warm-up fills the cache from a background thread while requests may
+        # read it, so one embed() at a time.
+        self._lock = threading.Lock()
 
     def _key(self, text: str) -> str:
         return hashlib.sha256(f"{self.name}\n{text}".encode()).hexdigest()
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        with self._lock:
+            return self._embed(texts)
+
+    def _embed(self, texts: list[str]) -> list[list[float]]:
         keys = [self._key(t) for t in texts]
         todo = [(k, t) for k, t in dict(zip(keys, texts)).items() if k not in self._cache]
         if todo:

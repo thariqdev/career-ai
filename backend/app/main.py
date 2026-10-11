@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,8 +22,18 @@ from app.api import (
 )
 from app.api.errors import domain_error_handler
 from app.core.exceptions import DomainError
+from app.rag.warmup import start_warm_up
 
-app = FastAPI(title="Career AI API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Load the assistant's local models in the background (app/rag/warmup.py), so the
+    # first question doesn't wait for them. Does nothing when the AI is switched off.
+    start_warm_up()
+    yield
+
+
+app = FastAPI(title="Career AI API", version="0.1.0", lifespan=lifespan)
 
 app.add_exception_handler(DomainError, domain_error_handler)
 

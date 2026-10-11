@@ -25,6 +25,8 @@ from typing import Literal, Protocol
 
 import httpx
 
+from app.rag.warmup import keep_alive
+
 DEFAULT_CHAT_MODEL = "llama3.2"
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
 # The first question loads the model into memory, which can take minutes on a CPU; after
@@ -134,7 +136,13 @@ class OllamaChat:
         self._transport = transport
 
     def stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
-        body = {"model": self.name, "messages": messages, "stream": True, "options": {"temperature": TEMPERATURE}}
+        body = {
+            "model": self.name,
+            "messages": messages,
+            "stream": True,
+            "options": {"temperature": TEMPERATURE},
+            "keep_alive": keep_alive(),
+        }
         try:
             with httpx.Client(transport=self._transport, timeout=TIMEOUT) as client:
                 with client.stream("POST", f"{self._base_url}/api/chat", json=body) as response:

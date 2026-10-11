@@ -129,7 +129,7 @@ def test_ollama_embedder_sends_one_batch_and_reads_the_vectors() -> None:
     vectors = _ollama(handler).embed(["a", "b"])
 
     assert vectors == [[0.1, 0.2], [0.3, 0.4]]
-    assert seen == [{"model": "nomic-embed-text", "input": ["a", "b"]}]
+    assert seen == [{"model": "nomic-embed-text", "input": ["a", "b"], "keep_alive": "30m"}]
 
 
 @pytest.mark.parametrize(

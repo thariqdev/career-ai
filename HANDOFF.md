@@ -2498,6 +2498,19 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 72 (speed):**
+  - **`app/rag/warmup.py`:**
+    - `keep_alive()` reads `OLLAMA_KEEP_ALIVE`, default `"30m"`. It's sent on `/api/chat` (OllamaChat) and `/api/embed` (OllamaEmbedder).
+    - `warm_up(base_url, chat, embed, transport)` sends `/api/generate` with no prompt for chat models and `/api/embed ["warm up"]` for embedders. It returns problems and never raises.
+    - `start_warm_up()` starts a daemon thread (None if both models are unset), then `index_notes_now()` uses its own SessionLocal and rolls back, calling `assistant.index_notes`. Exceptions are logged, never raised.
+  - **`app/main.py`:** the lifespan calls `start_warm_up()`.
+  - **`assistant`:** `note_texts(chunks)` is shared by `retrieve` and `index_notes` (which runs `VectorIndex` over the configured embedder).
+  - **`CachedEmbedder`:** has a `threading.Lock`.
+  - **`app/rag/latency_eval.py`:** unloads models (`keep_alive 0`), times cold vs warm TTFT and embedding, and reads expiry and memory from `/api/ps`.
+  - **Results:**
+    - Cold 10.0 s chat TTFT plus 8.7 s embedding; warm 0.39 s / 0.45 s; 3.2 GB.
+    - First question after startup: about 19 s before, 12.3 s with models warmed only, **1.7–3.2 s** with notes indexed too.
+  - **Tests:** `tests/test_rag_warmup.py` (10); conftest clears `OLLAMA_KEEP_ALIVE`; the embedder body test expects `keep_alive`. Mutations: no keep_alive fails 1 test; a different note text fails 1.
 - **Job list match (after 70):**
   - **Backend:** `GET /job-descriptions` returns `JobDescriptionListItemResponse` (the base fields plus `match_percent: int | None` and `match_total`), computed per job with `match_service.job_match`. The percentage is None unless `has_cv` is true and `total > 0`.
   - **Frontend:**

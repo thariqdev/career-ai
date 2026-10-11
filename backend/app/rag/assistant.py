@@ -143,6 +143,23 @@ def configured_chat() -> ChatModel | None:
     return OllamaChat(model, base_url=os.getenv("OLLAMA_BASE_URL") or DEFAULT_BASE_URL)
 
 
+def note_texts(chunks: list[Chunk]) -> list[str]:
+    """The text each note is searched by (and embedded as). One place, so the startup
+    warm-up fills the embedding cache with exactly what search will ask for."""
+    return [f"{c.title}. {c.text}" for c in chunks]
+
+
+def index_notes(db: Session, user: User) -> int:
+    """Embed all of the user's notes now (into the cached embedder), so the first question
+    doesn't wait for it. Returns how many notes; 0 when meaning search is off."""
+    embedder = configured_embedder()
+    if embedder is None:
+        return 0
+    chunks = build_chunks(db, user)
+    VectorIndex(note_texts(chunks), embedder)
+    return len(chunks)
+
+
 def retrieve(
     chunks: list[Chunk],
     question: str,
@@ -151,7 +168,7 @@ def retrieve(
     mode: Mode | None = None,
 ) -> Retrieval:
     """Find the best chunks. mode=None picks hybrid when an embedder is given, else bm25."""
-    texts = [f"{c.title}. {c.text}" for c in chunks]
+    texts = note_texts(chunks)
     mode = mode or ("hybrid" if embedder is not None else "bm25")
     bm25 = BM25Index(texts, stem=USE_STEMMING).search(question, CANDIDATES)
     if mode == "bm25" or embedder is None:

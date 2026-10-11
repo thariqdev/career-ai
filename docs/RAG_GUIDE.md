@@ -689,3 +689,67 @@ new, untouched test set.
   errors can be contained (here with guards). It wasn't enough here: 4 wrong tools out of 20.
 - *What is pre-registration?* Writing the success criterion before seeing the results, so
   the decision can't drift to fit the numbers.
+
+## Stage 72: speed, cold starts, keep-alive and time to first token ✅
+
+**Run it:** `.venv/Scripts/python -m app.rag.latency_eval` (from `backend/`).
+
+What makes a chat *feel* fast is **time to first token (TTFT)**: how long until the
+first word appears. Measure before changing anything.
+
+### What was slow, and why
+
+A local model must be **loaded into memory** before it answers, and Ollama **unloads an
+idle model after 5 minutes** (seen in `/api/ps`, which lists loaded models and when they
+expire). So a pause of more than 5 minutes meant a **cold start** again:
+
+| Model | Cold | Warm | Memory while loaded |
+|---|---|---|---|
+| Chat, first word (llama3.2) | 10.0 s | 0.39 s | 2.9 GB |
+| Embedding a question (nomic-embed-text) | 8.7 s | 0.45 s | 0.3 GB |
+
+The very first load after installing took 145 s, because Windows hadn't cached the model
+file yet.
+
+### Fixes, each measured
+
+1. **Keep-alive.** Every request now asks Ollama to keep the model loaded for
+   `OLLAMA_KEEP_ALIVE` (default **30 minutes**; `-1` = always). The trade-off is
+   **3.2 GB of memory** held while loaded.
+2. **Warm-up at startup** (`app/rag/warmup.py`). With the AI switched on, the backend
+   loads both models **in a background thread**, so startup isn't delayed (the server
+   answered in about 4 s), and nothing breaks if Ollama is off.
+3. **The measurement showed a second cold thing.** With the models warm, the first
+   question *still* took 12.3 s to its first word. Timing each step showed why: meaning
+   search embeds every note, and the cache starts empty. The first question spent
+   **8.7 s embedding 67 notes**; the second needed 0.85 s. So the warm-up also embeds your
+   notes (`index_notes`). Search and the warm-up share one function for the note text
+   (`note_texts`), because if they differed by even one character, the cache would quietly
+   miss. A test catches that (mutation-checked). The cache now has a lock, since the
+   warm-up thread and requests can use it at the same time.
+
+### Result: the first question after starting the backend
+
+| | First word appears |
+|---|---|
+| Before (both models cold) | ~19 s |
+| Models warmed only | 12.3 s |
+| **Models warmed and notes pre-embedded** | **1.7–3.2 s** |
+
+What's left is ordinary work: building notes from PostgreSQL (0.8 s), search (0.4 s), and
+the model reading the prompt and starting to write (0.5 s; it read 556 prompt tokens in
+0.03 s and wrote 52 tokens in 1.4 s).
+
+### Interview questions you can now answer
+
+- *What is TTFT, and why stream?* Time to first token. Users judge speed by when text
+  starts, so stream tokens and send the sources first.
+- *What is a cold start, and how do you avoid it?* Loading weights (or a container, or a
+  cache) on the first request. Keep it loaded (keep-alive, min instances), warm it at
+  startup in the background, and pre-compute what the first request needs (here, the note
+  embeddings).
+- *How do you find where latency goes?* Measure each stage separately: retrieval,
+  prompt processing (prefill), and generation (decode). Here, the slow part wasn't the
+  model at all, but embedding the notes.
+- *What's the cost of keeping models warm?* Memory (3.2 GB here) held while idle. It's a
+  time-for-memory trade-off you choose with the keep-alive setting.
