@@ -145,7 +145,7 @@ export default function InterviewPrepPage() {
       ) : (
         <ul className="mt-6 flex flex-col gap-3">
           {prep.items.map((item) => (
-            <PrepCard key={item.requirement_id} item={item} />
+            <PrepCard key={item.key} item={item} />
           ))}
         </ul>
       )}

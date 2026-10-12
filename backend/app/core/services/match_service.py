@@ -45,6 +45,9 @@ class JobMatch:
     on_cv: list[MatchItem] = field(default_factory=list)
     missing: list[MatchItem] = field(default_factory=list)
     has_cv: bool = False  # any skill marked on the CV, or any claim
+    # Every skill the job asks for, in posting order (the three groups above, unsorted).
+    # The interview prep sheet uses it, so both always list the same skills (stage 87).
+    asked: list[MatchItem] = field(default_factory=list)
 
     @property
     def total(self) -> int:
@@ -112,7 +115,7 @@ def job_match(db: Session, user: User, job: JobDescription) -> JobMatch:
     for suggestion in suggestion_service.suggest(db, job.raw_text):
         add(None, suggestion.name, True)
 
-    match = JobMatch(has_cv=bool(on_cv or claims))
+    match = JobMatch(has_cv=bool(on_cv or claims), asked=list(asked))
     for item in asked:
         if item.skill_id is not None and claims.get(item.skill_id) == VerificationStatus.VERIFIED:
             match.proven.append(item)

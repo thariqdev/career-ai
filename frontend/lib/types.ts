@@ -96,7 +96,8 @@ export type InterviewPrepStatus =
   | "unmapped";
 
 export type InterviewPrepItem = {
-  requirement_id: number;
+  key: string; // stable per item (stage 87)
+  requirement_id: number | null; // null: found in the posting text, not a saved requirement
   requirement_text: string;
   is_required: boolean;
   skill_id: number | null;

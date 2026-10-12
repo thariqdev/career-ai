@@ -123,14 +123,16 @@ def test_an_unproven_skill_never_says_claim_it(jobs_db) -> None:
     assert "Study: Docker interview questions" in card.answer
 
 
-def test_unlinked_requirements_and_jobs_without_requirements_make_no_cards(jobs_db) -> None:
+def test_unlinked_text_is_skipped_but_every_skill_the_posting_asks_for_gets_a_card(jobs_db) -> None:
     db, user, _ = jobs_db
 
     cards = job_cards(db, user)
+    asked = {c.question.split("they ask about ")[1].removesuffix(". What do you say?") for c in cards}
 
-    assert len(cards) == 2  # Python and Docker; the unlinked text is skipped; Globex has no requirements
-    assert not any("praise" in c.question + c.answer for c in cards)
-    assert len({c.id for c in cards}) == 2
+    assert not any("praise" in c.question + c.answer for c in cards)  # unlinked requirement text: skipped
+    # Stage 87: the posting's own skills count too, so Globex (no saved requirements) has cards.
+    assert {"React", "TypeScript", "GraphQL"} <= asked and {"Python", "Docker"} <= asked
+    assert len({c.id for c in cards}) == len(cards)
 
 
 def test_the_jobs_deck_endpoint_reads_the_users_jobs() -> None:

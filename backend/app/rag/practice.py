@@ -98,9 +98,9 @@ def job_cards(db, user) -> list[Card]:
     for job in jobs:
         label = job_label(job)
         for item in interview_prep(db, user, job):
-            if item.requirement.skill is None:
+            if item.skill_name is None:
                 continue
-            skill = item.requirement.skill.name
+            skill = item.skill_name
             lines = [item.guidance]
             if item.cv_warning:
                 lines.append(item.cv_warning)
@@ -109,5 +109,5 @@ def job_cards(db, user) -> list[Card]:
             if not item.evidence and item.study_links:
                 lines.append("Study: " + "; ".join(link.query for link in item.study_links))
             question = f"{label}: they ask about {skill}. What do you say?"
-            cards.append(Card(f"job{job.id}-req{item.requirement.id}", str(job.id), label, question, "\n".join(lines)))
+            cards.append(Card(f"job{job.id}-{item.key}", str(job.id), label, question, "\n".join(lines)))
     return cards

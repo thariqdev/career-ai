@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.services import learning_service
+from app.core.services import learning_service, match_service
+from app.core.services.skill_service import normalize_text
+from app.core.skill_catalog import CATALOG
 from app.db.models import (
     CVSkillPresence,
     Evidence,
@@ -81,7 +83,12 @@ class StudyLink:
 
 @dataclass(frozen=True)
 class PrepItem:
-    requirement: JobRequirement
+    key: str  # stable: "req-<id>" for a saved requirement, else "skill-<id>" / "text-<name>"
+    requirement_id: int | None  # None: the skill was found in the posting, not saved
+    text: str  # what to show: the saved requirement's own words, else the skill's name
+    is_required: bool
+    skill_id: int | None
+    skill_name: str | None  # None only for UNMAPPED text
     status: str  # a VerificationStatus value, NO_CLAIM, or UNMAPPED
     guidance: str
     cv_warning: str | None
@@ -101,16 +108,23 @@ def _source(evidence: Evidence) -> str | None:
 
 
 def interview_prep(db: Session, user: User, job_description: JobDescription) -> list[PrepItem]:
-    """One item per requirement: required ones first, then by requirement id."""
+    """One item per skill the job asks for, required first, then in posting order.
+
+    Since stage 87 the list of skills is the MATCH's (match_service.job_match): skills the
+    posting mentions, the saved requirements, and common catalogue skills it names. So the
+    sheet and the match percentage can never disagree, and a job with no saved requirements
+    still gets a sheet. Each item keeps its saved requirement's id and wording when there is one.
+    """
     db.flush()
 
+    match = match_service.job_match(db, user, job_description)
     requirements = list(
-        db.scalars(
-            select(JobRequirement)
-            .where(JobRequirement.job_description_id == job_description.id)
-            .order_by(JobRequirement.is_required.desc(), JobRequirement.id)
-        )
+        db.scalars(select(JobRequirement).where(JobRequirement.job_description_id == job_description.id))
     )
+    by_skill = {r.skill_id: r for r in requirements if r.skill_id is not None}
+    by_text = {normalize_text(r.requirement_text): r for r in requirements if r.skill_id is None}
+    catalogue = {s.name.lower(): s.name for s in CATALOG}
+
     claims = {c.skill_id: c for c in db.scalars(select(UserSkill).where(UserSkill.user_id == user.id))}
     on_cv = set(
         db.scalars(
@@ -130,38 +144,51 @@ def interview_prep(db: Session, user: User, job_description: JobDescription) -> 
         for claim_id, evidence in rows:
             evidence_by_claim.setdefault(claim_id, []).append(evidence)
 
+    def study(name: str) -> list[StudyLink]:
+        return [
+            StudyLink(mode=mode.value, query=learning_service.search_query(name, mode),
+                      url=learning_service.youtube_search_url(name, mode))
+            for mode in LearningMode
+        ]
+
     items = []
-    for requirement in requirements:
-        if requirement.skill is None:
-            items.append(
-                PrepItem(requirement, UNMAPPED, _GUIDANCE[UNMAPPED], None, [], [])
-            )
+    for asked in sorted(match.asked, key=lambda i: not i.is_required):  # stable: posting order
+        if asked.skill_id is None:
+            requirement = by_text.get(normalize_text(asked.name))
+            key = f"req-{requirement.id}" if requirement else f"text-{normalize_text(asked.name)}"
+            known = catalogue.get(asked.name.lower())
+            if known is None:  # requirement text matching no skill: nothing to say about it
+                items.append(PrepItem(key, requirement.id if requirement else None, asked.name, asked.is_required,
+                                      None, None, UNMAPPED, _GUIDANCE[UNMAPPED], None, [], []))
+                continue
+            # A common skill the posting names that you haven't saved: you haven't claimed it.
+            items.append(PrepItem(key, requirement.id if requirement else None, asked.name, asked.is_required,
+                                  None, known, NO_CLAIM, _GUIDANCE[NO_CLAIM].format(skill=known), None, [],
+                                  study(known)))
             continue
 
-        skill = requirement.skill
-        claim = claims.get(skill.id)
+        requirement = by_skill.get(asked.skill_id)
+        claim = claims.get(asked.skill_id)
         status = claim.status.value if claim is not None else NO_CLAIM
         linked = evidence_by_claim.get(claim.id, []) if claim is not None else []
         proven = claim is not None and claim.status in _PROVEN
         items.append(
             PrepItem(
-                requirement=requirement,
+                key=f"req-{requirement.id}" if requirement else f"skill-{asked.skill_id}",
+                requirement_id=requirement.id if requirement else None,
+                text=requirement.requirement_text if requirement else asked.name,
+                is_required=asked.is_required,
+                skill_id=asked.skill_id,
+                skill_name=asked.name,
                 status=status,
-                guidance=_GUIDANCE[status].format(skill=skill.name),
+                guidance=_GUIDANCE[status].format(skill=asked.name),
                 cv_warning=(
-                    _CV_WARNING.format(skill=skill.name)
-                    if skill.id in on_cv and not proven
+                    _CV_WARNING.format(skill=asked.name)
+                    if asked.skill_id in on_cv and not proven
                     else None
                 ),
                 evidence=[PrepEvidence(e.id, e.title, e.url, _source(e)) for e in linked],
-                study_links=[
-                    StudyLink(
-                        mode=mode.value,
-                        query=learning_service.search_query(skill.name, mode),
-                        url=learning_service.youtube_search_url(skill.name, mode),
-                    )
-                    for mode in LearningMode
-                ],
+                study_links=study(asked.name),
             )
         )
     return items

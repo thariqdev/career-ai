@@ -2498,6 +2498,16 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 87 (prep = match):**
+  - `JobMatch.asked` holds every asked item in posting order (additive; the match logic is unchanged).
+  - **`interview_prep`** now iterates `match.asked`, required first, keeping posting order.
+    - Saved requirements are linked by `skill_id` or by normalized text, and keep their id and wording.
+    - A `skill_id`-less catalogue name gets NO_CLAIM guidance plus study links; other text is UNMAPPED.
+    - The `PrepItem` fields are now `key` / `requirement_id` / `text` / `is_required` / `skill_id` / `skill_name` instead of a JobRequirement.
+  - **API:** `InterviewPrepItemResponse.key`; `requirement_id` is nullable. **Frontend:** the prep page keys by `item.key`.
+  - `practice.job_cards` uses `item.skill_name` and `item.key`.
+  - **Real data:** the prep sheet's skills equal the match's for all 4 jobs; job cards went from 12 to 49.
+  - **Tests:** +2 in `test_interview_prep_api.py` (sheet skills equal the match's; a job with no saved requirements still gets a sheet), and the stage-86 test was updated to the new rule. Mutation: "saved requirements only" fails 3 tests.
 - **Stage 86 (My jobs deck):**
   - **`practice.job_cards(db, user)`:** `interview_prep_service.interview_prep` per job. It skips requirements with no skill; the answer is guidance, then the CV warning, then "Talk about: evidence (source)" lines, or "Study: …" when there's no evidence. id `job{job}-req{req}`, stage = job id, stage_title = `chunker.job_label`.
   - **`GET /practice/job-questions`.**

@@ -161,7 +161,8 @@ class StudyLinkResponse(BaseModel):
 
 
 class InterviewPrepItemResponse(BaseModel):
-    requirement_id: int
+    key: str  # stable per item (stage 87: not every item is a saved requirement)
+    requirement_id: int | None  # None: found in the posting text, not a saved requirement
     requirement_text: str
     is_required: bool
     skill_id: int | None
@@ -176,13 +177,13 @@ class InterviewPrepItemResponse(BaseModel):
     def from_item(cls, item: Any) -> "InterviewPrepItemResponse":
         # interview_prep_service.PrepItem is a plain dataclass, built field-by-field
         # like GapResponse.from_gap.
-        requirement = item.requirement
         return cls(
-            requirement_id=requirement.id,
-            requirement_text=requirement.requirement_text,
-            is_required=requirement.is_required,
-            skill_id=requirement.skill_id,
-            skill_name=requirement.skill.name if requirement.skill is not None else None,
+            key=item.key,
+            requirement_id=item.requirement_id,
+            requirement_text=item.text,
+            is_required=item.is_required,
+            skill_id=item.skill_id,
+            skill_name=item.skill_name,
             status=item.status,
             guidance=item.guidance,
             cv_warning=item.cv_warning,

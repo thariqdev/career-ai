@@ -228,3 +228,31 @@ def test_missing_or_another_users_job_is_404(client: TestClient, engine: Engine)
         db.commit()
         other_id = other.id
     assert client.get(f"/job-descriptions/{other_id}/interview-prep").status_code == 404
+
+
+# --- stage 87: the sheet lists exactly the skills the match counts ---------------------------
+
+
+def test_the_sheet_and_the_match_list_the_same_skills(client: TestClient, engine: Engine) -> None:
+    _skills(engine, "Python", "Docker")
+    job_id = _job(client, "Backend role: Python, Docker and Kubernetes.", _req("Python", "Python"))
+
+    sheet = {i["skill_name"] for i in _prep(client, job_id)["items"] if i["skill_name"]}
+    match = client.get(f"/job-descriptions/{job_id}/match").json()
+    counted = {i["name"] for group in ("proven", "on_cv", "missing") for i in match[group]}
+
+    assert sheet == counted == {"Python", "Docker", "Kubernetes"}  # Docker and Kubernetes were never saved
+
+
+def test_a_job_with_no_saved_requirements_still_gets_a_sheet(client: TestClient, engine: Engine) -> None:
+    s = _skills(engine, "Python")
+    claim = _claim(client, s["Python"])
+    _status(client, claim, "not_verified")
+    job_id = client.post("/job-descriptions", json={"raw_text": "We use Python and Kubernetes daily."}).json()["id"]
+
+    items = {i["skill_name"]: i for i in _prep(client, job_id)["items"]}
+
+    assert items["Python"]["status"] == "not_verified" and items["Python"]["requirement_id"] is None
+    assert items["Kubernetes"]["status"] == "no_claim"  # a catalogue skill you haven't saved
+    assert items["Kubernetes"]["study_links"]
+    assert len({i["key"] for i in items.values()}) == 2
