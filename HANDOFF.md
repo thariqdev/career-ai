@@ -2498,6 +2498,14 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 82 (note cache):**
+  - **`app/rag/note_cache.py`:**
+    - `fingerprint(db)` flushes, then takes sha256 of the sanitizer switches plus every row (ordered by primary key) of every metadata table not in `IGNORED = {"assistant_feedback"}`.
+    - `notes(db, user)` returns the cached chunks when the fingerprint matches; otherwise it calls `build_chunks` and stores the result. Any fingerprint error means a rebuild.
+    - Also `clear()`, `stats`, and a lock.
+  - **`assistant.prepare` and `index_notes`** use `note_cache.notes`.
+  - **Measured on real data:** fingerprint 15 ms; prepare about 1,100 ms → about 360 ms (42 ms for a repeated question); cached notes identical to freshly built.
+  - **Tests:** `tests/test_rag_note_cache.py` (18): 14 kinds of edit each seen by the very next notes (with `expire_all`, like a new request) and equal to uncached; a hit returns the same list; ratings don't rebuild; a failing fingerprint rebuilds; switches are in the key. Mutation: ignoring `learning_progress` fails its test.
 - **Stage 81 (job numbers):** `lib/jobs.jobNumber(job)` returns "#id" (tested). The jobs list shows it before each name; the job page shows "Job #id ·" in its subtitle. Both match the assistant's "Untitled job #id (pasted …)" names. Frontend only.
 - **Stage 80 (allow-list):**
   - **`sanitize`:**

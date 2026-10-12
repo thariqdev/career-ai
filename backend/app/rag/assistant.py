@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import EmptyQuestionError
 from app.db.models import Skill, User
-from app.rag import tools
+from app.rag import note_cache, tools
 from app.rag.actions import Action, detect_action, reply_for
 from app.rag.bm25 import BM25Index
 from app.rag.chunker import Chunk, build_chunks
@@ -192,7 +192,7 @@ def index_notes(db: Session, user: User) -> int:
     embedder = configured_embedder()
     if embedder is None:
         return 0
-    chunks = build_chunks(db, user)
+    chunks = note_cache.notes(db, user)
     VectorIndex(note_texts(chunks), embedder)
     return len(chunks)
 
@@ -280,7 +280,7 @@ def prepare(
     if action is not None:
         return Prepared(question, [], 0, "bm25", None, (), action)
 
-    chunks = build_chunks(db, user)
+    chunks = note_cache.notes(db, user)  # cached until any data changes (stage 82)
     known_names = vocabulary(chunks)
     call = guarded_keyword_route(rewritten or question, [c.title for c in chunks if c.kind == "job"], known_names)
     tool_chunk = tools.run(db, user, call) if call is not None else None

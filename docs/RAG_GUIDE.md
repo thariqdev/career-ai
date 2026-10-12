@@ -54,6 +54,7 @@ question ─► a change asked for? propose it, YOU confirm (rules only) ── 
 | Keyword routing behind guards (not the model) | 0 wrong tools on every set; the model picked 7 wrong tools |
 | Code writes exact lists | the model alone listed 4, 25 and 24 of 28 gaps; code lists all 28 every time |
 | Keep-alive and warm-up | first word in about 2 s instead of about 19 s |
+| Cached notes, strict fingerprint | prepare ~1,100 ms → ~360 ms; 14 staleness tests, one per kind of data |
 | Actions: rules propose, a human confirms | 22/22 on the frozen set, 0 wrong actions; asking never writes |
 | Sanitize job text (spotlighting off) | attacks 21/32 → 0/32, held-out 12/24 → 8/24; spotlighting had no effect |
 | Allow-listed gap names, neutral job names | held-out 8/24 → 3/24, fresh 12/24 → 4/24 (the rest: real skill names in postings) |
@@ -1195,3 +1196,45 @@ known to be safe*.
   block-lists only for free text you must show, and expect them to leak.
 - *What's "failing closed"?* When unsure, show or do less. Here, an unmatched requirement
   is counted, not quoted.
+
+## Stage 82: caching the notes, and cache invalidation done safely ✅
+
+Every question rebuilt **all** the notes from PostgreSQL: about **700 ms** of the 1.1 s
+spent preparing a question, even though usually nothing had changed. So the notes are
+now cached (`app/rag/note_cache.py`).
+
+**The hard part is invalidation:** a stale cache would answer from old data, for example
+saying you're missing a skill right after you proved it. The design picks *strict* over
+*clever*:
+
+- **The fingerprint hashes every row of every table**, not row counts or "last updated"
+  times. Most tables have no `updated_at`, so renaming a skill would otherwise go
+  unnoticed. At this data size it takes **15 ms**.
+- **Tables are skipped only by an explicit ignore list** (just the 👍/👎 table). A table
+  added later is included automatically: forgetting one costs a rebuild, never a stale
+  answer. **Fail safe, not fail stale.**
+- The sanitizer's switches are part of the key, and if the fingerprint ever fails, the
+  notes are rebuilt.
+
+**Tested the right way round: staleness first.** 14 tests each edit one kind of data the
+notes read (rename a skill, add a nickname, change a claim, link proof, CV mark,
+learning progress, application status, a requirement, a dismissal, evidence, project,
+work, education, your name). The very next notes must show the change and equal freshly
+built ones. Mutation check: wrongly ignoring the learning-progress table failed exactly
+that test.
+
+| Your real data | Before | After |
+|---|---|---|
+| Preparing a question | ~1,100 ms | **~360 ms** (the rest is embedding the new question) |
+| The same question again | | 42 ms |
+
+### Interview questions you can now answer
+
+- *How do you cache a RAG index without serving stale data?* Key the cache on a
+  fingerprint of the source data (a hash or version), not on time. Prefer a strict key
+  that over-invalidates, make new data sources included by default, fall back to
+  rebuilding on any error, and test staleness for every kind of write.
+- *Hash the data or keep version counters?* Counters (bumped on every write) scale
+  better, but every write path must remember to bump them, and one forgotten path means
+  stale results. Hashing everything is slower to compute but can't be forgotten; it's
+  right while the data is small. Measure it, here 15 ms.
