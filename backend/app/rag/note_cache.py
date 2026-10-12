@@ -26,13 +26,15 @@ from sqlalchemy.orm import Session
 
 from app.db.models import User
 from app.rag import sanitize
-from app.rag.chunker import Chunk, build_chunks
+from app.rag.chunker import Chunk, build_chunks, job_matches
 from database import Base
 
 # Tables the notes never read and that change often: excluded so they don't force rebuilds.
 IGNORED = frozenset({"assistant_feedback"})
 
-_cache: dict[int, tuple[str, list[Chunk]]] = {}
+# user id -> (fingerprint, notes, job matches). The matches are shared with the exact-list
+# tools (stage 83), so a list and the notes always come from the same computation.
+_cache: dict[int, tuple[str, list[Chunk], dict]] = {}
 _lock = threading.Lock()
 stats = {"hits": 0, "rebuilds": 0}  # for tests and curiosity
 
@@ -50,22 +52,34 @@ def fingerprint(db: Session) -> str:
     return digest.hexdigest()
 
 
-def notes(db: Session, user: User) -> list[Chunk]:
-    """The user's notes: from the cache if the data is unchanged, else freshly built."""
+def _entry(db: Session, user: User) -> tuple[list[Chunk], dict]:
+    """(notes, job matches): cached while the data's fingerprint is unchanged."""
     try:
         key = fingerprint(db)
-    except Exception:  # never risk stale notes: rebuild
-        return build_chunks(db, user)
+    except Exception:  # never risk stale data: compute afresh, cache nothing
+        matches = job_matches(db, user)
+        return build_chunks(db, user, matches), matches
     with _lock:
         hit = _cache.get(user.id)
         if hit is not None and hit[0] == key:
             stats["hits"] += 1
-            return hit[1]
-    chunks = build_chunks(db, user)
+            return hit[1], hit[2]
+    matches = job_matches(db, user)
+    chunks = build_chunks(db, user, matches)
     with _lock:
-        _cache[user.id] = (key, chunks)
+        _cache[user.id] = (key, chunks, matches)
         stats["rebuilds"] += 1
-    return chunks
+    return chunks, matches
+
+
+def notes(db: Session, user: User) -> list[Chunk]:
+    """The user's notes: from the cache if the data is unchanged, else freshly built."""
+    return _entry(db, user)[0]
+
+
+def matches(db: Session, user: User) -> dict:
+    """job id -> JobMatch, from the same cache entry as the notes (stage 83)."""
+    return _entry(db, user)[1]
 
 
 def clear() -> None:

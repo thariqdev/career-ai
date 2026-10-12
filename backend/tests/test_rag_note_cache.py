@@ -192,3 +192,78 @@ def test_the_sanitizer_switches_are_part_of_the_key(db, monkeypatch: pytest.Monk
     monkeypatch.setattr(sanitize, "NEUTRAL_LABELS", not sanitize.NEUTRAL_LABELS)
 
     assert note_cache.fingerprint(session) != key
+
+
+# --- stage 83: the exact lists share the cached matches, and must never be stale ------------
+
+
+def _lists(db, user) -> str:
+    from app.rag import tools
+    from app.rag.tools import ToolCall
+
+    return "\n".join(tools.run(db, user, ToolCall(name)).text for name in ("job_gaps", "learn_first"))
+
+
+def _lists_uncached(db, user, monkeypatch) -> str:
+    from app.rag.chunker import job_matches
+
+    monkeypatch.setattr(note_cache, "matches", job_matches)  # bypass the cache entirely
+    try:
+        return _lists(db, user)
+    finally:
+        monkeypatch.undo()
+
+
+def require_new_skill(db, user):
+    rust = Skill(name="Rust")
+    db.add(rust)
+    db.flush()
+    db.add(JobRequirement(job_description_id=_job(db, "Backend Engineer").id, requirement_text="Rust",
+                          skill_id=rust.id, is_required=True))
+    return "Rust", True  # now missing for the Acme job
+
+
+def gain_kubernetes(db, user):
+    kubernetes = Skill(name="Kubernetes")
+    db.add(kubernetes)
+    db.flush()
+    db.add(CVSkillPresence(user=user, skill_id=kubernetes.id, present=True))
+    return "Kubernetes", False  # on the CV now: no longer missing
+
+
+def dismiss_graphql(db, user):
+    graphql = Skill(name="GraphQL")
+    db.add(graphql)
+    db.flush()
+    db.add(DismissedRequirement(job_description_id=_job(db, "Frontend Developer").id, skill_id=graphql.id))
+    return "GraphQL", False  # removed from the Globex job: no longer missing
+
+
+@pytest.mark.parametrize("change", [require_new_skill, gain_kubernetes, dismiss_graphql],
+                         ids=["new requirement", "skill gained", "requirement dismissed"])
+def test_exact_lists_see_every_match_change(db, change, monkeypatch: pytest.MonkeyPatch) -> None:
+    session, user = db
+    before = _lists(session, user)
+
+    skill, missing_now = change(session, user)
+    session.flush()
+    session.expire_all()
+    after = _lists(session, user)
+
+    assert (skill in after) is missing_now and (skill in before) is not missing_now
+    assert after == _lists_uncached(session, user, monkeypatch)
+
+
+def test_lists_and_notes_come_from_one_computation(db, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.rag import chunker
+
+    session, user = db
+    calls = []
+    real = chunker.job_matches
+    monkeypatch.setattr(note_cache, "job_matches", lambda *a: calls.append(1) or real(*a))
+
+    note_cache.notes(session, user)
+    _lists(session, user)
+    _lists(session, user)
+
+    assert calls == [1]  # computed once, reused by the notes and both list tools

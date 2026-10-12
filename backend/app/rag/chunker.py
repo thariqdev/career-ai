@@ -80,7 +80,15 @@ def _join(names: list[str]) -> str:
     return ", ".join(names) if names else "none"
 
 
-def build_chunks(db: Session, user: User) -> list[Chunk]:
+def job_matches(db: Session, user: User) -> dict[int, "match_service.JobMatch"]:
+    """Every job's current match (the slow part of building notes: ~0.7 s on real data)."""
+    jobs = db.scalars(select(JobDescription).where(JobDescription.user_id == user.id))
+    return {job.id: match_service.job_match(db, user, job) for job in jobs}
+
+
+def build_chunks(db: Session, user: User, matches: dict | None = None) -> list[Chunk]:
+    """The user's notes. `matches` (job id -> JobMatch) may be passed in when already
+    computed (the note cache shares them with the exact-list tools, stage 83)."""
     skills = list(db.scalars(select(Skill).order_by(Skill.name)))
     known = known_skill_names(db)
     claims = {c.skill_id: c for c in db.scalars(select(UserSkill).where(UserSkill.user_id == user.id))}
@@ -98,7 +106,7 @@ def build_chunks(db: Session, user: User) -> list[Chunk]:
     jobs = list(
         db.scalars(select(JobDescription).where(JobDescription.user_id == user.id).order_by(JobDescription.id))
     )
-    matches = {job.id: match_service.job_match(db, user, job) for job in jobs}
+    matches = matches if matches is not None else job_matches(db, user)
 
     # skill_id -> ["Backend at Acme (missing)", ...] for "which jobs need X?"
     needed_by: dict[int, list[str]] = {}

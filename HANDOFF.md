@@ -2498,6 +2498,12 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 83 (memoized matches):**
+  - `chunker.job_matches(db, user)` maps job id to JobMatch; `build_chunks(db, user, matches=None)`.
+  - `note_cache._entry` caches (key, notes, matches); `note_cache.matches(db, user)`. On a fingerprint error it computes afresh and caches nothing.
+  - `tools._job_gaps` and `_learn_first` use `note_cache.matches` (`match_service` is no longer imported there).
+  - **Real data:** the tools went from about 1,480 ms to about 50 ms; list-question prepare from about 2,150 ms to about 680 ms.
+  - **Tests:** `test_rag_note_cache.py` +4 (a new requirement, a gained skill and a dismissal are each seen by the lists, which equal uncached ones; one computation is shared by the notes and both tools). Mutation: ignoring the fingerprint fails 17 tests.
 - **Stage 82 (note cache):**
   - **`app/rag/note_cache.py`:**
     - `fingerprint(db)` flushes, then takes sha256 of the sanitizer switches plus every row (ordered by primary key) of every metadata table not in `IGNORED = {"assistant_feedback"}`.

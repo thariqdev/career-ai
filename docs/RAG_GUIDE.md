@@ -55,6 +55,7 @@ question ─► a change asked for? propose it, YOU confirm (rules only) ── 
 | Code writes exact lists | the model alone listed 4, 25 and 24 of 28 gaps; code lists all 28 every time |
 | Keep-alive and warm-up | first word in about 2 s instead of about 19 s |
 | Cached notes, strict fingerprint | prepare ~1,100 ms → ~360 ms; 14 staleness tests, one per kind of data |
+| Cached job matches shared with the tools | list questions ~2,150 ms → ~680 ms; ignoring the fingerprint fails 17 tests |
 | Actions: rules propose, a human confirms | 22/22 on the frozen set, 0 wrong actions; asking never writes |
 | Sanitize job text (spotlighting off) | attacks 21/32 → 0/32, held-out 12/24 → 8/24; spotlighting had no effect |
 | Allow-listed gap names, neutral job names | held-out 8/24 → 3/24, fresh 12/24 → 4/24 (the rest: real skill names in postings) |
@@ -1238,3 +1239,22 @@ that test.
   better, but every write path must remember to bump them, and one forgotten path means
   stale results. Hashing everything is slower to compute but can't be forgotten; it's
   right while the data is small. Measure it, here 15 ms.
+
+## Stage 83: memoizing the job matches for the exact lists ✅
+
+Exact-list questions ("What should I learn first?") still took about 2 s: their tools
+recomputed every job's match (about 1.5 s) although the note cache already held it.
+Now the cache stores **the notes and the job matches together**, computed once per data
+fingerprint (**memoization**), and the `job_gaps` and `learn_first` tools read the
+cached matches. A bonus: a list and the notes can never disagree, because they come from
+one computation.
+
+| Your real data | Before | After |
+|---|---|---|
+| `job_gaps` / `learn_first` tool | ~1,480 ms | **~50 ms** |
+| Preparing an exact-list question | ~2,150 ms | **~680 ms** |
+
+**Staleness tests:** a new requirement adds a gap; gaining a skill on the CV removes one; a
+dismissal removes one. Each list must equal one computed with no cache at all.
+**Mutation:** making the cache ignore its fingerprint (the classic stale-cache bug) fails
+**17** tests.
