@@ -48,3 +48,40 @@ def safe(text: str) -> str:
     kept = [p.strip() for p in _PIECES.split(without_groups) if p.strip() and not looks_like_instruction(p)]
     cleaned = " ".join(" ".join(kept).split()).strip(" .;:-")
     return cleaned or REMOVED
+
+
+# --- stage 80: an ALLOW-list for gap names -----------------------------------------------
+#
+# The block-list above only catches wording someone predicted (2 of 6 unseen attacks got
+# through in stage 79). An allow-list flips it: a gap name is shown only if it's a KNOWN
+# skill (the catalogue, or one of the user's saved skills). A requirement the reader
+# couldn't match is never quoted; it's only counted ("1 requirement that isn't a known
+# skill"). Decided by app/rag/injection_eval.py.
+
+# Measured (injection_eval.py --stage80): held-out 8/24 -> 4/24, fresh 12/24 -> 8/24; it
+# hid none of the user's 32 real gaps (all known skills).
+ALLOW_LIST = True
+# Name an untitled job by number and date, never by its posting text (the user's choice).
+# Measured: fresh 8/24 -> 4/24; the rest were real skill names in the posting, not injections.
+NEUTRAL_LABELS = True
+
+
+def split_known(names: list[str], known: set[str]) -> tuple[list[str], int]:
+    """(the names that are known skills, how many weren't). Everything is known when off."""
+    if not ALLOW_LIST:
+        return [safe(n) for n in names], 0
+    kept = [n for n in names if n.lower() in known]
+    return kept, len(names) - len(kept)
+
+
+def unmatched_phrase(count: int) -> str:
+    if count == 0:
+        return ""
+    return f"{count} requirement{'s' if count != 1 else ''} that {'aren' if count != 1 else 'isn'}'t a known skill (see the job's page)"
+
+
+def describe(names: list[str], known: set[str]) -> str:
+    """Names for a list in a note: the known ones, then a count of the rest. "none" if empty."""
+    kept, unknown = split_known(names, known)
+    parts = kept + ([unmatched_phrase(unknown)] if unknown else [])
+    return ", ".join(parts) if parts else "none"

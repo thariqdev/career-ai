@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 from app.core.services import match_service
 from app.db.models import CVSkillPresence, JobDescription, Skill, User, UserSkill
 from app.db.models.enums import VerificationStatus
-from app.rag.chunker import Chunk, job_label
-from app.rag.sanitize import safe
+from app.rag.chunker import Chunk, job_label, known_skill_names
+from app.rag.sanitize import describe, split_known
 
 
 @dataclass(frozen=True)
@@ -114,8 +114,9 @@ def _job_gaps(db: Session, user: User, job: str | None) -> Chunk:
     if job and not chosen:
         lines = (f"No job matches \"{job}\". Your jobs: {_join([job_label(j) for j in jobs])}.",)
         return _note("job_gaps", "Missing skills per job", lines, "/job-descriptions")
+    known = known_skill_names(db)
     lines = tuple(
-        f"Missing for {job_label(j)}: {_join([safe(item.name) for item in match_service.job_match(db, user, j).missing])}."
+        f"Missing for {job_label(j)}: {describe([item.name for item in match_service.job_match(db, user, j).missing], known)}."
         for j in chosen
     ) or ("No job descriptions pasted yet.",)
     link = f"/job-descriptions/{chosen[0].id}" if len(chosen) == 1 else "/job-descriptions"
@@ -125,9 +126,10 @@ def _job_gaps(db: Session, user: User, job: str | None) -> Chunk:
 
 def _learn_first(db: Session, user: User) -> Chunk:
     needed: dict[str, list[str]] = {}
+    known = known_skill_names(db)
     for j in _jobs(db, user):
-        for item in match_service.job_match(db, user, j).missing:
-            needed.setdefault(safe(item.name), []).append(job_label(j))
+        for name in split_known([item.name for item in match_service.job_match(db, user, j).missing], known)[0]:
+            needed.setdefault(name, []).append(job_label(j))
     ranked = sorted(needed, key=lambda name: (-len(needed[name]), name.lower()))[:10]
     parts = [f"{i}. {name} (needed by {len(needed[name])} job{'s' if len(needed[name]) != 1 else ''})"
              for i, name in enumerate(ranked, start=1)]

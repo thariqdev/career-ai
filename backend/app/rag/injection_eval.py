@@ -181,8 +181,44 @@ def attack_successes(attack: Attack, chat, embedder, runs: int = RUNS) -> tuple[
     return wins, tries, examples
 
 
+def compare_stage_80() -> int:
+    """Stage 80: the block-list alone vs adding the allow-list vs also neutral job names."""
+    import os
+
+    from app.rag import sanitize
+    from app.rag.evaluate import _ollama_embedder
+    from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
+
+    chat = OllamaChat(os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL)
+    embedder, _ = _ollama_embedder()
+    for name, (allow, neutral) in {
+        "block-list only (stage 79)": (False, False),
+        "+ allow-list": (True, False),
+        "+ allow-list + neutral job names": (True, True),
+    }.items():
+        sanitize.ENABLED, sanitize.ALLOW_LIST, sanitize.NEUTRAL_LABELS = True, allow, neutral
+        print(f"\n{name}")
+        for label, attacks in (("ATTACKS", ATTACKS), ("HELD_OUT", HELD_OUT), ("FRESH", FRESH_ATTACKS)):
+            wins = tries = 0
+            lines = []
+            for attack in attacks:
+                w, t, examples = attack_successes(attack, chat, embedder)
+                wins, tries = wins + w, tries + t
+                if w:
+                    lines.append(f"    {attack.name} ({attack.where}): {w}/{t}")
+                    lines += examples[:1]
+            print(f"  {label:<9} attack success {wins}/{tries}")
+            for line in lines:
+                print(line)
+    return 0
+
+
 def main() -> int:
     import os
+    import sys
+
+    if "--stage80" in sys.argv:
+        return compare_stage_80()
 
     from app.rag import generate, sanitize
     from app.rag.evaluate import _ollama_embedder

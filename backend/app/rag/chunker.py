@@ -23,7 +23,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.services import match_service
-from app.rag.sanitize import safe
+from app.core.skill_catalog import CATALOG
+from app.rag import sanitize
+from app.rag.sanitize import describe, safe, split_known
 from app.db.models import (
     CVSkillPresence,
     Education,
@@ -49,10 +51,23 @@ class Chunk:
     lines: tuple[str, ...] = ()  # tool results only: the answer as display lines (stage 74)
 
 
+def known_skill_names(db: Session) -> set[str]:
+    """Lower-cased names and nicknames of every known skill: the catalogue's and the saved
+    ones. The allow-list for gap names (stage 80)."""
+    known = {term.lower() for skill in CATALOG for term in skill.terms}
+    for skill in db.scalars(select(Skill)):
+        known.add(skill.name.lower())
+        known.update(alias.alias.lower() for alias in skill.aliases)
+    return known
+
+
 def job_label(job: JobDescription) -> str:
     """Title (and company), else the start of the posting: same idea as the frontend's jobLabel."""
     if job.title and job.title.strip():
         label = job.title.strip()
+    elif sanitize.NEUTRAL_LABELS:  # stage 80 option: never use posting text as a name
+        pasted = f" (pasted {job.created_at:%d %b %Y})" if job.created_at else ""
+        label = f"Untitled job #{job.id}{pasted}"  # the number keeps same-day jobs apart
     else:
         words = " ".join(job.raw_text.split())
         label = words if len(words) <= 50 else words[:50].rstrip() + "…"
@@ -67,6 +82,7 @@ def _join(names: list[str]) -> str:
 
 def build_chunks(db: Session, user: User) -> list[Chunk]:
     skills = list(db.scalars(select(Skill).order_by(Skill.name)))
+    known = known_skill_names(db)
     claims = {c.skill_id: c for c in db.scalars(select(UserSkill).where(UserSkill.user_id == user.id))}
     on_cv = set(
         db.scalars(
@@ -150,12 +166,14 @@ def build_chunks(db: Session, user: User) -> list[Chunk]:
                 fit,
                 f"Proven skills: {_join([safe(i.name) for i in match.proven])}.",
                 f"On your CV but not proven: {_join([safe(i.name) for i in match.on_cv])}.",
-                f"Missing skills (gaps to learn): {_join([safe(i.name) for i in match.missing])}.",
+                f"Missing skills (gaps to learn): {describe([i.name for i in match.missing], known)}.",
             ]
         )
         chunks.append(Chunk(f"job:{job.id}", "job", label, text, f"/job-descriptions/{job.id}"))
 
         for item in match.missing:
+            if not split_known([item.name], known)[0]:
+                continue  # not a known skill: counted in the job's note, never quoted (stage 80)
             name = safe(item.name)  # an unmatched requirement is the posting's own words
             need = "required" if item.is_required else "nice to have"
             text = (
@@ -216,8 +234,7 @@ def build_chunks(db: Session, user: User) -> list[Chunk]:
     ]
     missing_count: dict[str, int] = {}
     for match in matches.values():
-        for item in match.missing:
-            name = safe(item.name)
+        for name in split_known([item.name for item in match.missing], known)[0]:
             missing_count[name] = missing_count.get(name, 0) + 1
     most_needed = sorted(missing_count, key=lambda name: (-missing_count[name], name))[:5]
     overview = (

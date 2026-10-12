@@ -2498,6 +2498,25 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 80 (allow-list):**
+  - **`sanitize`:**
+    - `ALLOW_LIST = True` and `NEUTRAL_LABELS = True` (the user chose neutral names).
+    - `split_known(names, known)` returns the known names plus an unknown count (with the switch off, all names are passed through `safe`).
+    - `unmatched_phrase(n)` and `describe(names, known)` give "A, B, N requirement(s) that isn't/aren't a known skill (see the job's page)", or "none".
+  - **`chunker`:**
+    - `known_skill_names(db)` is the lower-cased catalogue terms plus saved skill names and aliases.
+    - `job_label` with no title and `NEUTRAL_LABELS` gives "Untitled job #{id} (pasted {created_at:%d %b %Y})".
+    - The job note's missing list uses `describe`; gap notes are skipped for unknown names; the overview counts only known names.
+  - **`tools`:** `job_gaps` uses `describe`; `learn_first` counts known names only.
+  - **`injection_eval`:** `FRESH_ATTACKS` (6) was committed in `8f5595a` first. `compare_stage_80()` (`--stage80`) results:
+    | | Held-out | Fresh |
+    |---|---|---|
+    | Block-list | 8/24 | 12/24 |
+    | + allow-list | 4/24 | 8/24 |
+    | + neutral | 3/24 | 4/24 |
+    - The remaining hits (Rust, Haskell) are real catalogue skills named in the posting.
+  - **Real data:** none of the 32 gaps hidden. The jobs read "Untitled job #2…#5". The job list page doesn't show the number yet (a possible follow-up).
+  - **Tests:** `test_rag_injection.py` +8 (describe, off switch, unknown requirement text never in notes or lists, known names including saved aliases, neutral names unique and never posting text, live switches). Mutation: no allow-list filtering fails 5 tests.
 - **Stage 79 (prompt injection):**
   - **`app/rag/sanitize.py`:**
     - `ENABLED = True`.
