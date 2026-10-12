@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import EmptyQuestionError
 from app.db.models import Skill, User
-from app.rag import note_cache, tools
+from app.rag import note_cache, smalltalk, tools
 from app.rag.actions import Action, detect_action, reply_for
 from app.rag.bm25 import BM25Index
 from app.rag.chunker import Chunk, build_chunks
@@ -126,6 +126,7 @@ class Prepared:
     note: str | None
     known_names: tuple[str, ...] = ()  # this user's skill and gap names, for the faithfulness rules
     action: Action | None = None  # stage 78: a change the message asks for, to be confirmed
+    reply: str | None = None  # stage 91: a small-talk reply ("hi" -> a greeting), no search
 
 
 @dataclass(frozen=True)
@@ -274,6 +275,14 @@ def prepare(
     rewritten = standalone_question(question, history or [], rewriter) if rewriter is not None else None
     search_text = rewritten or f"{question} {previous[:MAX_QUESTION_CHARS]}".strip()
 
+    # Stage 91: small talk ("hi", "thanks", "who are you?") gets a friendly fixed reply, not a
+    # search; a greeting in front of a real question is set aside (app/rag/smalltalk.py).
+    kind = smalltalk.kind_of(question)
+    if kind is not None:
+        reply = smalltalk.reply_for(kind, smalltalk.display_name(user.full_name))
+        return Prepared(question, [], 0, "bm25", None, (), None, reply)
+    question = smalltalk.strip_greeting(question)
+
     # Stage 78: a request to change something ("Mark React as studying") is answered with
     # a proposal to confirm, not a search. Rules decide (app/rag/actions.py), never the model.
     action = detect_action(question, _saved_skills(db))
@@ -336,6 +345,11 @@ def answer_events(
         "searched": prepared.searched,
         "action": prepared.action.to_dict() if prepared.action else None,
     }
+    if prepared.reply is not None:  # small talk: a fixed friendly reply
+        for piece in stream_pieces(prepared.reply):
+            yield {"type": "delta", "text": piece}
+        yield {"type": "done", "written_by": "notes", "note": None}
+        return
     if prepared.action is not None:  # a proposal (or a refusal): no notes, no model
         for piece in stream_pieces(reply_for(prepared.action)):
             yield {"type": "delta", "text": piece}

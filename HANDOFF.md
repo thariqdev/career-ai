@@ -2498,6 +2498,14 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 91 (small talk):**
+  - **`app/rag/smalltalk.py`:**
+    - `kind_of(message)` uses anchored whole-message regexes for greeting / how_are_you / thanks / bye / about.
+    - `reply_for(kind, name)` uses fixed templates, not the model.
+    - `display_name` drops single-letter initials ("B Mohammed Thariq" → "Mohammed Thariq").
+    - `strip_greeting` removes a leading greeting in front of a real question; "high…"/"history…" are not stripped.
+  - **`assistant.prepare`:** small talk returns `Prepared(..., reply=...)` with no search; otherwise the question is greeting-stripped before actions, routing and search. `answer_events` streams `reply` with `done notes`.
+  - **Tests:** `tests/test_rag_smalltalk.py` (23, including traps like "Help me learn Docker" and "hi, what am I missing…" being routed to the tool). Mutation: no small-talk check fails 2 tests.
 - **Stage 90 (Add to my skills):**
   - **`skill_service.add_catalogue_skill(db, name) -> (Skill, created)`:**
     - It finds the catalogue entry by any term (normalized), else raises `NotACatalogueSkillError` (404).
