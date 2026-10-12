@@ -49,3 +49,51 @@ QUESTIONS: list[tuple[str, str]] = [
     ("How can I learn React?", "data"),
     ("What is Chinmaya College?", "data"),  # the user's own education
 ]
+
+
+# --- the measurement (written after QUESTIONS was committed) --------------------------------
+
+
+def score() -> tuple[int, int, int, list[str]]:
+    """(right, data questions sent to the general path (must be 0), general ones missed, mistakes)."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
+
+    from app.rag.evaluate import fill_fixture
+    from app.rag.general import classify, job_titles, own_names
+    from database import Base
+
+    engine = create_engine("sqlite://", poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    with Session(engine, autoflush=False) as db:
+        user = fill_fixture(db)
+        names, titles = own_names(db, user), job_titles(db, user)
+    engine.dispose()
+    right = leaked = missed = 0
+    mistakes = []
+    for question, want in QUESTIONS:
+        got = classify(question, names, titles)
+        if got == want:
+            right += 1
+            continue
+        if want == "data":
+            leaked += 1
+        else:
+            missed += 1
+        mistakes.append(f"    {question!r}: got {got}, want {want}")
+    return right, leaked, missed, mistakes
+
+
+def main() -> int:
+    right, leaked, missed, mistakes = score()
+    print(f"right {right}/{len(QUESTIONS)}   personal questions sent to general (must be 0): {leaked}   general missed: {missed}")
+    for line in mistakes:
+        print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())

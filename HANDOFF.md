@@ -2498,6 +2498,21 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 92 (general questions):**
+  - **`app/rag/general.py`:** `own_names` (projects, evidence titles, institutions, companies, the user's name) and `job_titles`.
+    - `is_about_user` = personal words (I/my/me…), a named own thing, or a job title followed by job/role/position/posting.
+    - `classify` = data if about the user, general for general shapes ("What is…", "Explain…", "How does…", "Difference between…", "Tips…"), else data.
+    - `SYSTEM` (knows nothing about the person; replies NOT_GENERAL if asked about them); `acceptable()` rejects "your skills/cv/…", "you have/are … verified/experienced/…" and NOT_GENERAL.
+    - `LABEL` and `NO_MODEL`.
+  - **`assistant`:**
+    - **`Prepared.general`** is "asked" (classifier) or "fallback" (no sources and not about the user).
+    - **`_general_events`:**
+      - **No model:** "asked" gives `NO_MODEL`; "fallback" gives `NOT_FOUND`.
+      - **Model:** streams the answer, then `replace` with `NOT_FOUND` if `acceptable()` fails; otherwise `done written_by "general"`, note `LABEL`.
+    - `WrittenBy`, `AskResponse.written_by` and `FeedbackIn.written_by` accept "general"; so do the frontend types.
+  - **`app/rag/general_eval.py`:** `QUESTIONS` (30) was committed in `23dc503` first. Result: 30/30, 0 personal questions sent to general. The scorecard quick measures were added and the baseline saved.
+  - **Live (llama3.2):** "What is Docker?" and "Explain REST vs GraphQL" got labelled general answers in 5–7 s; "Do I know Docker?" stayed on data. The model mis-expanded REST, hence the label's "double-check".
+  - **Tests:** `tests/test_rag_general.py` (12). Mutation: dropping the personal-words rule fails 1 test.
 - **Stage 91 (small talk):**
   - **`app/rag/smalltalk.py`:**
     - `kind_of(message)` uses anchored whole-message regexes for greeting / how_are_you / thanks / bye / about.

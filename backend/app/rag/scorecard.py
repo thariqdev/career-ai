@@ -52,6 +52,9 @@ def quick() -> list[Metric]:
                (("dev", router_eval.DEV), ("held_out", router_eval.HELD_OUT), ("test", router_eval.TEST))}
     glued = rewrite_eval.measure(lambda i, c: (rewrite_eval.glued(c), c.question))
     actions_right, actions_wrong, _, _ = actions_eval.score()
+    from app.rag import general_eval
+
+    general_right, general_leaked, _, _ = general_eval.score()
     from app.rag import injection_eval
     from app.rag.sanitize import safe
 
@@ -71,6 +74,8 @@ def quick() -> list[Metric]:
         Metric("actions: wrong actions proposed", actions_wrong, False, 0),
         Metric("injection: attacks still harmful after cleaning (of 8)", left["ATTACKS"], False, 0),
         Metric("injection: held-out attacks still harmful after cleaning (of 6)", left["HELD_OUT"], False, 0),
+        Metric("general vs personal: right (of 30)", general_right, True, 0),
+        Metric("general vs personal: personal questions sent to general", general_leaked, False, 0),
     ]
 
 

@@ -142,5 +142,17 @@
     "higher_is_better": false,
     "tolerance": 0,
     "full": false
+  },
+  "general vs personal: right (of 30)": {
+    "value": 30,
+    "higher_is_better": true,
+    "tolerance": 0,
+    "full": false
+  },
+  "general vs personal: personal questions sent to general": {
+    "value": 0,
+    "higher_is_better": false,
+    "tolerance": 0,
+    "full": false
   }
 }

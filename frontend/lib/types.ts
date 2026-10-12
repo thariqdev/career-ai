@@ -335,5 +335,5 @@ export type AssistantAnswer = {
   searched: number;
   retrieval: "bm25" | "vector" | "hybrid"; // keyword, meaning, or both (fused)
   note: string | null; // e.g. why meaning search or the AI writer wasn't used
-  written_by: "ai" | "notes"; // an AI wrote it from the notes, or it IS the notes
+  written_by: "ai" | "notes" | "general"; // an AI wrote it from the notes, or it IS the notes
 };

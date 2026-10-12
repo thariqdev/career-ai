@@ -64,7 +64,7 @@ class AskResponse(BaseModel):
     searched: int
     retrieval: str  # "bm25" (keyword) or "hybrid" (keyword + meaning)
     note: str | None  # e.g. why meaning search or the AI writer wasn't used
-    written_by: Literal["ai", "notes"]  # an AI wrote it from the notes, or it IS the notes
+    written_by: Literal["ai", "notes", "general"]  # from your notes (AI or verbatim), or general knowledge (stage 92)
     action: dict | None = None  # stage 78: a change to confirm (kind, summary, method, path, body)
 
 
@@ -127,7 +127,7 @@ class FeedbackIn(BaseModel):
     answer: str = Field(min_length=1, max_length=20000)
     sources: list[FeedbackSourceIn] = Field(default_factory=list, max_length=10)
     retrieval: Literal["bm25", "vector", "hybrid"] | None = None
-    written_by: Literal["ai", "notes"] | None = None
+    written_by: Literal["ai", "notes", "general"] | None = None
     comment: str | None = Field(default=None, max_length=1000)
 
 

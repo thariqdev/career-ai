@@ -36,7 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import EmptyQuestionError
 from app.db.models import Skill, User
-from app.rag import note_cache, smalltalk, tools
+from app.rag import general, note_cache, smalltalk, tools
 from app.rag.actions import Action, detect_action, reply_for
 from app.rag.bm25 import BM25Index
 from app.rag.chunker import Chunk, build_chunks
@@ -100,7 +100,7 @@ INTRO_SYSTEM = (
 )
 
 Mode = Literal["bm25", "vector", "hybrid"]
-WrittenBy = Literal["ai", "notes"]
+WrittenBy = Literal["ai", "notes", "general"]
 
 
 @dataclass(frozen=True)
@@ -127,6 +127,9 @@ class Prepared:
     known_names: tuple[str, ...] = ()  # this user's skill and gap names, for the faithfulness rules
     action: Action | None = None  # stage 78: a change the message asks for, to be confirmed
     reply: str | None = None  # stage 91: a small-talk reply ("hi" -> a greeting), no search
+    # Stage 92: "asked" (shaped like a general question) or "fallback" (nothing in the data,
+    # not about the user): answered from general knowledge, labelled. None: not general.
+    general: str | None = None
 
 
 @dataclass(frozen=True)
@@ -289,6 +292,12 @@ def prepare(
     if action is not None:
         return Prepared(question, [], 0, "bm25", None, (), action)
 
+    # Stage 92: a question about the world ("What is Docker?") gets a general answer, clearly
+    # labelled; anything about the user stays data-only (rules in app/rag/general.py).
+    names, titles = general.own_names(db, user), general.job_titles(db, user)
+    if general.classify(question, names, titles) == "general":
+        return Prepared(question, [], 0, "bm25", None, (), None, None, "asked")
+
     chunks = note_cache.notes(db, user)  # cached until any data changes (stage 82)
     known_names = vocabulary(chunks)
     call = guarded_keyword_route(rewritten or question, [c.title for c in chunks if c.kind == "job"], known_names)
@@ -298,6 +307,9 @@ def prepare(
     )
     picked = ([(tool_chunk, 1.0)] if tool_chunk else []) + [(chunks[i], score) for i, score in found.hits]
     sources = [Source(n, chunk, score) for n, (chunk, score) in enumerate(picked, start=1)]
+    if not sources and not general.is_about_user(question, names, titles):
+        # Nothing in the user's data, and the question isn't about them: answer it generally.
+        return Prepared(question, [], len(chunks), found.mode, found.note, known_names, None, None, "fallback")
     return Prepared(question, sources, len(chunks), found.mode, found.note, known_names)
 
 
@@ -324,6 +336,31 @@ def _intro(question: str, tool: Chunk, chat: ChatModel) -> str:
     return intro
 
 
+def _general_events(question: str, chat: ChatModel | None, why: str = "asked") -> Iterator[dict]:
+    """A general-knowledge answer: streamed, then checked (it must not talk about the user)."""
+    if chat is None:
+        # Without the AI: a general-shaped question says so; a mere no-match keeps the old reply.
+        for piece in stream_pieces(general.NO_MODEL if why == "asked" else NOT_FOUND):
+            yield {"type": "delta", "text": piece}
+        yield {"type": "done", "written_by": "notes", "note": None}
+        return
+    written: list[str] = []
+    try:
+        for token in chat.stream(general.messages_for(question)):
+            written.append(token)
+            yield {"type": "delta", "text": token}
+    except GenerationUnavailableError as error:
+        yield {"type": "replace", "text": general.NO_MODEL}
+        yield {"type": "done", "written_by": "notes", "note": str(error)}
+        return
+    text = "".join(written).strip()
+    if not general.acceptable(text):
+        yield {"type": "replace", "text": NOT_FOUND}
+        yield {"type": "done", "written_by": "notes", "note": None}
+        return
+    yield {"type": "done", "written_by": "general", "note": general.LABEL}
+
+
 def answer_events(
     prepared: Prepared,
     history: list[Turn] | None = None,
@@ -345,6 +382,9 @@ def answer_events(
         "searched": prepared.searched,
         "action": prepared.action.to_dict() if prepared.action else None,
     }
+    if prepared.general:  # stage 92: general knowledge, labelled, never about the user
+        yield from _general_events(prepared.question, chat, prepared.general)
+        return
     if prepared.reply is not None:  # small talk: a fixed friendly reply
         for piece in stream_pieces(prepared.reply):
             yield {"type": "delta", "text": piece}

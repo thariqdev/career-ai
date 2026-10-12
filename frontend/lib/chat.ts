@@ -18,7 +18,7 @@ export type ChatMessage = {
   retrieval?: "bm25" | "vector" | "hybrid";
   note?: string | null;
   searched?: number;
-  writtenBy?: "ai" | "notes"; // an AI wrote it from the notes, or it IS the notes
+  writtenBy?: "ai" | "notes" | "general"; // an AI wrote it from the notes, or it IS the notes
   feedback?: "up" | "down"; // the user's rating of this answer (stage 77)
   action?: ProposedAction | null; // stage 78: a change the assistant proposes
   actionState?: "confirmed" | "cancelled";
@@ -63,7 +63,7 @@ export type StreamEvent =
     }
   | { type: "delta"; text: string }
   | { type: "replace"; text: string } // the checks changed the answer: show this instead
-  | { type: "done"; written_by: "ai" | "notes"; note: string | null };
+  | { type: "done"; written_by: "ai" | "notes" | "general"; note: string | null };
 
 /**
  * Network chunks don't line up with lines: a chunk can end halfway through a JSON line.
@@ -132,7 +132,7 @@ export type FeedbackBody = {
   answer: string;
   sources: { number: number; kind: string; title: string }[];
   retrieval: "bm25" | "vector" | "hybrid" | null;
-  written_by: "ai" | "notes" | null;
+  written_by: "ai" | "notes" | "general" | null;
   comment: string | null;
 };
 
