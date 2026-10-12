@@ -629,7 +629,9 @@ def test_results_on_a_nonexistent_or_not_owned_id_is_404(client: TestClient, eng
 # --- gaps -------------------------------------------------------------------------
 
 
-def test_gaps_before_compare_is_empty(client: TestClient) -> None:
+def test_gaps_are_live_without_compare(client: TestClient) -> None:
+    # Stage 89: gaps come from the live match, so they're there before any Compare; the
+    # Compare result (history) is attached only once one exists.
     body = _create_job(client, "Need Python experience.")
     _with_extractor(client, FakeExtractor(_proposal("Python experience")))
     client.post(f"/job-descriptions/{body['id']}/extract")
@@ -637,7 +639,11 @@ def test_gaps_before_compare_is_empty(client: TestClient) -> None:
     response = client.get(f"/job-descriptions/{body['id']}/gaps")
 
     assert response.status_code == 200
-    assert response.json() == []
+    gaps = response.json()
+    # The saved (unlinked) requirement, then Python: a catalogue skill the posting names.
+    assert [(g["requirement_text"], g["status"]) for g in gaps] == [("Python experience", "unmapped"), ("Python", "no_claim")]
+    assert all(g["result"] is None for g in gaps)  # nothing compared yet
+    assert gaps[1]["study_links"]  # a skill you can learn, even though it isn't saved
 
 
 def test_gaps_reflect_non_verified_requirements_then_disappear_once_verified(

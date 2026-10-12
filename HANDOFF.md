@@ -2498,6 +2498,16 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 89 (live gaps):**
+  - **`interview_prep_service.job_gaps(db, user, job)`** returns the `interview_prep` items whose status isn't verified, as `JobGap(item, requirement | None, result | None)`. The result is the latest Compare result for a saved requirement (history).
+  - **`GET /gaps`** uses it. `GapResponse` now has `key`, `requirement_text`, `skill_id`, `skill_name`, `is_required`, `status` (current), `study_links`, `requirement | None` and `result | None`. `comparison_service.skill_gaps` is left as is (history; unused by the route).
+  - **Frontend:**
+    - `Gap` and `StudyLink` types; a new `components/StudyLinks.tsx`.
+    - **GapList** keys by `key`, shows the current status, and marks a name-only skill "not in your skills yet" with study links.
+    - **`lib/ranking.ts`:** `SkillToLearn` has `key`, `skillId | null` and `studyLinks`, and name-only skills are grouped by lower-cased name.
+    - **Dashboard:** learning paths for ids only; name-only cards show plain text plus study links.
+  - **Real data:** Dashboard open gaps went from 12 to **49**, equal to the match's not-proven total; AWS etc. are now in Skills to learn.
+  - **Tests:** the stage-88 strict xfail flipped (XPASS, so the marker was removed: the designed signal); `test_gaps_before_compare_is_empty` became `..._are_live_without_compare`; +1 ranking test (name-only skill across jobs). Mutation: counting verified skills as gaps fails 3 tests.
 - **Stage 88 (consistency audit: "which skills does this job ask for / miss?"):**
   The single source of truth is `match_service.job_match`, which reads the posting text, the saved requirements and the catalogue, and is live against current claims and the CV.
 
@@ -2507,8 +2517,8 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   | Job page match summary (`/match`) | match | ✅ (it is the match) |
   | Interview prep sheet, and the My jobs flashcards | match (since stage 87) | ✅ (tested) |
   | Assistant notes, exact lists, learn first | match (cached, stage 83) | ✅ (tested) |
-  | **Gaps section on the job page; "Analyze" result** | `/gaps` = the last Compare over **saved requirements only**, "not verified" | ❌ |
-  | **Dashboard "Open gaps" count and "Skills to learn"** (`lib/ranking.ts` over `/gaps`) | the same snapshot | ❌ |
+  | Gaps section on the job page; "Analyze" result | `/gaps`, live from the match since stage 89 | ✅ (tested) |
+  | Dashboard "Open gaps" count and "Skills to learn" (`lib/ranking.ts` over `/gaps`) | live since stage 89 | ✅ |
   | Compare / results history | a snapshot by design (history) | n/a (intentional) |
   | CV advice, learning paths | per skill, not per job | n/a |
 

@@ -4,7 +4,8 @@ it's missing, must agree with the match (match_service), the app's single source
 Where they already agree, these tests keep it that way. Where they don't yet (the
 gaps endpoint, a Compare snapshot over saved requirements only), a strict xfail documents
 the known disagreement: when it's fixed, the test passes, xfail(strict) turns that into a
-failure, and the marker must be removed. A known bug can't be silently forgotten.
+failure, and the marker must be removed. A known bug can't be silently forgotten. (The
+/gaps one was fixed in stage 89.)
 """
 
 from collections.abc import Iterator
@@ -88,10 +89,10 @@ def test_the_assistants_exact_list_agrees_with_the_match(client: TestClient, job
         assert f" {skill}," not in tool["text"] and not tool["text"].endswith(f" {skill}.")
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError,
-                   reason="Known (stage 88 audit): /gaps lists only SAVED requirements from the last Compare")
 def test_the_gaps_endpoint_agrees_with_the_match(client: TestClient, job: int) -> None:
-    gaps = {g["requirement"]["requirement_text"] for g in client.get(f"/job-descriptions/{job}/gaps").json()}
+    # Was a strict xfail in stage 88 (gaps came from the last Compare over saved requirements
+    # only); fixed in stage 89, and the xfail flagged itself as designed.
+    gaps = {g["skill_name"] for g in client.get(f"/job-descriptions/{job}/gaps").json()}
     match = _match(client, job)
 
     assert gaps == match["missing"] | match["on_cv"]  # every skill not yet proven

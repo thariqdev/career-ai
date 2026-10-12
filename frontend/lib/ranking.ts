@@ -6,7 +6,7 @@
  * tests/ranking.test.mjs can load it directly.
  */
 
-import type { ApplicationStatus, Gap } from "@/lib/types";
+import type { ApplicationStatus, Gap, StudyLink } from "@/lib/types";
 
 /** Applications still in play. Their gaps matter most. */
 export const ACTIVE_STATUSES: ApplicationStatus[] = ["applied", "interviewing"];
@@ -17,8 +17,10 @@ export const FINISHED_STATUSES: ApplicationStatus[] = ["offer", "rejected", "wit
 export type JobGaps = { status: ApplicationStatus; gaps: Gap[] };
 
 export type SkillToLearn = {
-  skillId: number;
+  key: string; // the skill id, or "name:<name>" for a skill you haven't saved yet
+  skillId: number | null; // null: named by the job but not one of your saved skills
   name: string;
+  studyLinks: StudyLink[]; // YouTube searches, for a skill you haven't saved
   jobs: number; // open jobs (active + saved) whose gaps include this skill
   activeJobs: number; // of those, how many you've applied to or are interviewing for
 };
@@ -29,21 +31,24 @@ export function isOpen(status: ApplicationStatus): boolean {
 
 /**
  * Each skill counted once per open job it's a gap in ("needed by N jobs" means N
- * postings, not N requirement lines). Gaps not mapped to a skill are left out: there's
- * no skill to learn. Order: active jobs first, then open jobs, then name.
+ * postings, not N requirement lines). Skills you haven't saved count too (by name, since
+ * stage 89: they're most of a job's skills). Requirement text that matches no skill is
+ * left out: there's no skill to learn. Order: active jobs first, then open jobs, then name.
  */
 export function rankSkillsToLearn(jobs: JobGaps[], limit: number): SkillToLearn[] {
-  const bySkill = new Map<number, SkillToLearn>();
+  const bySkill = new Map<string, SkillToLearn>();
   for (const job of jobs) {
     if (!isOpen(job.status)) continue;
     const active = ACTIVE_STATUSES.includes(job.status);
-    const seenInThisJob = new Set<number>();
+    const seenInThisJob = new Set<string>();
     for (const gap of job.gaps) {
-      const { skill_id: skillId, skill_name: name } = gap.requirement;
-      if (skillId === null || name === null || seenInThisJob.has(skillId)) continue;
-      seenInThisJob.add(skillId);
-      const current = bySkill.get(skillId) ?? { skillId, name, jobs: 0, activeJobs: 0 };
-      bySkill.set(skillId, {
+      const { skill_id: skillId, skill_name: name } = gap;
+      if (name === null) continue;
+      const key = skillId !== null ? String(skillId) : `name:${name.toLowerCase()}`;
+      if (seenInThisJob.has(key)) continue;
+      seenInThisJob.add(key);
+      const current = bySkill.get(key) ?? { key, skillId, name, studyLinks: gap.study_links ?? [], jobs: 0, activeJobs: 0 };
+      bySkill.set(key, {
         ...current,
         jobs: current.jobs + 1,
         activeJobs: current.activeJobs + (active ? 1 : 0),

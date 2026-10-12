@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiGet, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import LearnLinks from "@/components/LearnLinks";
+import StudyLinks from "@/components/StudyLinks";
 import { ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
 import { APPLICATION_CLASSES, APPLICATION_LABEL, APPLICATION_STATUSES } from "@/lib/applications";
 import { isOpen, rankSkillsToLearn, type SkillToLearn } from "@/lib/ranking";
@@ -70,7 +71,7 @@ async function fetchDashboard(): Promise<Loaded> {
     skillsToLearn.length === 0
       ? []
       : await apiGet<LearningPath[]>(
-          `/learning-paths?${skillsToLearn.map((s) => `skill_ids=${s.skillId}`).join("&")}`,
+          `/learning-paths?${skillsToLearn.flatMap((s) => (s.skillId === null ? [] : [`skill_ids=${s.skillId}`])).join("&")}`,
         );
   const nextStepBySkill: Record<number, string | null> = {};
   for (const path of paths) nextStepBySkill[path.skill_id] = path.next_step;
@@ -107,7 +108,7 @@ function SkillsToLearn({
   progressBySkill: Record<number, LearningProgressStatus>;
   nextStepBySkill: Record<number, string | null>;
 }) {
-  const learning = useLearningResources(items.map((item) => item.skillId));
+  const learning = useLearningResources(items.flatMap((item) => (item.skillId === null ? [] : [item.skillId])));
 
   if (items.length === 0) {
     return (
@@ -125,13 +126,19 @@ function SkillsToLearn({
   return (
     <ul className="mt-3 grid gap-3 sm:grid-cols-2">
       {items.map((item) => (
-        <li key={item.skillId}>
+        <li key={item.key}>
           <Card className="flex h-full flex-col gap-3 p-4">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <Link href={`/skills/${item.skillId}`} className="font-medium text-ink hover:underline">
-                  {item.name}
-                </Link>
+                {item.skillId === null ? (
+                  <span className="font-medium text-ink" title="Named by your job postings; not one of your saved skills yet">
+                    {item.name} <span className="text-xs font-normal text-ink-soft">· not in your skills yet</span>
+                  </span>
+                ) : (
+                  <Link href={`/skills/${item.skillId}`} className="font-medium text-ink hover:underline">
+                    {item.name}
+                  </Link>
+                )}
                 <p className="text-xs text-ink-soft">
                   needed by {item.jobs} {item.jobs === 1 ? "job" : "jobs"}
                   {item.activeJobs > 0 && ` · ${item.activeJobs} you've applied to`}
@@ -142,13 +149,13 @@ function SkillsToLearn({
                   </span>
                 )}
               </div>
-              {progressBySkill[item.skillId] && (
+              {item.skillId !== null && progressBySkill[item.skillId] && (
                 <span className="rounded bg-accent-soft px-2 py-0.5 font-mono text-xs text-accent">
                   {PROGRESS_LABEL[progressBySkill[item.skillId]].toLowerCase()}
                 </span>
               )}
             </div>
-            {item.skillId in nextStepBySkill && (
+            {item.skillId !== null && item.skillId in nextStepBySkill && (
               <ButtonLink
                 href={`/skills/${item.skillId}`}
                 variant={nextStepBySkill[item.skillId] ? "primary" : "plain"}
@@ -159,10 +166,17 @@ function SkillsToLearn({
                   : "Learning path complete ✓"}
               </ButtonLink>
             )}
-            {learning[item.skillId] && (
+            {item.skillId !== null && learning[item.skillId] ? (
               <div className="mt-auto border-t border-line pt-3">
                 <LearnLinks learning={learning[item.skillId]} />
               </div>
+            ) : (
+              item.skillId === null &&
+              item.studyLinks.length > 0 && (
+                <div className="mt-auto border-t border-line pt-3">
+                  <StudyLinks links={item.studyLinks} />
+                </div>
+              )
             )}
           </Card>
         </li>

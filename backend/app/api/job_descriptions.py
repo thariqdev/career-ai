@@ -327,5 +327,5 @@ def read_skill_gaps(
     # get_current_user already committed the one write this request could ever need
     # (creating the bootstrap user, if it didn't already exist).
     job_description = _get_owned_job_description(db, job_description_id, user)
-    gaps = comparison_service.skill_gaps(db, job_description)
+    gaps = interview_prep_service.job_gaps(db, user, job_description)  # live (stage 89)
     return [GapResponse.from_gap(gap) for gap in gaps]

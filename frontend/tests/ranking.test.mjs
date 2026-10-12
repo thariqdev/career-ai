@@ -10,7 +10,7 @@ let nextId = 1;
 
 // A gap for one skill. Only the fields the ranking reads are filled in.
 function gap(skillId, name) {
-  return { requirement: { id: nextId++, skill_id: skillId, skill_name: name } };
+  return { key: `k${nextId++}`, skill_id: skillId, skill_name: name, study_links: [] };
 }
 
 const PYTHON = [1, "Python"];
@@ -32,8 +32,8 @@ test("a skill for an active application beats a skill more saved jobs want", () 
   );
 
   assert.deepEqual(names(ranked), ["Rust", "Docker"]);
-  assert.deepEqual(ranked[0], { skillId: 3, name: "Rust", jobs: 1, activeJobs: 1 });
-  assert.deepEqual(ranked[1], { skillId: 2, name: "Docker", jobs: 2, activeJobs: 0 });
+  assert.deepEqual(ranked[0], { key: "3", skillId: 3, name: "Rust", studyLinks: [], jobs: 1, activeJobs: 1 });
+  assert.deepEqual(ranked[1], { key: "2", skillId: 2, name: "Docker", studyLinks: [], jobs: 2, activeJobs: 0 });
 });
 
 test("interviewing counts as active too", () => {
@@ -59,7 +59,7 @@ test("finished jobs (offer, rejected, withdrawn) don't rank anything", () => {
     8,
   );
 
-  assert.deepEqual(ranked, [{ skillId: 2, name: "Docker", jobs: 1, activeJobs: 0 }]);
+  assert.deepEqual(ranked, [{ key: "2", skillId: 2, name: "Docker", studyLinks: [], jobs: 1, activeJobs: 0 }]);
 });
 
 test("a skill is counted once per job, and unmapped gaps are skipped", () => {
@@ -68,7 +68,7 @@ test("a skill is counted once per job, and unmapped gaps are skipped", () => {
     8,
   );
 
-  assert.deepEqual(ranked, [{ skillId: 1, name: "Python", jobs: 1, activeJobs: 1 }]);
+  assert.deepEqual(ranked, [{ key: "1", skillId: 1, name: "Python", studyLinks: [], jobs: 1, activeJobs: 1 }]);
 });
 
 test("ties are broken by name, and the limit applies", () => {
@@ -82,4 +82,20 @@ test("ties are broken by name, and the limit applies", () => {
 
 test("no jobs means nothing to learn", () => {
   assert.deepEqual(rankSkillsToLearn([], 8), []);
+});
+
+test("a skill you haven't saved still counts, by name, across jobs", () => {
+  const aws = { key: "x", skill_id: null, skill_name: "AWS", study_links: [{ mode: "theory_interview", query: "AWS interview questions", url: "u" }] };
+  const ranked = rankSkillsToLearn(
+    [
+      { status: "saved", gaps: [aws, gap(...PYTHON)] },
+      { status: "saved", gaps: [{ ...aws, skill_name: "aws" }] },
+    ],
+    8,
+  );
+
+  assert.deepEqual(names(ranked), ["AWS", "Python"]); // AWS: needed by 2 jobs
+  assert.equal(ranked[0].skillId, null);
+  assert.equal(ranked[0].jobs, 2);
+  assert.equal(ranked[0].studyLinks.length, 1);
 });

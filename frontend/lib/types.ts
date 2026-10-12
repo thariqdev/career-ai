@@ -143,9 +143,21 @@ export type ComparisonResult = {
 };
 
 // Matches backend GapResponse.
+// Matches backend GapResponse: a skill the job asks for that isn't proven yet. Live since
+// stage 89 (the same skills as the match). requirement/result exist only for a saved
+// requirement / once compared (history).
+export type StudyLink = { mode: LearningMode; query: string; url: string };
+
 export type Gap = {
-  requirement: JobRequirement;
-  result: ComparisonResult;
+  key: string;
+  requirement_text: string;
+  skill_id: number | null;
+  skill_name: string | null; // null: requirement text that matches no skill
+  is_required: boolean;
+  status: string; // partial | provisional | not_verified | no_claim | unmapped
+  study_links: StudyLink[];
+  requirement: JobRequirement | null;
+  result: ComparisonResult | null;
 };
 
 // Matches backend UserSkillResponse.

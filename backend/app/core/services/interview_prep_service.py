@@ -192,3 +192,30 @@ def interview_prep(db: Session, user: User, job_description: JobDescription) -> 
             )
         )
     return items
+
+
+@dataclass(frozen=True)
+class JobGap:
+    """A skill the job asks for that you haven't proven yet (stage 89), with what the last
+    Compare said about it when it was a saved, compared requirement (history, may be None)."""
+
+    item: PrepItem
+    requirement: JobRequirement | None
+    result: "ComparisonResult | None"
+
+
+def job_gaps(db: Session, user: User, job_description: JobDescription) -> list[JobGap]:
+    """Every skill the job asks for that isn't VERIFIED yet: the prep sheet's items (so the
+    live match's skills) minus the verified ones. Same order as the sheet. Before stage 89
+    gaps came from the last Compare over SAVED requirements only, so they missed skills
+    named only in the posting and went stale between Compares."""
+    from app.core.services.comparison_service import latest_results
+
+    results = {r.job_requirement_id: r for r in latest_results(db, job_description)}
+    gaps = []
+    for item in interview_prep(db, user, job_description):
+        if item.status == VerificationStatus.VERIFIED.value:
+            continue
+        requirement = db.get(JobRequirement, item.requirement_id) if item.requirement_id else None
+        gaps.append(JobGap(item, requirement, results.get(item.requirement_id)))
+    return gaps

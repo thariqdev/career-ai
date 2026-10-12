@@ -245,18 +245,35 @@ class ComparisonResultResponse(BaseModel):
 
 
 class GapResponse(BaseModel):
-    """One entry from comparison_service.skill_gaps: a RequirementGap, reshaped."""
+    """A skill the job asks for that you haven't proven yet (interview_prep_service.job_gaps).
 
-    requirement: JobRequirementResponse
-    result: ComparisonResultResponse
+    Live since stage 89: the same skills as the match and the prep sheet. `requirement` and
+    `result` are there only when it's a saved requirement / was compared (history).
+    """
+
+    key: str
+    requirement_text: str
+    skill_id: int | None
+    skill_name: str | None  # None: requirement text that matches no skill
+    is_required: bool
+    status: str  # current: partial | provisional | not_verified | no_claim | unmapped
+    study_links: list[StudyLinkResponse]
+    requirement: JobRequirementResponse | None
+    result: ComparisonResultResponse | None
 
     @classmethod
     def from_gap(cls, gap: Any) -> "GapResponse":
-        # comparison_service.RequirementGap is a plain dataclass (requirement, result),
-        # not an ORM model, so each field is built from_attributes individually here.
+        item = gap.item
         return cls(
-            requirement=JobRequirementResponse.model_validate(gap.requirement),
-            result=ComparisonResultResponse.model_validate(gap.result),
+            key=item.key,
+            requirement_text=item.text,
+            skill_id=item.skill_id,
+            skill_name=item.skill_name,
+            is_required=item.is_required,
+            status=item.status,
+            study_links=[StudyLinkResponse(**vars(s)) for s in item.study_links],
+            requirement=JobRequirementResponse.model_validate(gap.requirement) if gap.requirement else None,
+            result=ComparisonResultResponse.model_validate(gap.result) if gap.result else None,
         )
 
 
