@@ -6,6 +6,7 @@ import { apiGet, ApiError } from "@/lib/api";
 import GapList from "@/components/GapList";
 import LearnLinks from "@/components/LearnLinks";
 import StudyLinks from "@/components/StudyLinks";
+import AddSkillButton from "@/components/AddSkillButton";
 import { ButtonLink, Card, EmptyState, Page, SectionHeading } from "@/components/ui";
 import { APPLICATION_CLASSES, APPLICATION_LABEL, APPLICATION_STATUSES } from "@/lib/applications";
 import { isOpen, rankSkillsToLearn, type SkillToLearn } from "@/lib/ranking";
@@ -171,10 +172,10 @@ function SkillsToLearn({
                 <LearnLinks learning={learning[item.skillId]} />
               </div>
             ) : (
-              item.skillId === null &&
-              item.studyLinks.length > 0 && (
-                <div className="mt-auto border-t border-line pt-3">
+              item.skillId === null && (
+                <div className="mt-auto flex flex-col gap-2 border-t border-line pt-3">
                   <StudyLinks links={item.studyLinks} />
+                  <AddSkillButton name={item.name} />
                 </div>
               )
             )}

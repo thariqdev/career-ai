@@ -2498,6 +2498,15 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 90 (Add to my skills):**
+  - **`skill_service.add_catalogue_skill(db, name) -> (Skill, created)`:**
+    - It finds the catalogue entry by any term (normalized), else raises `NotACatalogueSkillError` (404).
+    - If any term already resolves to a saved skill, it returns that one, with `created` False.
+    - Otherwise it calls `create_skill(entry.name, entry.category)` and adds free aliases, skipping collisions.
+    - It never claims and never marks the CV.
+  - **`POST /skills/from-catalogue`** (`CatalogueSkillCreate` / `CatalogueSkillAdded`).
+  - **Frontend:** `components/AddSkillButton.tsx` (once added, it shows "✓ Added… Open →"; errors inline), on name-only gaps in GapList and on name-only Dashboard skill cards.
+  - **Tests:** `tests/test_catalogue_skill_api.py` (4: catalogue name, category and nicknames; no duplicates by any name; non-catalogue text gives 404 and creates nothing; not a claim or a CV mark, the match is unchanged, and the gap remains with a skill id). Mutation: no existing-skill check fails 1 test.
 - **Stage 89 (live gaps):**
   - **`interview_prep_service.job_gaps(db, user, job)`** returns the `interview_prep` items whose status isn't verified, as `JobGap(item, requirement | None, result | None)`. The result is the latest Compare result for a saved requirement (history).
   - **`GET /gaps`** uses it. `GapResponse` now has `key`, `requirement_text`, `skill_id`, `skill_name`, `is_required`, `status` (current), `study_links`, `requirement | None` and `result | None`. `comparison_service.skill_gaps` is left as is (history; unused by the route).

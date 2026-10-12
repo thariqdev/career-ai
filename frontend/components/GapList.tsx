@@ -3,6 +3,7 @@
 import StatusBadge from "@/components/StatusBadge";
 import LearnLinks from "@/components/LearnLinks";
 import StudyLinks from "@/components/StudyLinks";
+import AddSkillButton from "@/components/AddSkillButton";
 import { cvBadgeClasses, cvBadgeLabel, useCvStatuses } from "@/lib/cv";
 import { useLearningResources } from "@/lib/learning";
 import type { Gap } from "@/lib/types";
@@ -62,6 +63,7 @@ export default function GapList({ gaps }: { gaps: Gap[] }) {
             </span>
             {cv?.recommendation && <span className="text-xs text-warm">{cv.recommendation}</span>}
             {skillLearning ? <LearnLinks learning={skillLearning} /> : skillId === null && <StudyLinks links={gap.study_links} />}
+            {skillId === null && gap.skill_name !== null && <AddSkillButton name={gap.skill_name} />}
           </li>
         );
       })}

@@ -275,3 +275,10 @@ class AmbiguousSkillMatchError(DomainError):
             f'"{text}" is ambiguous: it matches multiple skills ({", ".join(sorted(skill_names))}). '
             "Fix the taxonomy so it maps to exactly one."
         )
+
+
+class NotACatalogueSkillError(DomainError):
+    """Only common skills from the catalogue can be added this way (stage 90)."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f'"{name}" isn\'t a skill in the catalogue. Add it on the Skills page instead.')

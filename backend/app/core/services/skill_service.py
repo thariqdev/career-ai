@@ -333,3 +333,35 @@ def remove_alias(db: Session, skill: Skill, alias: str) -> None:
     db.delete(match)
     db.flush()
     db.expire(skill, ["aliases"])  # so skill.aliases is reloaded without the removed one
+
+
+def add_catalogue_skill(db: Session, name: str) -> tuple[Skill, bool]:
+    """Save a common skill from the catalogue (stage 90): (the skill, whether it was new).
+
+    Only catalogue skills (by name or nickname), so no free text gets in. Idempotent: if one
+    of the catalogue entry's names already belongs to a saved skill, that skill is returned
+    and nothing is created. A new skill gets the catalogue's name and category, plus any of
+    its nicknames that are still free. It's NOT a claim and NOT a CV mark: it only puts the
+    skill on the list of skills to track.
+    """
+    from app.core.exceptions import NotACatalogueSkillError
+    from app.core.skill_catalog import CATALOG
+
+    wanted = normalize_text(name)
+    entry = next((s for s in CATALOG if any(normalize_text(t) == wanted for t in s.terms)), None)
+    if entry is None:
+        raise NotACatalogueSkillError(name)
+    for term in entry.terms:
+        try:
+            existing = resolve_skill(db, term)
+        except AmbiguousSkillMatchError:
+            continue
+        if existing is not None:
+            return existing, False
+    skill = create_skill(db, entry.name, entry.category)
+    for alias in entry.aliases:
+        try:
+            add_alias(db, skill, alias)
+        except SkillNameCollisionError:
+            pass  # that spelling already belongs to another skill: the name is enough
+    return skill, True

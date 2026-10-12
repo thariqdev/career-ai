@@ -19,6 +19,17 @@ class SkillCreate(BaseModel):
     category: str | None = None
 
 
+class CatalogueSkillCreate(BaseModel):
+    name: str
+
+
+class CatalogueSkillAdded(BaseModel):
+    """POST /skills/from-catalogue: the skill, and whether it was just created."""
+
+    skill: "SkillResponse"
+    created: bool
+
+
 class SkillUpdate(BaseModel):
     # PATCH: read with model_dump(exclude_unset=True), so an omitted field is kept.
     name: str | None = None

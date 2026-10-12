@@ -16,6 +16,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.core.models import (
+    CatalogueSkillAdded,
+    CatalogueSkillCreate,
     AliasCreate,
     CVPresenceResponse,
     CVPresenceUpdate,
@@ -38,6 +40,15 @@ def create_skill(payload: SkillCreate, db: Session = Depends(get_db)) -> Skill:
     skill = skill_service.create_skill(db, payload.name, payload.category)
     db.commit()
     return skill
+
+
+@router.post("/from-catalogue", response_model=CatalogueSkillAdded)
+def add_from_catalogue(payload: CatalogueSkillCreate, db: Session = Depends(get_db)) -> CatalogueSkillAdded:
+    """Save a common skill a job asks for (stage 90): catalogue skills only, never a duplicate.
+    Not a claim and not a CV mark: it only adds the skill to the list you track."""
+    skill, created = skill_service.add_catalogue_skill(db, payload.name)
+    db.commit()
+    return CatalogueSkillAdded(skill=SkillResponse.model_validate(skill), created=created)
 
 
 @router.get("", response_model=list[SkillResponse])
