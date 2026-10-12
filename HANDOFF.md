@@ -2498,6 +2498,27 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 88 (consistency audit: "which skills does this job ask for / miss?"):**
+  The single source of truth is `match_service.job_match`, which reads the posting text, the saved requirements and the catalogue, and is live against current claims and the CV.
+
+  | Feature | Source | Agrees with match? |
+  |---|---|---|
+  | Job list % and skill count | match | ✅ (tested) |
+  | Job page match summary (`/match`) | match | ✅ (it is the match) |
+  | Interview prep sheet, and the My jobs flashcards | match (since stage 87) | ✅ (tested) |
+  | Assistant notes, exact lists, learn first | match (cached, stage 83) | ✅ (tested) |
+  | **Gaps section on the job page; "Analyze" result** | `/gaps` = the last Compare over **saved requirements only**, "not verified" | ❌ |
+  | **Dashboard "Open gaps" count and "Skills to learn"** (`lib/ranking.ts` over `/gaps`) | the same snapshot | ❌ |
+  | Compare / results history | a snapshot by design (history) | n/a (intentional) |
+  | CV advice, learning paths | per skill, not per job | n/a |
+
+  - **Real data:** jobs #2/#4/#5 have 3/22/7 missing (8/32/9 not proven) by the match, versus 0/10/2 gaps. Dashboard "Open gaps" shows 12, against 32 missing. Job #2's page says "3 missing" in its match summary but has no Gaps entries.
+  - **Tests:** `tests/test_consistency.py`: 3 agreements, plus 1 `xfail(strict, raises=AssertionError)` for `/gaps` (it fails for the right reason: {Docker, Python} vs {AWS, Docker, Kubernetes, Python}).
+  - **Fix options (next stage):**
+    - (A) derive `/gaps` from the live match: not-proven items, with the comparison result attached when one exists
+    - (B) switch the Dashboard and job page to the match, and keep `/gaps` as history only
+
+    Either way, decide whether "gap" means *missing* or *not proven* (on the CV but unproven needs proof, not learning).
 - **Stage 87 (prep = match):**
   - `JobMatch.asked` holds every asked item in posting order (additive; the match logic is unchanged).
   - **`interview_prep`** now iterates `match.asked`, required first, keeping posting order.
