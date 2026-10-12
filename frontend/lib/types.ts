@@ -255,6 +255,13 @@ export type CVAdoptResult = {
   name_saved: string | null; // your name, read from the CV (only when none was saved)
 };
 
+// Matches backend CVReplaceResponse: "Start fresh with this CV" (stage 95).
+export type CVReplaceResult = {
+  removed: Record<string, number>; // what the previous person had, per kind
+  adopted: CVAdoptResult;
+  drafts: ProfileDrafts; // the new CV's projects, work and education, not saved yet
+};
+
 // Matches backend SkillSuggestionResponse: a common skill the text mentions that
 // isn't saved yet (only ever a suggestion).
 export type SkillSuggestion = { name: string; category: string; matched_text: string };

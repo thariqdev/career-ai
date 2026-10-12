@@ -2498,6 +2498,21 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 95 (start fresh with a new CV):**
+  - **`app/core/services/cv_replace_service.py`:**
+    - `clear_person(db, user)` bulk-deletes the person's rows, children first: comparison evidence -> results -> dismissed -> requirements -> jobs -> claim evidence -> claims -> CV marks -> learning progress -> evidence -> projects / work / education -> assistant feedback.
+    - It then clears `full_name`, calls `expire_all()`, and returns counts (jobs, skill_claims, evidence, projects, work_experiences, educations).
+    - Kept: `skills`, `skill_aliases`, `learning_resources` (not per person) and the user row.
+    - `replace_with_cv` = clear, then `cv_adopt_service.add_all_from_cv` (claims PROVISIONAL, and the name now saves because it was cleared), then `cv_profile_service.read_drafts` (drafts only).
+  - **`POST /cv/replace`** (file or text, like /cv/add-all) returns `CVReplaceResponse {removed, adopted, drafts}`. The CV is read before anything is deleted (a bad file -> 415/422, nothing changes); `note_cache.clear()` runs after commit.
+  - **Frontend:**
+    - `app/cv/page.tsx`: a "Start fresh with this CV" button (danger), then a confirm dialog listing what goes.
+    - The backup comes first: `downloadExport()` (now exported from `DownloadMyData.tsx`); if it fails, nothing is removed.
+    - Then POST /cv/replace and the summary, with `CvAutofill` opened on the returned drafts (new `initial` prop).
+    - A "public demo: don't upload your real CV" note shows when `NEXT_PUBLIC_DEMO_MODE=true`.
+  - **Tests:** `tests/test_cv_replace.py` (4; person A = the demo seed plus a study link and a rating). The mutation check (dropping the LearningProgress delete) fails the right test.
+  - **Postgres rehearsal:** a throwaway DB `career_ai_stage95_rehearsal` (alembic upgrade, seed, replace, then drop).
+  - **Out of scope:** several people side by side (profiles or logins).
 - **Stage 94 (deploy-ready, public demo):**
   - **`database.py`:** `normalize_database_url(url, force_ssl)` -> (URL, connect_args). It turns `postgres://` / `postgresql://` into `postgresql+pg8000://`, drops `sslmode` / `channel_binding` from the query, and passes an `ssl_context` when sslmode needs it (or when `DATABASE_SSL=true`). Non-postgres URLs pass through untouched (rebuilding mangles `sqlite:///`). `engine` uses `pool_pre_ping=True`. `alembic/env.py` uses the same URL and `CONNECT_ARGS` (`%` escaped for configparser).
   - **`app/demo.py`** (`DEMO_MODE=true` only):

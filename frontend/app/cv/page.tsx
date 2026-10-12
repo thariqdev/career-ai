@@ -3,9 +3,14 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { apiPostForm, apiPut, ApiError } from "@/lib/api";
-import type { CVAdoptResult, CVPresence, CVScan } from "@/lib/types";
+import type { CVAdoptResult, CVPresence, CVReplaceResult, CVScan } from "@/lib/types";
 import { Button, Card, EmptyState, Page, SectionHeading, inputClasses } from "@/components/ui";
 import SkillSuggestions from "@/components/SkillSuggestions";
+import CvAutofill from "@/components/CvAutofill";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { downloadExport } from "@/components/DownloadMyData";
+
+const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 
 // Two steps, matching the backend: scanning only suggests; nothing is saved until
 // the user reviews the ticks and clicks Save. The CV itself is never stored.
@@ -14,7 +19,9 @@ type PageState =
   | { status: "scanning" }
   | { status: "review"; scan: CVScan }
   | { status: "saving"; scan: CVScan }
-  | { status: "saved"; onCv: number; offCv: number };
+  | { status: "saved"; onCv: number; offCv: number }
+  | { status: "replacing" }
+  | { status: "replaced"; result: CVReplaceResult };
 
 export default function CVPage() {
   const [state, setState] = useState<PageState>({ status: "input" });
@@ -27,6 +34,7 @@ export default function CVPage() {
   const [absent, setAbsent] = useState<Set<number>>(new Set());
   const [addingAll, setAddingAll] = useState(false);
   const [adopted, setAdopted] = useState<CVAdoptResult | null>(null);
+  const confirm = useConfirm();
 
   function reset() {
     setAdopted(null);
@@ -103,6 +111,47 @@ export default function CVPage() {
     }
   }
 
+  // "Start fresh with this CV" (stage 95): for a different person's CV. A backup of the
+  // current data downloads first; if that fails, nothing is removed.
+  async function handleReplace() {
+    const ok = await confirm({
+      title: "Replace everything with this CV?",
+      message: (
+        <>
+          Use this for a <strong>different person&rsquo;s</strong> CV. First a backup of the current data
+          downloads (&ldquo;Restore from backup&rdquo; on My Profile can bring it back into an empty app).
+          Then the current name, projects, work, education, proof, skill claims and verified marks, CV
+          marks, job postings and their results, learning progress and assistant ratings are removed. The
+          skill list and saved study links stay. The new CV&rsquo;s skills are added as provisional, and its
+          projects, work and education are shown for you to check and save.
+        </>
+      ),
+      confirmLabel: "Back up and replace",
+      danger: true,
+    });
+    if (!ok) return;
+    setError(null);
+    setState({ status: "replacing" });
+    try {
+      await downloadExport();
+    } catch (err) {
+      setError(
+        `The backup couldn't be made, so nothing was removed. ${err instanceof ApiError ? err.message : "Could not reach the backend."}`,
+      );
+      setState({ status: "input" });
+      return;
+    }
+    try {
+      const form = new FormData();
+      if (file) form.append("file", file);
+      else form.append("text", pasted);
+      setState({ status: "replaced", result: await apiPostForm<CVReplaceResult>("/cv/replace", form) });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not reach the backend.");
+      setState({ status: "input" });
+    }
+  }
+
   function toggle(set: Set<number>, update: (s: Set<number>) => void, id: number) {
     const next = new Set(set);
     if (next.has(id)) next.delete(id);
@@ -118,7 +167,13 @@ export default function CVPage() {
         evidence verifies it.
       </p>
 
-      {(state.status === "input" || state.status === "scanning") && (
+      {DEMO && (
+        <p className="mt-3 rounded-md bg-warm-soft px-3 py-2 text-sm text-ink">
+          This is a public demo: other visitors can see what you add. Please don&rsquo;t upload your real CV.
+        </p>
+      )}
+
+      {(state.status === "input" || state.status === "scanning" || state.status === "replacing") && (
         <Card className="mt-6">
           <form onSubmit={handleScan} className="flex flex-col gap-4">
             <label className="flex flex-col gap-2 text-sm text-ink-soft">
@@ -144,16 +199,50 @@ export default function CVPage() {
               placeholder="Paste your CV text here…"
               className={`${inputClasses} disabled:opacity-50`}
             />
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={state.status === "scanning" || (!file && pasted.trim() === "")}
-              className="self-start"
-            >
-              {state.status === "scanning" ? "Scanning…" : "Scan"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={state.status !== "input" || (!file && pasted.trim() === "")}
+              >
+                {state.status === "scanning" ? "Scanning…" : "Scan"}
+              </Button>
+              <Button
+                variant="danger"
+                onClick={handleReplace}
+                disabled={state.status !== "input" || (!file && pasted.trim() === "")}
+              >
+                {state.status === "replacing" ? "Backing up and replacing…" : "Start fresh with this CV"}
+              </Button>
+            </div>
+            <p className="text-xs text-ink-soft">
+              &ldquo;Start fresh&rdquo; is for a different person&rsquo;s CV: it replaces everything, after
+              downloading a backup.
+            </p>
           </form>
         </Card>
+      )}
+
+      {state.status === "replaced" && (
+        <div className="mt-6 flex flex-col gap-6">
+          <Card>
+            <p className="font-medium text-verified">
+              ✓ Started fresh
+              {state.result.adopted.name_saved ? ` for ${state.result.adopted.name_saved}` : ""}. A backup of the
+              previous data was downloaded.
+            </p>
+            <p className="mt-2 text-sm text-ink-soft">
+              Removed {state.result.removed.jobs ?? 0} job{state.result.removed.jobs === 1 ? "" : "s"},{" "}
+              {state.result.removed.skill_claims ?? 0} skill claims and {state.result.removed.evidence ?? 0} pieces
+              of proof. Added {state.result.adopted.claimed.length} skills from the new CV as provisional (being on
+              a CV is never proof). Check the profile entries below, then save them.
+            </p>
+          </Card>
+          <CvAutofill initial={state.result.drafts} onSaved={() => {}} />
+          <Button onClick={reset} className="self-start">
+            Done
+          </Button>
+        </div>
       )}
 
       {(state.status === "review" || state.status === "saving") && (

@@ -85,12 +85,13 @@ function toDrafts(result: ProfileDrafts): Draft[] {
  * "Fill from my CV": read a CV into draft projects, jobs and education, let the user
  * edit and tick them, then save each through the normal add endpoint (so every rule
  * applies, exactly like typing by hand). Nothing is saved before "Save selected", and
- * the CV itself is never stored. onSaved lets the page refresh its lists.
+ * the CV itself is never stored. onSaved lets the page refresh its lists. `initial`
+ * opens straight on the review (used after "Start fresh with this CV").
  */
-export default function CvAutofill({ onSaved }: { onSaved: () => void }) {
+export default function CvAutofill({ onSaved, initial }: { onSaved: () => void; initial?: ProfileDrafts }) {
   const [file, setFile] = useState<File | null>(null);
   const [pasted, setPasted] = useState("");
-  const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  const [drafts, setDrafts] = useState<Draft[] | null>(initial ? toDrafts(initial) : null);
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

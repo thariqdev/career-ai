@@ -548,6 +548,17 @@ class CVAdoptResponse(BaseModel):
     name_saved: str | None
 
 
+class CVReplaceResponse(BaseModel):
+    """What "Start fresh with this CV" did: the old person's data removed (counts), the
+    new CV's skills added (provisional), and its profile entries as drafts to review."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    removed: dict[str, int]
+    adopted: CVAdoptResponse
+    drafts: ProfileDraftsResponse
+
+
 class MatchItemResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

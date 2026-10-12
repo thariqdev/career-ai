@@ -217,6 +217,7 @@ Skills endpoints (skills are a shared taxonomy; there is no authentication yet):
 | `POST /import/preview` | Upload a backup file (multipart `file`): returns what it holds, every problem found, and whether this app is empty. Writes nothing |
 | `POST /import` | Restore a backup into an **empty** app, all or nothing: `422` for an invalid file (broken links, verified without evidence, bad links…), `409` if the app already has data. On My Profile as "Restore from backup" |
 | `POST /cv/scan` | Preview only: upload a CV (`file`: PDF, .docx or .txt, up to 5 MB) or paste it (`text`), as form data; returns which saved skills it mentions. Saves nothing, and the CV is never stored |
+| `POST /cv/replace` | "Start fresh with this CV" (for a different person): removes the current person's data (name, profile, proof, claims, CV marks, jobs and results, learning progress, ratings; the skill list and study links stay), adds the new CV's skills as provisional, and returns its projects, work and education as drafts to review. The page downloads a backup first |
 | `PUT /cv/presence` | Save your confirmed choices after a scan (`{"present_skill_ids": [...], "absent_skill_ids": [...]}`) |
 | `GET /cv/status` | Combined proof + CV status (and any advice) for every skill you've claimed or marked on your CV, in one request |
 | `GET` / `POST /projects`, `DELETE /projects/{id}` | Your projects (name required; link must be http(s)) |

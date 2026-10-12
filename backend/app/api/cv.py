@@ -4,7 +4,8 @@ Two steps on purpose: CV presence is a fact the user supplies (CVSkillPresence),
 scan only SUGGESTS; nothing is written until the user confirms via PUT /cv/presence.
 The CV text is never stored. Neither step touches verification: a CV is a claim, not
 proof. POST /cv/add-all is the one-click version: it saves every skill the CV mentions,
-marks them on the CV and claims them as PROVISIONAL (never verified). All routes are
+marks them on the CV and claims them as PROVISIONAL (never verified). POST /cv/replace
+starts fresh: it removes the current person's data first (stage 95). All routes are
 user-scoped via get_current_user.
 """
 
@@ -15,6 +16,7 @@ from app.core.models import (
     CVAdoptResponse,
     CVPresenceBatch,
     CVPresenceResponse,
+    CVReplaceResponse,
     CVScanResponse,
     CVStatusResponse,
 )
@@ -22,6 +24,7 @@ from app.core.services import (
     cv_adopt_service,
     cv_import_service,
     cv_presence_service,
+    cv_replace_service,
     cv_service,
     skill_service,
 )
@@ -51,6 +54,25 @@ def add_all_cv_skills(
     """Save every skill the CV mentions, mark it on the CV, claim it as provisional."""
     result = cv_adopt_service.add_all_from_cv(db, user, _cv_text(file, text))
     db.commit()
+    return result
+
+
+@router.post("/replace", response_model=CVReplaceResponse)
+def replace_with_cv(
+    file: UploadFile | None = File(None),
+    text: str | None = Form(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> cv_replace_service.ReplaceResult:
+    """Start fresh: remove this person's data, then add the new CV's skills (provisional)
+    and return its projects, work and education as drafts. The CV is read before anything
+    is removed, so an unreadable file changes nothing."""
+    from app.rag import note_cache
+
+    cv_text = _cv_text(file, text)
+    result = cv_replace_service.replace_with_cv(db, user, cv_text)
+    db.commit()
+    note_cache.clear()  # the assistant's notes described the previous person
     return result
 
 
