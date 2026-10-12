@@ -2498,6 +2498,12 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 86 (My jobs deck):**
+  - **`practice.job_cards(db, user)`:** `interview_prep_service.interview_prep` per job. It skips requirements with no skill; the answer is guidance, then the CV warning, then "Talk about: evidence (source)" lines, or "Study: …" when there's no evidence. id `job{job}-req{req}`, stage = job id, stage_title = `chunker.job_label`.
+  - **`GET /practice/job-questions`.**
+  - **Frontend:** a Practice deck switch (`DECKS`: rag / jobs, separate localStorage keys); in the jobs deck the stage pills show job names; an empty-deck message points to "Look for new skills".
+  - **Real data:** 12 cards, because only saved requirements make cards.
+  - **Tests:** `test_practice.py` +4 (proven means "You can claim" plus the proof; unproven never says it; unlinked requirements and requirement-less jobs make no cards; the endpoint uses a test DB). Mutation: letting unlinked requirements through fails 1 test.
 - **Stage 85 (interview flashcards):**
   - **`app/rag/practice.py`:**
     - `parse(text)` reads the bullets `- *Q* A` inside `### Interview questions you can now answer`, plus continuation lines indented by 2 spaces; the stage comes from the nearest `## Stage X: title`.

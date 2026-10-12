@@ -12,25 +12,43 @@ import { BOXES, boxCounts, boxOf, cleanProgress, nextCard, record, type Progress
 
 type FlashCard = { id: string; stage: string; stage_title: string; question: string; answer: string };
 
-const STORAGE_KEY = "career-ai-practice-v1";
+// Two decks (stage 86): the RAG guide's questions, and your jobs' interview prep sheets.
+// Each keeps its own progress. In the jobs deck a card's "stage" is its job.
+type DeckKey = "rag" | "jobs";
+const DECKS: Record<DeckKey, { label: string; path: string; storageKey: string; empty: string }> = {
+  rag: {
+    label: "RAG guide",
+    path: "/practice/rag-questions",
+    storageKey: "career-ai-practice-v1",
+    empty: "No questions found in the guide.",
+  },
+  jobs: {
+    label: "My jobs",
+    path: "/practice/job-questions",
+    storageKey: "career-ai-practice-jobs-v1",
+    empty:
+      "No cards yet. Cards come from each job's saved requirements: open a job and use \"Look for new skills\" to save them.",
+  },
+};
 
-function loadProgress(): Progress {
+function loadProgress(deck: DeckKey): Progress {
   try {
-    return cleanProgress(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}"));
+    return cleanProgress(JSON.parse(window.localStorage.getItem(DECKS[deck].storageKey) ?? "{}"));
   } catch {
     return {};
   }
 }
 
-function saveProgress(progress: Progress): void {
+function saveProgress(deck: DeckKey, progress: Progress): void {
   try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    window.localStorage.setItem(DECKS[deck].storageKey, JSON.stringify(progress));
   } catch {
     // Storage blocked or full: practice still works for this visit.
   }
 }
 
 export default function PracticePage() {
+  const [deck, setDeck] = useState<DeckKey>("rag");
   const [cards, setCards] = useState<FlashCard[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<Progress>({});
@@ -42,17 +60,27 @@ export default function PracticePage() {
   // Fetch first, then set state only in the callbacks.
   useEffect(() => {
     let active = true;
-    apiGet<FlashCard[]>("/practice/rag-questions")
+    apiGet<FlashCard[]>(DECKS[deck].path)
       .then((list) => {
         if (!active) return;
         setCards(list);
-        setProgress(loadProgress());
+        setError(null);
+        setProgress(loadProgress(deck));
       })
       .catch((err) => active && setError(err instanceof ApiError ? err.message : "Could not reach the backend."));
     return () => {
       active = false;
     };
-  }, []);
+  }, [deck]);
+
+  function chooseDeck(key: DeckKey) {
+    if (key === deck) return;
+    setDeck(key);
+    setCards(null);
+    setStage("all");
+    setCurrentId(null);
+    setRevealed(false);
+  }
 
   const stages = useMemo(() => {
     const seen = new Map<string, string>();
@@ -67,7 +95,7 @@ export default function PracticePage() {
     if (!current) return;
     const next = record(progress, current.id, knew);
     setProgress(next);
-    saveProgress(next);
+    saveProgress(deck, next);
     setCurrentId(nextCard(pool, next, current.id)?.id ?? null);
     setRevealed(false);
   }
@@ -81,13 +109,13 @@ export default function PracticePage() {
   async function reset() {
     const ok = await confirm({
       title: "Reset your practice progress?",
-      message: "Every card goes back to box 1. Your cards and career data aren't affected.",
+      message: `Every card in the "${DECKS[deck].label}" deck goes back to box 1. Your career data isn't affected.`,
       confirmLabel: "Reset",
       danger: true,
     });
     if (!ok) return;
     setProgress({});
-    saveProgress({});
+    saveProgress(deck, {});
     setCurrentId(null);
     setRevealed(false);
   }
@@ -95,13 +123,26 @@ export default function PracticePage() {
   return (
     <Page title="Interview practice">
       <p className="mt-1 text-sm text-ink-soft">
-        Questions from your RAG guide. Answer out loud first, then reveal. Cards you miss come back
-        sooner; cards you know move up to box {BOXES}.
+        Answer out loud first, then reveal. Cards you miss come back sooner; cards you know move up
+        to box {BOXES}. <strong>My jobs</strong> uses each job&apos;s interview prep sheet: only what your
+        own data supports.
       </p>
+
+      <div className="mt-4 flex gap-2" role="group" aria-label="Deck">
+        {(Object.keys(DECKS) as DeckKey[]).map((key) => (
+          <Pill key={key} selected={deck === key} onClick={() => chooseDeck(key)}>
+            {DECKS[key].label}
+          </Pill>
+        ))}
+      </div>
 
       {error && <p className="mt-4 text-sm text-not-verified">{error}</p>}
       {!error && cards === null && <p className="mt-4 text-sm text-ink-soft">Loading…</p>}
-      {cards !== null && cards.length === 0 && <EmptyState>No questions found in the guide.</EmptyState>}
+      {cards !== null && cards.length === 0 && (
+        <div className="mt-4">
+          <EmptyState>{DECKS[deck].empty}</EmptyState>
+        </div>
+      )}
 
       {cards !== null && cards.length > 0 && (
         <div className="mt-5 flex flex-col gap-5">
@@ -111,7 +152,7 @@ export default function PracticePage() {
             </Pill>
             {stages.map(([key, title]) => (
               <Pill key={key} selected={stage === key} onClick={() => chooseStage(key)} title={title}>
-                Stage {key}
+                {deck === "rag" ? `Stage ${key}` : title.length > 32 ? `${title.slice(0, 32)}…` : title}
               </Pill>
             ))}
           </div>
@@ -131,7 +172,7 @@ export default function PracticePage() {
             <Card>
               <SectionHeading
                 title={current.question}
-                hint={`Stage ${current.stage}: ${current.stage_title} · box ${boxOf(progress, current.id)}`}
+                hint={`${deck === "rag" ? `Stage ${current.stage}: ` : ""}${current.stage_title} · box ${boxOf(progress, current.id)}`}
               />
               {revealed ? (
                 <>

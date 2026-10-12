@@ -75,3 +75,39 @@ def parse(text: str) -> list[Card]:
 
 def cards(path: Path = GUIDE) -> list[Card]:
     return parse(path.read_text(encoding="utf-8"))
+
+
+# --- stage 86: a deck from the user's real jobs ----------------------------------------------
+
+
+def job_cards(db, user) -> list[Card]:
+    """Flashcards from each job's interview prep sheet (interview_prep_service): one per saved
+    requirement that's linked to a skill. Nothing new is said: the answer is the sheet's own
+    template text (what you can honestly claim, the proof to mention, or "don't bluff" plus
+    what to study). Requirements not linked to a skill are skipped: the sheet has nothing to
+    say about them, and their text is raw posting text. Each job is a group ("stage"),
+    named as the assistant names it."""
+    from sqlalchemy import select
+
+    from app.core.services.interview_prep_service import interview_prep
+    from app.db.models import JobDescription
+    from app.rag.chunker import job_label
+
+    cards: list[Card] = []
+    jobs = db.scalars(select(JobDescription).where(JobDescription.user_id == user.id).order_by(JobDescription.id))
+    for job in jobs:
+        label = job_label(job)
+        for item in interview_prep(db, user, job):
+            if item.requirement.skill is None:
+                continue
+            skill = item.requirement.skill.name
+            lines = [item.guidance]
+            if item.cv_warning:
+                lines.append(item.cv_warning)
+            for evidence in item.evidence:
+                lines.append(f"Talk about: {evidence.title}" + (f" ({evidence.source})" if evidence.source else ""))
+            if not item.evidence and item.study_links:
+                lines.append("Study: " + "; ".join(link.query for link in item.study_links))
+            question = f"{label}: they ask about {skill}. What do you say?"
+            cards.append(Card(f"job{job.id}-req{item.requirement.id}", str(job.id), label, question, "\n".join(lines)))
+    return cards
