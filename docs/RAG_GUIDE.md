@@ -1,6 +1,6 @@
 # Learning RAG by building it into Career AI
 
-A step-by-step guide that grows with each stage. Each stage says **what** we built,
+A step-by-step guide that grows with each stage. **For the 5-minute interview version, read `docs/RAG_CASE_STUDY.md`.** Each stage says **what** we built,
 **why**, **where the code is**, and **what an interviewer may ask**.
 
 ---
@@ -30,7 +30,7 @@ In Career AI, **PostgreSQL stays the source of truth**. RAG only *reads* it and 
 
 ---
 
-## The whole system on one page (stages 65–75)
+## The whole system on one page (stages 65–83)
 
 ```
 question ─► a change asked for? propose it, YOU confirm (rules only) ── stage 78
