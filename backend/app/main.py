@@ -1,3 +1,4 @@
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -7,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import (
     assistant,
     cv,
+    demo,
     evidence,
     export,
     health,
@@ -22,6 +24,7 @@ from app.api import (
     user_skills,
 )
 from app.api.errors import domain_error_handler
+from app import demo as demo_mode
 from app.core.exceptions import DomainError
 from app.rag.warmup import start_warm_up
 
@@ -31,6 +34,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Load the assistant's local models in the background (app/rag/warmup.py), so the
     # first question doesn't wait for them. Does nothing when the AI is switched off.
     start_warm_up()
+    # The public demo (stage 94): a fresh database gets the made-up career.
+    if demo_mode.demo_mode():
+        from database import SessionLocal
+
+        demo_mode.seed_if_empty(SessionLocal)
     yield
 
 
@@ -43,7 +51,8 @@ app.add_exception_handler(DomainError, domain_error_handler)
 # auth exists (e.g. to also allow credentials, or a deployed frontend origin).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    # Comma-separated; the deployed frontend's address is added via CORS_ORIGINS (stage 94).
+    allow_origins=[o.strip() for o in (os.getenv("CORS_ORIGINS") or "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -63,3 +72,4 @@ app.include_router(profile.router)
 app.include_router(export.router)
 app.include_router(import_backup.router)
 app.include_router(practice.router)
+app.include_router(demo.router)

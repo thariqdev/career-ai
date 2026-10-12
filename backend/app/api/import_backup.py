@@ -11,9 +11,11 @@ from sqlalchemy.orm import Session
 
 from app.core.services import import_service
 from app.db.models import User
+from app.demo import forbid_in_demo
 from app.dependencies import get_current_user, get_db
 
-router = APIRouter(prefix="/import", tags=["import"])
+# Switched off in the public demo (stage 94): visitors must not replace the demo data.
+router = APIRouter(prefix="/import", tags=["import"], dependencies=[Depends(forbid_in_demo)])
 
 
 class ImportPreviewResponse(BaseModel):

@@ -3,6 +3,7 @@ import { Fraunces, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import AppHeader from "@/components/AppHeader";
 import { ConfirmProvider } from "@/components/ConfirmDialog";
 import ChatWidget from "@/components/ChatWidget";
+import DemoBanner from "@/components/DemoBanner";
 import "./globals.css";
 
 // next/font/google, not a manual <link> tag: Next.js downloads and self-hosts the
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col bg-ground text-ink">
         {/* Every "Are you sure?" in the app is this modal, never the browser's confirm(). */}
         <ConfirmProvider>
+          <DemoBanner />
           <AppHeader />
           {children}
           {/* The 💬 assistant button, on every page. */}

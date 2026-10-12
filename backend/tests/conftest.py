@@ -14,3 +14,5 @@ def _no_local_ai_reader(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OLLAMA_EMBED_MODEL", raising=False)
     monkeypatch.delenv("OLLAMA_CHAT_MODEL", raising=False)
     monkeypatch.delenv("OLLAMA_KEEP_ALIVE", raising=False)
+    monkeypatch.delenv("DEMO_MODE", raising=False)  # the public demo is never on in tests
+    monkeypatch.delenv("DEMO_RESET_TOKEN", raising=False)

@@ -1,10 +1,10 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import create_engine, pool
 
 from alembic import context
 
-from database import Base, DATABASE_URL
+from database import Base, CONNECT_ARGS, DATABASE_URL
 from app.db import models  # noqa: F401 — imports all models so Base.metadata is populated
 
 # this is the Alembic Config object, which provides
@@ -17,7 +17,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Use the same DATABASE_URL that the application uses.
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+# (normalized for pg8000 and SSL in database.py; "%" escaped for the ini parser)
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -55,11 +56,8 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Same URL and SSL settings as the app (hosted Postgres needs SSL: stage 94).
+    connectable = create_engine(DATABASE_URL, poolclass=pool.NullPool, connect_args=CONNECT_ARGS)
 
     with connectable.connect() as connection:
         context.configure(

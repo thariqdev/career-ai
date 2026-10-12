@@ -2498,6 +2498,28 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 94 (deploy-ready, public demo):**
+  - **`database.py`:** `normalize_database_url(url, force_ssl)` -> (URL, connect_args). It turns `postgres://` / `postgresql://` into `postgresql+pg8000://`, drops `sslmode` / `channel_binding` from the query, and passes an `ssl_context` when sslmode needs it (or when `DATABASE_SSL=true`). Non-postgres URLs pass through untouched (rebuilding mangles `sqlite:///`). `engine` uses `pool_pre_ping=True`. `alembic/env.py` uses the same URL and `CONNECT_ARGS` (`%` escaped for configparser).
+  - **`app/demo.py`** (`DEMO_MODE=true` only):
+    - `seed()` builds a fictional career ("Alex Demo") through the real services: CV skills, a project, a job and education, 2 evidence, Python/FastAPI VERIFIED, React PARTIAL, learning progress, and 3 jobs (interviewing, applied, saved) with extracted requirements and a comparison.
+    - `seed_if_empty` runs at startup (lifespan).
+    - `reset()` = TRUNCATE ... RESTART IDENTITY CASCADE, then `note_cache.clear()`, then seed.
+    - `forbid_in_demo` is a router dependency on `/import`.
+  - **`app/api/demo.py`:** `GET /demo/status` returns `{demo}`. `POST /demo/reset` takes header `X-Demo-Token` and answers 404 outside demo mode, 503 with no token configured, and 403 on a wrong token (`hmac.compare_digest`).
+  - **CORS:** `CORS_ORIGINS` env (comma-separated), defaulting to localhost:3000.
+  - **Deploy files:**
+    - `backend/Dockerfile` (python:3.14-slim; `alembic upgrade head && uvicorn ... --port ${PORT}`) and `backend/.dockerignore`.
+    - `render.yaml`: Docker web service, free plan, `/health` check. You set `DATABASE_URL` and `CORS_ORIGINS`; `DEMO_MODE=true` is fixed; `DEMO_RESET_TOKEN` is generated.
+    - `.github/workflows/demo-reset.yml`: daily at 03:00 UTC plus a manual run. It wakes `/health`, then POSTs the reset. It needs the secret `DEMO_RESET_TOKEN` and the variable `DEMO_API_URL`, and skips when the variable is unset.
+    - `requirements.txt` is pinned.
+  - **Frontend:** `components/DemoBanner.tsx` in the layout, shown only when `NEXT_PUBLIC_DEMO_MODE=true` (set at build time).
+  - **README:** rewritten top (highlights, stack, architecture, deploy steps). The stale status / next-steps sections are removed; the API reference is kept.
+  - **Rehearsal:**
+    - Ran against a throwaway local DB (`career_ai_demo_rehearsal`) with a Neon-style `postgresql://...?sslmode=disable` URL: alembic upgrade, then uvicorn on :8765 in demo mode.
+    - Results: seeded Alex Demo, 3 jobs (33/50/50 %). The assistant answered from notes. Import gave 403; reset gave 403 without the token. A visitor's job was removed by the reset. CORS allowed only the configured origin.
+    - The DB was dropped afterwards; the live DB was checked unchanged.
+    - Docker isn't installed locally, so the image itself is first built on Render.
+  - **Tests:** `tests/test_demo.py` (9). `conftest` clears `DEMO_MODE` / `DEMO_RESET_TOKEN`.
 - **Stage 93 (AI posting reader, live test):**
   - **`app/rag/reader_eval.py`:**
     - `POSTINGS` (7 labelled; committed in `3074a4b` first): niche skills, an injection, and a no-skill posting.

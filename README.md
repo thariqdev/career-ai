@@ -1,6 +1,19 @@
 # Career AI
 
-A personal career and technical-knowledge system.
+A personal career and technical-knowledge system: it keeps track of the skills you can actually prove, reads job postings, shows how well you match each job and what to learn next, and has a grounded AI assistant that answers questions only from your own data.
+
+**Live demo:** _link coming soon_ (made-up data for a fictional "Alex Demo", reset daily; the AI writer is off there, so the Assistant answers with the matching notes).
+
+**How the AI assistant was built and measured:** [docs/RAG_CASE_STUDY.md](docs/RAG_CASE_STUDY.md) (a write-up), and [docs/RAG_GUIDE.md](docs/RAG_GUIDE.md) (the stage-by-stage guide).
+
+## Highlights
+
+- **Proof-based skills.** Each skill is `VERIFIED`, `PARTIAL`, `PROVISIONAL` or `NOT_VERIFIED`, and the first two need linked evidence (enforced by the backend, not the UI).
+- **Job matching.** Paste a posting: requirements are extracted against a canonical skill taxonomy (aliases, look-alike guards), compared with your proof, and turned into a match percentage, gaps, a "skills to learn" ranking and a printable interview prep sheet, all from one source of truth.
+- **Application tracking.** Status, dates, notes and the next interview (with a calendar file).
+- **A grounded RAG assistant.** Hybrid search (BM25 + embeddings, fused with RRF), read-only SQL tools for exact lists and counts, a local model (Ollama) that must cite its notes or the notes are shown instead, prompt-injection sanitizing, streaming, and confirmed actions. Every step was judged on test sets frozen *before* the code and tracked in a scorecard.
+- **Practice.** Leitner-box flashcards from the RAG guide and from each job's prep sheet.
+- **Your data stays yours.** Export everything as JSON, restore into an empty app, and nothing is sent to a paid API unless you set a key.
 
 ## What it does
 
@@ -72,53 +85,40 @@ The LLM assists with extraction and normalization; the backend validates the fin
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | Next.js, TypeScript, Tailwind CSS |
-| Backend | Python, FastAPI, SQLAlchemy |
-| Database | PostgreSQL |
-| AI | LLM API with structured outputs |
-| Future | RAG, pgvector |
+| Frontend | Next.js 16 (App Router), TypeScript, Tailwind CSS v4 |
+| Backend | Python, FastAPI, SQLAlchemy 2, Alembic, pytest |
+| Database | PostgreSQL (pg8000 driver) |
+| AI (optional, free) | Ollama on your own computer: `llama3.2` (reading postings, writing answers), `nomic-embed-text` (meaning search) |
+| AI (optional, paid) | Claude, for the job-posting reader, only if `ANTHROPIC_API_KEY` is set |
+| Hosting (demo) | Vercel (frontend), Render (backend, Docker), Neon (PostgreSQL), GitHub Actions (daily reset) |
 
-## Project Status
+## Architecture
 
-**Phase 1 in progress: Backend foundation.**
+```text
+browser ── Next.js (frontend/) ──HTTP/JSON──> FastAPI (backend/app/api)
+                                                  │
+                                    services (backend/app/core/services): the rules,
+                                    deterministic; the AI only proposes, the backend validates
+                                                  │
+                                    SQLAlchemy models ──> PostgreSQL (the source of truth)
 
-The foundation documents are approved. The basic FastAPI backend skeleton has been created:
+Assistant (backend/app/rag): question ─> small talk / actions / general-vs-personal
+  ─> read-only SQL tools or hybrid search over notes built from the database
+  ─> optional local model writes a cited answer ─> faithfulness check ─> streamed reply
+```
 
-- `backend/app/main.py` — FastAPI entry point
-- `backend/app/config.py` — environment configuration
-- `backend/app/api/health.py` — `GET /health` endpoint
-- `backend/app/api/skills.py` — `/skills` endpoints (create, list, resolve, add alias); `backend/app/api/errors.py` maps domain errors to HTTP statuses
-- `backend/app/db/base.py` — SQLAlchemy engine/session/base
-- `backend/alembic/` — initial Alembic configuration
-- `backend/tests/test_health.py` — health endpoint test
-
-A minimal, intentionally unstyled frontend skeleton now also exists (see "Phase 2 — Frontend Setup" below) — a real design pass is still a separate future task. (This section is otherwise stale — the backend has grown well past this skeleton; see `HANDOFF.md` for the current state.)
-
-## Proposed Structure
-
-See [FOLDER_STRUCTURE.md](FOLDER_STRUCTURE.md) for the full layout.
-
-High-level:
+More detail: [ARCHITECTURE.md](ARCHITECTURE.md), [PROJECT_RULES.md](PROJECT_RULES.md), and [HANDOFF.md](HANDOFF.md) (the technical notes for each stage).
 
 ```text
 career-ai/
-├── backend/        FastAPI + SQLAlchemy + domain logic
-├── database/       Seeds and diagrams only
-├── docs/           Architecture, rules, API contracts
-├── frontend/       Next.js + TypeScript + Tailwind CSS
-├── knowledge/      Verified data templates and canonical skill dictionaries
-└── scripts/        Automation and utility scripts
+├── backend/     FastAPI app, services, models, Alembic migrations, RAG assistant, tests
+├── frontend/    Next.js app
+├── docs/        RAG guide and case study
+├── render.yaml  Render Blueprint for the demo backend
+└── .github/     the daily demo reset
 ```
 
-## Development Phases
-
-1. **Phase 1 — Backend foundation:** FastAPI, PostgreSQL, SQLAlchemy, Alembic, domain models, verification rules, basic REST APIs, health check, tests.
-2. **Phase 2 — Frontend:** Next.js, TypeScript, Tailwind CSS, connect to backend APIs.
-3. **Phase 3 — Job analysis:** Job description input, structured extraction, canonical skill normalization, deterministic comparison.
-4. **Phase 4 — AI integration:** LLM provider, structured outputs, resource recommendations, interview generation.
-5. **Phase 5 — RAG / pgvector:** Embeddings, semantic search, grounded knowledge retrieval.
-
-## Phase 1 — Backend Setup
+## Run it locally: backend
 
 These instructions assume you are in the `backend/` directory.
 
@@ -143,6 +143,8 @@ source .venv/bin/activate
 ```bash
 pip install -r requirements-dev.txt
 ```
+
+Then create a PostgreSQL database (e.g. `career_ai`) and, after step 3, bring its tables up to date with `alembic upgrade head`.
 
 ### 3. Configure environment variables
 
@@ -268,7 +270,7 @@ Interactive API docs are served at `http://127.0.0.1:8000/docs`.
 pytest
 ```
 
-This will run the health endpoint test in `tests/test_health.py`. The test suite does not require a running PostgreSQL server.
+The test suite (800+ tests) uses throwaway in-memory databases, so it never touches your PostgreSQL data and needs no running server.
 
 
 **Start from scratch.** To empty the database (a backup is saved first to `backend/backups/`, which "Restore from backup" accepts), stop the backend and run, from `backend/`:
@@ -277,9 +279,9 @@ This will run the health endpoint test in `tests/test_health.py`. The test suite
 .venv/Scripts/python scripts/reset_data.py --yes
 ```
 
-## Phase 2 — Frontend Setup
+## Run it locally: frontend
 
-A minimal Next.js frontend now exists in `frontend/` (App Router, TypeScript, Tailwind CSS v4 — scaffolded with `create-next-app`). It now has a shared design token system (colors/fonts, see `HANDOFF.md`) and a shared header that appears on every page, but is otherwise still deliberately basic — the first real page is functional, not designed.
+The frontend lives in `frontend/` (Next.js App Router, TypeScript, Tailwind CSS v4, with a shared design-token system: see `HANDOFF.md`).
 
 ```bash
 cd frontend
@@ -300,13 +302,18 @@ The dev server runs at `http://localhost:3000`. With the backend also running (`
 - **`/cv` (My CV)**: upload your CV (PDF, Word .docx or .txt) or paste it, and the app finds which of your saved skills it mentions, using the same whole-word, nickname-aware matching as job postings. You review the ticks and click Save; only then do the skills' "on my CV" badges update. Skills marked on your CV but not found in this one are listed unticked, so nothing is removed by accident. The CV is read locally and not stored. Being on your CV never verifies a skill.
 - **`/profile` (My Profile)**: add, edit and remove your projects, work experience and education. When you add evidence on a skill's page, a "Comes from" dropdown lets you say which of these it comes from, and the evidence list shows it ("from project FundsApp").
 
-**CORS:** the backend only allows browser requests from `http://localhost:3000` and `http://127.0.0.1:3000` (see `backend/app/main.py`) — a dev-only allow-list, not `"*"`, since there's no auth yet. It will need revisiting once real auth exists.
+**CORS:** by default the backend only allows browser requests from `http://localhost:3000` and `http://127.0.0.1:3000`. A deployment sets `CORS_ORIGINS` (comma-separated) to its own site. There is no login (it's a single-user tool), which is why the public demo holds only made-up data.
 
-## Next Steps
+## Deploy the public demo (free tiers)
 
-1. Review the created backend files.
-2. Approve this milestone.
-3. Continue to the next milestone: creating the first SQLAlchemy domain models and initial Alembic migration.
+The demo runs the same code with `DEMO_MODE=true`: an empty database is filled with a fictional career at startup, backup import/restore is switched off, and `POST /demo/reset` (protected by a secret token) puts everything back. Never point a demo at your real data.
+
+1. **Database (Neon):** create a project and copy its connection string (`postgresql://...?sslmode=require` works as pasted).
+2. **Backend (Render):** New > Blueprint > this repo. `render.yaml` builds `backend/Dockerfile`, which runs `alembic upgrade head` and starts the API. Fill in `DATABASE_URL` (from Neon) and `CORS_ORIGINS` (the Vercel URL from step 3; you can set it after step 3). `DEMO_RESET_TOKEN` is generated: copy it for step 4.
+3. **Frontend (Vercel):** import this repo with root directory `frontend`, and set `NEXT_PUBLIC_API_BASE_URL` (the Render URL) and `NEXT_PUBLIC_DEMO_MODE=true` (shows the demo banner).
+4. **Daily reset (GitHub):** in the repo's Settings > Secrets and variables > Actions, add the secret `DEMO_RESET_TOKEN` and the variable `DEMO_API_URL` (the Render URL). `.github/workflows/demo-reset.yml` then runs every day at 03:00 UTC, and on demand from the Actions tab.
+
+Free servers sleep when idle, so the first visit after a quiet spell can take up to a minute.
 
 ## License
 
