@@ -2498,6 +2498,21 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 93 (AI posting reader, live test):**
+  - **`app/rag/reader_eval.py`:**
+    - `POSTINGS` (7 labelled; committed in `3074a4b` first): niche skills, an injection, and a no-skill posting.
+    - `run(text, saved, with_ai, model)` runs the real `requirement_service.extract_requirements` in a throwaway DB with a copy of the user's saved skills, then reads `match_service.job_match().asked`.
+  - **Results (llama3.2):**
+    | | Found (of 41) | Extra | Time per posting |
+    |---|---|---|---|
+    | Matcher | 19 | 2 | 0 s |
+    | Matcher + AI | 27 | 8 | 5.7 s |
+    - The AI added real niche skills (LlamaIndex, Pinecone, Qdrant, pgvector, OpenTelemetry, Langfuse, Pulumi, Istio), but its mentions are often phrases ("React and TypeScript frontend", "years of experience"; on real postings "OR", "experience", "React.js / Angular / Vue.js"). The grounding check accepts them because they are verbatim.
+    - It ignored the injection and invented nothing on the no-skill posting.
+    - The matcher's 2 extras are arguably right ("Apache Airflow" is the catalogue name; "MLOps").
+  - **Decision:** fails the pre-set bar (no extras), so **the AI reader stays off**; `.env` unchanged.
+  - **Next idea (needs a fresh set):** post-filter AI mentions (split "/" lists; reject " and "/" or "/":"/years/more than 3 words/generic words).
+  - **Tests:** `tests/test_reader_eval.py` (2).
 - **Stage 92 (general questions):**
   - **`app/rag/general.py`:** `own_names` (projects, evidence titles, institutions, companies, the user's name) and `job_titles`.
     - `is_about_user` = personal words (I/my/me…), a named own thing, or a job title followed by job/role/position/posting.
