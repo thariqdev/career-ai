@@ -2498,6 +2498,7 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 81 (job numbers):** `lib/jobs.jobNumber(job)` returns "#id" (tested). The jobs list shows it before each name; the job page shows "Job #id ·" in its subtitle. Both match the assistant's "Untitled job #id (pasted …)" names. Frontend only.
 - **Stage 80 (allow-list):**
   - **`sanitize`:**
     - `ALLOW_LIST = True` and `NEUTRAL_LABELS = True` (the user chose neutral names).
@@ -2515,7 +2516,7 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
     | + allow-list | 4/24 | 8/24 |
     | + neutral | 3/24 | 4/24 |
     - The remaining hits (Rust, Haskell) are real catalogue skills named in the posting.
-  - **Real data:** none of the 32 gaps hidden. The jobs read "Untitled job #2…#5". The job list page doesn't show the number yet (a possible follow-up).
+  - **Real data:** none of the 32 gaps hidden. The jobs read "Untitled job #2…#5". Stage 81 shows the number on the job list and the job page.
   - **Tests:** `test_rag_injection.py` +8 (describe, off switch, unknown requirement text never in notes or lists, known names including saved aliases, neutral names unique and never posting text, live switches). Mutation: no allow-list filtering fails 5 tests.
 - **Stage 79 (prompt injection):**
   - **`app/rag/sanitize.py`:**

@@ -42,3 +42,11 @@ export const MATCH_CLASSES: Record<MatchBand, string> = {
   low: "bg-not-verified-bg text-not-verified",
   none: "bg-ground text-ink-soft",
 };
+
+/**
+ * A job's number, as the assistant uses it ("Untitled job #4 (pasted …)", backend
+ * chunker.job_label since stage 80), so the list and the chat point at the same job.
+ */
+export function jobNumber(job: { id: number }): string {
+  return `#${job.id}`;
+}

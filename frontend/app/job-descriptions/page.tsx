@@ -8,7 +8,7 @@ import GapList from "@/components/GapList";
 import StatusBadge from "@/components/StatusBadge";
 import JobMatchSummary from "@/components/JobMatchSummary";
 import { shortDateTime } from "@/lib/interviews";
-import { MATCH_CLASSES, MATCH_FILTERS, jobLabel, matchBand, sameText, type MatchBand } from "@/lib/jobs";
+import { MATCH_CLASSES, MATCH_FILTERS, jobLabel, jobNumber, matchBand, sameText, type MatchBand } from "@/lib/jobs";
 import {
   ACTIVE_STATUSES,
   APPLICATION_CLASSES,
@@ -151,6 +151,7 @@ function PastJobs({ reloadKey, onDeleted }: { reloadKey: number; onDeleted: (job
                   className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-2 px-4 py-3"
                 >
                   <span>
+                    <span className="mr-1.5 text-xs text-ink-soft" title="The number the assistant uses for this job">{jobNumber(job)}</span>
                     <span className="font-medium text-ink">{jobLabel(job)}</span>
                     <span className="text-ink-soft">
                       {job.company ? ` · ${job.company}` : ""} · {new Date(job.created_at).toLocaleDateString()}

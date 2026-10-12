@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { jobLabel, matchBand, sameText } from "../lib/jobs.ts";
+import { jobLabel, jobNumber, matchBand, sameText } from "../lib/jobs.ts";
 
 test("the same posting is recognised despite case, spaces and line breaks", () => {
   assert.equal(sameText("We need Python.\n\nAnd Docker.", "  we NEED python. and   docker. "), true);
@@ -26,4 +26,10 @@ test("match bands: strong from 70%, partial from 40%, and null means not compare
   assert.equal(matchBand(39), "low");
   assert.equal(matchBand(0), "low");
   assert.equal(matchBand(null), "none");
+});
+
+test("a job's number matches the assistant's untitled-job names", () => {
+  assert.equal(jobNumber({ id: 4 }), "#4");
+  // backend chunker.job_label: "Untitled job #4 (pasted 11 Oct 2026)"
+  assert.ok("Untitled job #4 (pasted 11 Oct 2026)".includes(jobNumber({ id: 4 })));
 });

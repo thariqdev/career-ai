@@ -8,7 +8,7 @@ import GapList from "@/components/GapList";
 import NotInSkillsYet from "@/components/NotInSkillsYet";
 import SkillSuggestions from "@/components/SkillSuggestions";
 import JobMatchSummary from "@/components/JobMatchSummary";
-import { jobLabel } from "@/lib/jobs";
+import { jobLabel, jobNumber } from "@/lib/jobs";
 import { useConfirm } from "@/components/ConfirmDialog";
 import ApplicationEditor from "@/components/ApplicationEditor";
 import StatusBadge from "@/components/StatusBadge";
@@ -263,6 +263,7 @@ export default function JobDescriptionPage() {
             <div>
               <h1 className="font-display text-3xl text-ink">{jobLabel(job)}</h1>
               <p className="mt-1 text-sm text-ink-soft">
+                <span title="The number the assistant uses for this job">Job {jobNumber(job)}</span> ·{" "}
                 {job.company ?? "No company"} · added {new Date(job.created_at).toLocaleDateString()}
                 {job.source_url &&
                   (isWebLink(job.source_url) ? (
