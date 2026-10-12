@@ -2498,6 +2498,17 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 85 (interview flashcards):**
+  - **`app/rag/practice.py`:**
+    - `parse(text)` reads the bullets `- *Q* A` inside `### Interview questions you can now answer`, plus continuation lines indented by 2 spaces; the stage comes from the nearest `## Stage X: title`.
+    - `Card.id` is sha1(question)[:10].
+    - `cards()` reads `docs/RAG_GUIDE.md` (59 cards).
+  - **`app/api/practice.py`:** `GET /practice/rag-questions` (404 if the guide is missing).
+  - **Frontend:**
+    - `lib/leitner.ts` has `BOXES = 5`, `record` (up one box or back to 1), `nextCard` (lowest box, then least seen, not the last card), `boxCounts` and `cleanProgress` (tested in `tests/leitner.test.mjs`).
+    - `app/practice/page.tsx` shows the stage filter, box counts, Show answer, I knew it / Not yet, and Reset (confirm modal). localStorage key `career-ai-practice-v1`.
+    - Nav "Practice".
+  - **Tests:** `tests/test_practice.py` (4, including an independent bullet count equal to the card count) and 3 frontend tests.
 - **Stage 83 (memoized matches):**
   - `chunker.job_matches(db, user)` maps job id to JobMatch; `build_chunks(db, user, matches=None)`.
   - `note_cache._entry` caches (key, notes, matches); `note_cache.matches(db, user)`. On a fingerprint error it computes afresh and caches nothing.
