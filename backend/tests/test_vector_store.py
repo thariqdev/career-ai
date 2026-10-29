@@ -134,6 +134,20 @@ def test_on_postgresql_the_vector_is_sent_without_a_varchar_cast() -> None:
     assert "VALUES (%s::VARCHAR, %s::VARCHAR, %s::INTEGER, %s)" in sql
 
 
+def test_several_notes_are_saved_with_one_plain_insert(engine: Engine) -> None:
+    """Regression (found on Neon): the ORM's batch insert (INSERT ... RETURNING, or SELECT
+    FROM VALUES on PostgreSQL) typed vectors as text, which a pgvector column refuses."""
+    from sqlalchemy import event
+
+    inserts: list[str] = []
+    event.listen(engine, "before_cursor_execute", lambda c, cur, sql, *a: sql.startswith("INSERT") and inserts.append(sql))
+
+    PersistentEmbedder(CountingEmbedder(), sessionmaker(bind=engine)).embed([DOC_PREFIX + f"note {i}" for i in range(5)])
+
+    assert len(_rows(engine)) == 5
+    assert inserts and all("RETURNING" not in sql and "SELECT" not in sql for sql in inserts)
+
+
 def test_vectors_round_trip_through_the_column_type(engine: Engine) -> None:
     with Session(engine) as db:
         db.add(NoteEmbedding(note_key="k", model_name="m", dims=3, vector=[0.1, -2.5, 3e-05]))

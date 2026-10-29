@@ -21,7 +21,7 @@ import logging
 import threading
 from collections.abc import Callable
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -110,11 +110,16 @@ class PersistentEmbedder:
                         )
                     ).tuples()
                 )
-                db.add_all(
-                    NoteEmbedding(note_key=key, model_name=self.name, dims=len(vector), vector=vector)
+                new = [
+                    {"note_key": key, "model_name": self.name, "dims": len(vector), "vector": vector}
                     for key, vector in rows.items()
                     if (key, len(vector)) not in existing
-                )
+                ]
+                if new:
+                    # A plain multi-row INSERT (no RETURNING): PostgreSQL then converts each value to
+                    # the column's own type. The ORM's batch form (INSERT ... SELECT FROM VALUES)
+                    # types them as text, which a pgvector column refuses (found on Neon).
+                    db.execute(insert(NoteEmbedding), new)
                 db.commit()
         except SQLAlchemyError as error:  # e.g. another process saved the same note first
             log.warning("Embeddings couldn't be stored (they still work this time): %s", type(error).__name__)
