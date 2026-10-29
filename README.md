@@ -2,7 +2,7 @@
 
 A personal career and technical-knowledge system: it keeps track of the skills you can actually prove, reads job postings, shows how well you match each job and what to learn next, and has a grounded AI assistant that answers questions only from your own data.
 
-**Live demo:** _link coming soon_ (made-up data for a fictional "Alex Demo", reset daily; the AI writer is off there, so the Assistant answers with the matching notes).
+**Live demo:** https://career-ai-inky-ten.vercel.app (made-up data for a fictional "Alex Demo", reset daily; the Assistant runs on free hosted AI models, so the first visit after a quiet spell can take up to a minute).
 
 **How the AI assistant was built and measured:** [docs/RAG_CASE_STUDY.md](docs/RAG_CASE_STUDY.md) (a write-up), and [docs/RAG_GUIDE.md](docs/RAG_GUIDE.md) (the stage-by-stage guide).
 
@@ -334,9 +334,10 @@ Locally the assistant runs on Ollama (free, nothing leaves your computer). A fre
 
 `MIN_COSINE = 0.6` still separates right notes (0.69 to 0.81) from the two documented off-topic questions (0.52, 0.58).
 
+**Checked on the live demo (Render + Neon, 2026-10-29):** five questions in a row all used hybrid search, with no rate-limit errors; the first took 6.7 s (it embeds and stores the notes), the rest 1.8 to 2.9 s. Two bugs only showed up there and are fixed: vectors were sent as `VARCHAR` (and, for several rows, typed as `text`), which pgvector refused, so nothing was stored and every question re-embedded all notes until Gemini's free limit (100 texts a minute) answered 429.
+
 ### What is broken or unfinished
 
-- **pgvector on Neon is untested here.** The migration enables it only where it's available; the local test database had no pgvector, so the `vector` branch first runs on the next Render deploy.
 - **Search doesn't use pgvector yet.** Vectors are stored in PostgreSQL, but ranking is still cosine in Python (fine for dozens of notes, not for thousands).
 - **Held-out prompt attacks got worse (3/24 → 5/24).** gpt-oss follows instructions hidden in job text more readily; two attack wordings ("recommend Rust", "answer in Spanish" in a title) get past the block-list.
 - **Only 20 of 45 AI answers were kept**; the rest fell back to the notes (no citation, or a failed check). There's no earlier number to compare with.
@@ -345,7 +346,6 @@ Locally the assistant runs on Ollama (free, nothing leaves your computer). A fre
 - **No production latency numbers.** `latency_eval` and `router_eval` still measure Ollama only.
 - **No warm-up with hosted models.** Startup pre-indexing only runs for Ollama, so the first question after a fresh database embeds every note (afterwards they're stored).
 - **"Start fresh with this CV" leaves the old person's note vectors** in `note_embeddings` (vectors only, no text). The demo's daily reset empties them.
-- **The demo banner still says the AI writer is off**, even once the keys are set.
 - **`gemini-3.8-flash` was overloaded** on the free tier (timeouts, 503) in testing, so the fallback is Flash-Lite.
 
 ## Deploy the public demo (free tiers)

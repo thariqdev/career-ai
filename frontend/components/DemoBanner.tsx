@@ -7,7 +7,8 @@ export default function DemoBanner() {
   return (
     <div className="bg-warm-soft px-4 py-2 text-center text-sm text-ink print:hidden">
       <strong className="font-semibold">Demo</strong> with made-up data, reset daily. Feel free to click
-      around and change things. The AI writer is off here, so the Assistant answers from notes.
+      around and change things. The Assistant uses free AI models, so when they&rsquo;re busy it answers
+      with your notes instead.
     </div>
   );
 }
