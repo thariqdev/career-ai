@@ -1,5 +1,7 @@
 # The Career AI backend as a container (stage 94). Render builds this from render.yaml.
 # Python is pinned so the server runs the same version the tests run locally.
+# Build context: the REPO ROOT (so docs/RAG_GUIDE.md, used by the Practice page, can be
+# included). The root .dockerignore lets in only backend/ and that one guide, never .env.
 FROM python:3.14-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -8,10 +10,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend/ .
+# app/rag/practice.py looks for the guide three folders up from itself: /app/app/rag -> /docs
+COPY docs/RAG_GUIDE.md /docs/RAG_GUIDE.md
 
 EXPOSE 8000
 

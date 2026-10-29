@@ -5,7 +5,7 @@ services:
     name: career-ai-api
     runtime: docker
     plan: free
-    dockerContext: ./backend
+    dockerContext: .               # the repo root, so docs/RAG_GUIDE.md can be included (see .dockerignore)
     dockerfilePath: ./backend/Dockerfile
     healthCheckPath: /health
     envVars:

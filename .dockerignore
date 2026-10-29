@@ -1,0 +1,17 @@
+# The backend image is built from the repo root (render.yaml: dockerContext: .).
+# Allow-list: ignore everything, then let in only what the server needs.
+*
+!backend/
+!docs/RAG_GUIDE.md
+
+# Never into the image: secrets, local environments, personal backups, caches, tests.
+backend/.env
+backend/.env.*
+backend/.venv/
+backend/venv/
+backend/backups/
+backend/tests/
+backend/.pytest_cache/
+backend/**/__pycache__/
+backend/**/*.py[cod]
+backend/**/*.db
