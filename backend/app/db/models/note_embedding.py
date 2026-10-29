@@ -3,9 +3,21 @@ from datetime import datetime
 
 from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.types import TypeDecorator
+from sqlalchemy.types import TypeDecorator, UserDefinedType
 
 from database import Base
+
+
+class _UncastText(UserDefinedType):
+    """Text sent WITHOUT a type cast. SQLAlchemy's pg8000 driver normally writes text
+    parameters as `$1::VARCHAR`, and PostgreSQL refuses a VARCHAR in a `vector` column
+    (found on Neon: "is of type vector but expression is of type character varying").
+    Sent untyped, PostgreSQL converts the text to the column's own type, vector or text."""
+
+    cache_ok = True
+
+    def get_col_spec(self, **kw) -> str:
+        return "TEXT"
 
 
 class VectorText(TypeDecorator):
@@ -20,11 +32,17 @@ class VectorText(TypeDecorator):
     impl = Text
     cache_ok = True
 
+    def load_dialect_impl(self, dialect):
+        return dialect.type_descriptor(_UncastText() if dialect.name == "postgresql" else Text())
+
     def process_bind_param(self, value, dialect):
         return None if value is None else "[" + ",".join(repr(float(x)) for x in value) + "]"
 
     def process_result_value(self, value, dialect):
-        return None if value is None else [float(x) for x in json.loads(value)]
+        if value is None:
+            return None
+        items = value if isinstance(value, list) else json.loads(value)  # a driver may already parse it
+        return [float(x) for x in items]
 
 
 class NoteEmbedding(Base):

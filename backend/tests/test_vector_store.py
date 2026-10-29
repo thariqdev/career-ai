@@ -122,6 +122,18 @@ def test_the_test_suite_never_stores_vectors_by_default() -> None:
     assert vector_store._session_factory() is None and embedder.seen == [DOC_PREFIX + "x"]
 
 
+def test_on_postgresql_the_vector_is_sent_without_a_varchar_cast() -> None:
+    """Regression (found on Neon): pg8000 wrote `$1::VARCHAR`, which a pgvector column rejects."""
+    from sqlalchemy import insert
+    from sqlalchemy.dialects.postgresql import pg8000
+
+    statement = insert(NoteEmbedding).values(note_key="k", model_name="m", dims=2, vector=[0.5, 1.0])
+    sql = str(statement.compile(dialect=pg8000.dialect()))
+
+    # The driver casts ordinary text (note_key, model_name) but the vector goes in untyped.
+    assert "VALUES (%s::VARCHAR, %s::VARCHAR, %s::INTEGER, %s)" in sql
+
+
 def test_vectors_round_trip_through_the_column_type(engine: Engine) -> None:
     with Session(engine) as db:
         db.add(NoteEmbedding(note_key="k", model_name="m", dims=3, vector=[0.1, -2.5, 3e-05]))
