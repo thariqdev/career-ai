@@ -124,12 +124,8 @@ def measure(prepared: list, chat, exact_lists: bool, runs: int = RUNS) -> Answer
 
 
 def main() -> int:
-    import os
+    from app.rag.evaluate import _ollama_embedder, eval_chat
 
-    from app.rag.evaluate import _ollama_embedder
-    from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
-
-    model = os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL
     embedder, _ = _ollama_embedder()
     prepared = prepare_all(embedder)
     candidates = {
@@ -139,7 +135,7 @@ def main() -> int:
         "B+C  both": (0.0, True),
     }
     for name, (temperature, exact) in candidates.items():
-        s = measure(prepared, OllamaChat(model, temperature=temperature), exact)
+        s = measure(prepared, eval_chat(temperature), exact)
         print(
             f"{name:<30} completeness {s.completeness:.3f}   same facts every run {s.steady}/{len(ANSWERS)}   "
             f"forbidden words {s.forbidden}   AI-written kept {s.ai_kept}/{len(ANSWERS) * RUNS}   {s.seconds:.1f}s/answer"

@@ -80,25 +80,22 @@ def quick() -> list[Metric]:
 
 
 def full() -> list[Metric]:
-    """Real-model measures (Ollama): meaning search, rewriting, written answers."""
-    import os
-
+    """Real-model measures: meaning search, rewriting, written answers. Local Ollama, or the
+    production models with EMBED_PROVIDER=gemini and CHAT_PROVIDER=groq."""
     from app.rag import answer_eval, rewrite_eval
     from app.rag.assistant import REWRITE_SEED
-    from app.rag.evaluate import _ollama_embedder, build_fixture_chunks, evaluate, summary
-    from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
+    from app.rag.evaluate import _ollama_embedder, build_fixture_chunks, eval_chat, evaluate, summary
 
     embedder, info = _ollama_embedder()
     if embedder is None:
-        raise RuntimeError(f"Ollama isn't available for --full: {info}")
-    model = os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL
+        raise RuntimeError(f"The embedding model isn't available for --full: {info}")
     recall, mrr = summary(evaluate(build_fixture_chunks(), mode="hybrid", embedder=embedder))
-    rewrites, _ = rewrite_eval.rewrite_all(OllamaChat(model, temperature=0.0, seed=REWRITE_SEED))
+    rewrites, _ = rewrite_eval.rewrite_all(eval_chat(0.0, REWRITE_SEED))
     follow = rewrite_eval.measure(
         lambda i, c: (rewrites[i] or rewrite_eval.glued(c), rewrites[i] or c.question), embedder
     )
     glued = rewrite_eval.measure(lambda i, c: (rewrite_eval.glued(c), c.question), embedder)
-    answers = answer_eval.measure(answer_eval.prepare_all(embedder), OllamaChat(model), exact_lists=True)
+    answers = answer_eval.measure(answer_eval.prepare_all(embedder), eval_chat(), exact_lists=True)
     return [
         Metric("retrieval: hybrid recall@4", recall, True, 0.05, True),
         Metric("retrieval: hybrid MRR", mrr, True, 0.05, True),

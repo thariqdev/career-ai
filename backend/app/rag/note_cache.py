@@ -30,7 +30,7 @@ from app.rag.chunker import Chunk, build_chunks, job_matches
 from database import Base
 
 # Tables the notes never read and that change often: excluded so they don't force rebuilds.
-IGNORED = frozenset({"assistant_feedback"})
+IGNORED = frozenset({"assistant_feedback", "note_embeddings"})
 
 # user id -> (fingerprint, notes, job matches). The matches are shared with the exact-list
 # tools (stage 83), so a list and the notes always come from the same computation.

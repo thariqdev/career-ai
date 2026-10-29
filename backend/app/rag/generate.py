@@ -183,3 +183,156 @@ class OllamaChat:
                             return
         except httpx.HTTPError as error:
             raise GenerationUnavailableError(f"Ollama isn't reachable ({type(error).__name__}).") from error
+
+
+# --- production writers: hosted models (free tiers) --------------------------------------------
+# Same interface as OllamaChat: stream(messages) yields pieces of text, and any failure is a
+# GenerationUnavailableError, so the assistant's logic and checks don't change. No retries
+# here: a busy writer (429) hands over to the next one at once (FallbackChat), so the person
+# isn't kept waiting. API keys go in headers only, never into URLs or error messages.
+
+# 20 s without a byte = stuck: hand over to the next writer instead of making the person wait.
+HOSTED_TIMEOUT = httpx.Timeout(20.0, connect=10.0)
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+GROQ_CHAT_MODEL = "openai/gpt-oss-20b"
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+# Flash-Lite, not Flash: in a smoke test (2026-10-29) gemini-3.8-flash timed out / answered 503
+# on the free tier, while gemini-3.5-flash-lite answered in about 2 s. A fallback must be quick.
+GEMINI_CHAT_MODEL = "gemini-3.5-flash-lite"
+
+
+def _sse_data(lines: Iterator[str]) -> Iterator[str]:
+    """The payloads of a Server-Sent Events stream ("data: ..." lines)."""
+    for line in lines:
+        if line.startswith("data:"):
+            yield line[len("data:") :].strip()
+
+
+class GroqChat:
+    """Groq's OpenAI-compatible chat completions, streamed. gpt-oss is a reasoning model:
+    reasoning is set to low effort and left out of the reply, so only the answer streams."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = GROQ_CHAT_MODEL,
+        base_url: str = GROQ_BASE_URL,
+        transport: httpx.BaseTransport | None = None,  # tests only
+        temperature: float = TEMPERATURE,
+        seed: int | None = None,
+    ) -> None:
+        self.name = model
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+        self._transport = transport
+        self.temperature = temperature
+        self.seed = seed
+
+    def stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
+        body = {
+            "model": self.name,
+            "messages": messages,
+            "stream": True,
+            "temperature": self.temperature,
+            "reasoning_effort": "low",
+            "include_reasoning": False,
+            **({"seed": self.seed} if self.seed is not None else {}),
+        }
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        try:
+            with httpx.Client(transport=self._transport, timeout=HOSTED_TIMEOUT) as client:
+                with client.stream("POST", f"{self._base_url}/chat/completions", json=body, headers=headers) as response:
+                    if response.status_code != 200:
+                        raise GenerationUnavailableError(f"Groq answered {response.status_code}.")
+                    for data in _sse_data(response.iter_lines()):
+                        if data == "[DONE]":
+                            return
+                        try:
+                            choice = json.loads(data)["choices"][0]
+                        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as error:
+                            raise GenerationUnavailableError("Groq sent something unexpected.") from error
+                        piece = (choice.get("delta") or {}).get("content") or ""
+                        if piece:
+                            yield piece
+        except httpx.HTTPError as error:
+            raise GenerationUnavailableError(f"Groq isn't reachable ({type(error).__name__}).") from error
+
+
+class GeminiChat:
+    """Gemini's streamGenerateContent (Server-Sent Events). Our "system" message becomes
+    systemInstruction and "assistant" turns become role "model". Thought parts are skipped."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = GEMINI_CHAT_MODEL,
+        base_url: str = GEMINI_BASE_URL,
+        transport: httpx.BaseTransport | None = None,  # tests only
+        temperature: float = TEMPERATURE,
+    ) -> None:
+        self.name = model
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+        self._transport = transport
+        self.temperature = temperature
+
+    def _body(self, messages: list[dict[str, str]]) -> dict:
+        system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
+        contents = [
+            {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
+            for m in messages
+            if m["role"] != "system"
+        ]
+        body: dict = {"contents": contents, "generationConfig": {"temperature": self.temperature}}
+        if system:
+            body["systemInstruction"] = {"parts": [{"text": system}]}
+        return body
+
+    def stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
+        url = f"{self._base_url}/models/{self.name}:streamGenerateContent"
+        headers = {"x-goog-api-key": self._api_key}
+        try:
+            with httpx.Client(transport=self._transport, timeout=HOSTED_TIMEOUT) as client:
+                with client.stream(
+                    "POST", url, params={"alt": "sse"}, json=self._body(messages), headers=headers
+                ) as response:
+                    if response.status_code != 200:
+                        raise GenerationUnavailableError(f"Gemini answered {response.status_code}.")
+                    for data in _sse_data(response.iter_lines()):
+                        try:
+                            candidates = json.loads(data).get("candidates") or []
+                        except (json.JSONDecodeError, AttributeError) as error:
+                            raise GenerationUnavailableError("Gemini sent something unexpected.") from error
+                        for candidate in candidates[:1]:
+                            for part in (candidate.get("content") or {}).get("parts") or []:
+                                if part.get("text") and not part.get("thought"):
+                                    yield part["text"]
+        except httpx.HTTPError as error:
+            raise GenerationUnavailableError(f"Gemini isn't reachable ({type(error).__name__}).") from error
+
+
+class FallbackChat:
+    """Try each writer in order (production: Groq, then Gemini). A writer that fails BEFORE
+    sending any text is replaced by the next; one that fails halfway can't be swapped without
+    repeating text, so its error goes up and the assistant shows the notes, as it always has."""
+
+    def __init__(self, chats: list[ChatModel]) -> None:
+        self.chats = chats
+        self.name = " -> ".join(c.name for c in chats)
+        self.last_used: str | None = None  # which writer answered (for logs and evals)
+
+    def stream(self, messages: list[dict[str, str]]) -> Iterator[str]:
+        problems = []
+        for chat in self.chats:
+            started = False
+            try:
+                for piece in chat.stream(messages):
+                    if not started:
+                        started, self.last_used = True, chat.name
+                    yield piece
+                return
+            except GenerationUnavailableError as error:
+                if started:
+                    raise
+                problems.append(f"{chat.name}: {error}")
+        raise GenerationUnavailableError("No AI writer answered. " + " ".join(problems))

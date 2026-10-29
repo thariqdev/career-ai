@@ -13,3 +13,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# Starlette's TestClient still uses an anyio name that anyio 4.x deprecated. It's inside
+# the library, not our code; remove this line once Starlette is updated.
+filterwarnings = ["ignore:The anyio.abc.BlockingPortal alias is deprecated:DeprecationWarning"]

@@ -191,8 +191,8 @@ def decide_on_fresh(runs: int = FRESH_RUNS) -> int:
     import httpx
 
     from app.rag.assistant import REWRITE_SEED
-    from app.rag.evaluate import K, _ollama_embedder
-    from app.rag.generate import DEFAULT_BASE_URL, DEFAULT_CHAT_MODEL, OllamaChat
+    from app.rag.evaluate import K, _ollama_embedder, eval_chat, hosted_eval
+    from app.rag.generate import DEFAULT_BASE_URL, DEFAULT_CHAT_MODEL
 
     embedder, _ = _ollama_embedder()
     model = os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL
@@ -204,8 +204,9 @@ def decide_on_fresh(runs: int = FRESH_RUNS) -> int:
     seen: list[tuple] = []
     scores = []
     for run in range(1, runs + 1):
-        httpx.post(f"{base_url}/api/generate", json={"model": model, "keep_alive": 0}, timeout=60)  # reload
-        rewrites, seconds = rewrite_all(OllamaChat(model, base_url, temperature=0.0, seed=REWRITE_SEED), FRESH)
+        if not hosted_eval():  # a hosted model can't be reloaded; each run is just a new request
+            httpx.post(f"{base_url}/api/generate", json={"model": model, "keep_alive": 0}, timeout=60)  # reload
+        rewrites, seconds = rewrite_all(eval_chat(0.0, REWRITE_SEED), FRESH)
         seen.append(tuple(rewrites[i] for i in range(len(FRESH))))
         s = measure(lambda i, c: (rewrites[i] or glued(c), rewrites[i] or c.question), embedder, FRESH)
         scores.append(s)
@@ -232,13 +233,12 @@ def main() -> int:
     import os
     import sys
 
-    from app.rag.evaluate import K, _ollama_embedder
-    from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
+    from app.rag.evaluate import K, _ollama_embedder, eval_chat
 
     if "--fresh" in sys.argv:
         return decide_on_fresh()
     embedder, info = _ollama_embedder()
-    chat = OllamaChat(os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL, temperature=0.0)
+    chat = eval_chat(0.0)
     print(f"search: {'hybrid (' + info + ')' if embedder else 'bm25 (' + info + ')'}, top {K}\n")
     rewrites, seconds = rewrite_all(chat)
     strategies = {

@@ -305,6 +305,49 @@ The dev server runs at `http://localhost:3000`. With the backend also running (`
 
 **CORS:** by default the backend only allows browser requests from `http://localhost:3000` and `http://127.0.0.1:3000`. A deployment sets `CORS_ORIGINS` (comma-separated) to its own site. There is no login (it's a single-user tool), which is why the public demo holds only made-up data.
 
+## AI in production (without Ollama)
+
+Locally the assistant runs on Ollama (free, nothing leaves your computer). A free server has no GPU and not enough memory for that, so production uses hosted free tiers instead. Only the model behind each step changes; the assistant's routing, sanitizing and checks are the same.
+
+| Step | Local | Production |
+|---|---|---|
+| Meaning search (embeddings) | `nomic-embed-text` via Ollama | `gemini-embedding-2`, 768 dims (`EMBED_PROVIDER=gemini`) |
+| Writing answers | `llama3.2` via Ollama | Groq `openai/gpt-oss-20b`, then Gemini `gemini-3.5-flash-lite` if Groq fails, then the notes themselves (`CHAT_PROVIDER=groq`) |
+| Stored vectors | `note_embeddings` table (text column) | `note_embeddings` table (pgvector `vector` column on Neon) |
+
+- **Keys** live only in the server's environment (`GROQ_API_KEY`, `GEMINI_API_KEY`), never in the frontend, never committed.
+- **Only notes are sent:** the models see the retrieved notes (and, for embeddings, each note's text). On the demo these are made-up data. Free tiers may use what they receive to improve their products, so don't point them at real personal data.
+- **Rate limits:** a 429 from Gemini embeddings is retried with backoff; a busy or stuck writer (20 s without a byte) hands over to the next one at once.
+- **Vectors are stored** per (note text, model, size), so a restart doesn't re-embed every note, and vectors from different models are never compared.
+
+**Measured with the production models** (`EMBED_PROVIDER=gemini CHAT_PROVIDER=groq python -m app.rag.scorecard --full`, same frozen test sets, made-up career; one run on 2026-10-29):
+
+| Measure | llama3.2 / nomic (baseline) | Gemini + Groq |
+|---|---|---|
+| Hybrid search MRR | 0.933 | **0.967** |
+| Follow-ups, glued (live), MRR | 0.637 | **0.713** |
+| Answer completeness | 1.000 | 0.991 (within tolerance) |
+| Same facts every run (of 15) | 15 | 14 (within tolerance) |
+| LLM judge: wrong answers caught / good answers wrongly rejected | unusable (rejected 8/8 good) | **8/8 caught, 0/8 false alarms** |
+| Prompt attacks with no defence | 21/32 | **6/32** |
+| Held-out attacks after cleaning | 3/24 | **5/24 (worse)** |
+
+`MIN_COSINE = 0.6` still separates right notes (0.69 to 0.81) from the two documented off-topic questions (0.52, 0.58).
+
+### What is broken or unfinished
+
+- **pgvector on Neon is untested here.** The migration enables it only where it's available; the local test database had no pgvector, so the `vector` branch first runs on the next Render deploy.
+- **Search doesn't use pgvector yet.** Vectors are stored in PostgreSQL, but ranking is still cosine in Python (fine for dozens of notes, not for thousands).
+- **Held-out prompt attacks got worse (3/24 → 5/24).** gpt-oss follows instructions hidden in job text more readily; two attack wordings ("recommend Rust", "answer in Spanish" in a title) get past the block-list.
+- **Only 20 of 45 AI answers were kept**; the rest fell back to the notes (no citation, or a failed check). There's no earlier number to compare with.
+- **The LLM judge now works but isn't switched on.** Turning it on changes the assistant's logic, so it needs a fresh test set first.
+- **One run only.** The rewritten follow-ups scored better too (MRR 0.812 vs 0.713 glued), but a single run isn't evidence (stage 75); the rewrite stays off.
+- **No production latency numbers.** `latency_eval` and `router_eval` still measure Ollama only.
+- **No warm-up with hosted models.** Startup pre-indexing only runs for Ollama, so the first question after a fresh database embeds every note (afterwards they're stored).
+- **"Start fresh with this CV" leaves the old person's note vectors** in `note_embeddings` (vectors only, no text). The demo's daily reset empties them.
+- **The demo banner still says the AI writer is off**, even once the keys are set.
+- **`gemini-3.8-flash` was overloaded** on the free tier (timeouts, 503) in testing, so the fallback is Flash-Lite.
+
 ## Deploy the public demo (free tiers)
 
 The demo runs the same code with `DEMO_MODE=true`: an empty database is filled with a fictional career at startup, backup import/restore is switched off, and `POST /demo/reset` (protected by a secret token) puts everything back. Never point a demo at your real data.
@@ -313,6 +356,7 @@ The demo runs the same code with `DEMO_MODE=true`: an empty database is filled w
 2. **Backend (Render):** New > Blueprint > this repo. `render.yaml` builds `backend/Dockerfile`, which runs `alembic upgrade head` and starts the API. Fill in `DATABASE_URL` (from Neon) and `CORS_ORIGINS` (the Vercel URL from step 3; you can set it after step 3). `DEMO_RESET_TOKEN` is generated: copy it for step 4.
 3. **Frontend (Vercel):** import this repo with root directory `frontend`, and set `NEXT_PUBLIC_API_BASE_URL` (the Render URL) and `NEXT_PUBLIC_DEMO_MODE=true` (shows the demo banner).
 4. **Daily reset (GitHub):** in the repo's Settings > Secrets and variables > Actions, add the secret `DEMO_RESET_TOKEN` and the variable `DEMO_API_URL` (the Render URL). `.github/workflows/demo-reset.yml` then runs every day at 03:00 UTC, and on demand from the Actions tab.
+5. **AI on the server (optional, free):** paste `GROQ_API_KEY` and `GEMINI_API_KEY` into Render's Environment (both are `sync: false` in `render.yaml`, so they're never in the repo). `render.yaml` already sets `EMBED_PROVIDER=gemini` and `CHAT_PROVIDER=groq`. Without the keys the Assistant still works, answering with the matching notes.
 
 Free servers sleep when idle, so the first visit after a quiet spell can take up to a minute.
 

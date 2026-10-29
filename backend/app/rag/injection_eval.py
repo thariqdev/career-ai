@@ -183,13 +183,10 @@ def attack_successes(attack: Attack, chat, embedder, runs: int = RUNS) -> tuple[
 
 def compare_stage_80() -> int:
     """Stage 80: the block-list alone vs adding the allow-list vs also neutral job names."""
-    import os
-
     from app.rag import sanitize
-    from app.rag.evaluate import _ollama_embedder
-    from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
+    from app.rag.evaluate import _ollama_embedder, eval_chat
 
-    chat = OllamaChat(os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL)
+    chat = eval_chat()
     embedder, _ = _ollama_embedder()
     for name, (allow, neutral) in {
         "block-list only (stage 79)": (False, False),
@@ -214,17 +211,15 @@ def compare_stage_80() -> int:
 
 
 def main() -> int:
-    import os
     import sys
 
     if "--stage80" in sys.argv:
         return compare_stage_80()
 
     from app.rag import generate, sanitize
-    from app.rag.evaluate import _ollama_embedder
-    from app.rag.generate import DEFAULT_CHAT_MODEL, OllamaChat
+    from app.rag.evaluate import _ollama_embedder, eval_chat
 
-    chat = OllamaChat(os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL)
+    chat = eval_chat()
     embedder, _ = _ollama_embedder()
     for name, (spotlight, clean) in {
         "no defence": (False, False),

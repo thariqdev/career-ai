@@ -42,18 +42,26 @@ from app.rag.bm25 import BM25Index
 from app.rag.chunker import Chunk, build_chunks
 from app.rag.embeddings import (
     DEFAULT_BASE_URL,
-    CachedEmbedder,
+    GEMINI_EMBED_MODEL,
     Embedder,
     EmbeddingUnavailableError,
+    GeminiEmbedder,
     OllamaEmbedder,
     VectorIndex,
     reciprocal_rank_fusion,
 )
+from app.rag.vector_store import PersistentEmbedder
 from app.rag.faithfulness import check as check_faithfulness
 from app.rag.faithfulness import vocabulary
 from app.rag.generate import (
     ChatModel,
+    GEMINI_CHAT_MODEL,
+    GROQ_CHAT_MODEL,
+    TEMPERATURE,
+    FallbackChat,
+    GeminiChat,
     GenerationUnavailableError,
+    GroqChat,
     Note,
     OllamaChat,
     Turn,
@@ -143,26 +151,56 @@ class AssistantAnswer:
     action: Action | None = None
 
 
-_embedder: CachedEmbedder | None = None
+_embedder: PersistentEmbedder | None = None
 
 
 def configured_embedder() -> Embedder | None:
-    """The cached Ollama embedder when OLLAMA_EMBED_MODEL is set, else None (keyword only).
+    """The cached embedder, else None (keyword only).
 
-    One instance per process, so its cache survives between questions.
+    EMBED_PROVIDER=gemini (production): Google's hosted model, needs GEMINI_API_KEY.
+    Otherwise (local): Ollama, when OLLAMA_EMBED_MODEL is set.
+    One instance per process; note vectors are stored in the note_embeddings table.
     """
     global _embedder
+    if (os.getenv("EMBED_PROVIDER") or "").strip().lower() == "gemini":
+        api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+        gemini_model = (os.getenv("GEMINI_EMBED_MODEL") or "").strip() or GEMINI_EMBED_MODEL
+        if not api_key:
+            return None
+        if _embedder is None or _embedder.name != gemini_model:
+            _embedder = PersistentEmbedder(GeminiEmbedder(api_key, model=gemini_model))
+        return _embedder
     model = (os.getenv("OLLAMA_EMBED_MODEL") or "").strip()
     if not model:
         return None
     if _embedder is None or _embedder.name != model:
         base_url = os.getenv("OLLAMA_BASE_URL") or DEFAULT_BASE_URL
-        _embedder = CachedEmbedder(OllamaEmbedder(model, base_url=base_url))
+        _embedder = PersistentEmbedder(OllamaEmbedder(model, base_url=base_url))
     return _embedder
 
 
+def hosted_chat(temperature: float = TEMPERATURE, seed: int | None = None) -> ChatModel | None:
+    """CHAT_PROVIDER=groq (production): Groq first, Gemini as the fallback, each only when
+    its key is set. None when neither key is set (the reply is then the notes)."""
+    chats: list[ChatModel] = []
+    if groq_key := (os.getenv("GROQ_API_KEY") or "").strip():
+        model = (os.getenv("GROQ_CHAT_MODEL") or "").strip() or GROQ_CHAT_MODEL
+        chats.append(GroqChat(groq_key, model=model, temperature=temperature, seed=seed))
+    if gemini_key := (os.getenv("GEMINI_API_KEY") or "").strip():
+        model = (os.getenv("GEMINI_CHAT_MODEL") or "").strip() or GEMINI_CHAT_MODEL
+        chats.append(GeminiChat(gemini_key, model=model, temperature=temperature))
+    return FallbackChat(chats) if chats else None
+
+
+def _hosted() -> bool:
+    return (os.getenv("CHAT_PROVIDER") or "").strip().lower() == "groq"
+
+
 def configured_chat() -> ChatModel | None:
-    """The local Ollama chat model when OLLAMA_CHAT_MODEL is set, else None (notes only)."""
+    """The writer: hosted models when CHAT_PROVIDER=groq; otherwise the local Ollama model
+    when OLLAMA_CHAT_MODEL is set; else None (notes only)."""
+    if _hosted():
+        return hosted_chat()
     model = (os.getenv("OLLAMA_CHAT_MODEL") or "").strip()
     if not model:
         return None
@@ -170,7 +208,9 @@ def configured_chat() -> ChatModel | None:
 
 
 def configured_rewriter() -> ChatModel | None:
-    """The same local model, at temperature 0, for rewriting follow-ups (stage 73)."""
+    """The same writer, at temperature 0, for rewriting follow-ups (stage 73)."""
+    if _hosted():
+        return hosted_chat(temperature=0.0, seed=REWRITE_SEED)
     model = (os.getenv("OLLAMA_CHAT_MODEL") or "").strip()
     if not model:
         return None

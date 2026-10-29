@@ -34,6 +34,7 @@ from typing import Protocol
 
 import httpx
 
+from app.rag.http_retry import post_with_retry
 from app.rag.warmup import keep_alive
 
 DEFAULT_MODEL = "nomic-embed-text"
@@ -91,6 +92,85 @@ class OllamaEmbedder:
             raise EmbeddingUnavailableError("Ollama's answer wasn't in the expected format.") from error
         if len(vectors) != len(texts):
             raise EmbeddingUnavailableError("Ollama returned the wrong number of embeddings.")
+        return vectors
+
+
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
+GEMINI_EMBED_MODEL = "gemini-embedding-2"
+GEMINI_DIMENSIONS = 768
+GEMINI_BATCH = 100  # most texts batchEmbedContents takes in one request
+
+
+def gemini_text(text: str) -> str:
+    """nomic's task prefixes -> gemini-embedding-2's formats (it has no task_type field)."""
+    if text.startswith(QUERY_PREFIX):
+        return f"task: search result | query: {text[len(QUERY_PREFIX):]}"
+    if text.startswith(DOC_PREFIX):
+        return f"title: none | text: {text[len(DOC_PREFIX):]}"
+    return text
+
+
+class GeminiEmbedder:
+    """Google's hosted embedding model (production). Same interface as OllamaEmbedder.
+
+    768 dimensions, which gemini-embedding-2 normalizes itself. 429s and 5xx are retried
+    with backoff (free tier: a per-minute token budget). The API key goes in a header and
+    never into an error message.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = GEMINI_EMBED_MODEL,
+        dimensions: int = GEMINI_DIMENSIONS,
+        base_url: str = GEMINI_BASE_URL,
+        transport: httpx.BaseTransport | None = None,  # tests only
+        sleep=None,  # tests only
+    ) -> None:
+        self.name = model
+        self.dimensions = dimensions
+        self._api_key = api_key
+        self._base_url = base_url.rstrip("/")
+        self._transport = transport
+        self._sleep = sleep
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        with httpx.Client(transport=self._transport, timeout=TIMEOUT_SECONDS) as client:
+            for start in range(0, len(texts), GEMINI_BATCH):
+                vectors += self._batch(client, texts[start : start + GEMINI_BATCH])
+        return vectors
+
+    def _batch(self, client: httpx.Client, texts: list[str]) -> list[list[float]]:
+        body = {
+            "requests": [
+                {
+                    "model": f"models/{self.name}",
+                    "content": {"parts": [{"text": gemini_text(t)}]},
+                    "outputDimensionality": self.dimensions,
+                }
+                for t in texts
+            ]
+        }
+        extra = {} if self._sleep is None else {"sleep": self._sleep}
+        try:
+            response = post_with_retry(
+                client,
+                f"{self._base_url}/models/{self.name}:batchEmbedContents",
+                json=body,
+                headers={"x-goog-api-key": self._api_key},
+                **extra,
+            )
+        except httpx.HTTPError as error:
+            raise EmbeddingUnavailableError(f"Gemini isn't reachable ({type(error).__name__}).") from error
+        if response.status_code != 200:
+            raise EmbeddingUnavailableError(f"Gemini answered {response.status_code}.")
+        try:
+            vectors = [item["values"] for item in response.json()["embeddings"]]
+        except (ValueError, KeyError, TypeError) as error:
+            raise EmbeddingUnavailableError("Gemini's answer wasn't in the expected format.") from error
+        if len(vectors) != len(texts) or any(len(v) != self.dimensions for v in vectors):
+            raise EmbeddingUnavailableError("Gemini returned the wrong number or size of embeddings.")
         return vectors
 
 

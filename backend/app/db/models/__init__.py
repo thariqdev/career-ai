@@ -14,6 +14,7 @@ from app.db.models.learning_resource import LearningResource
 from app.db.models.learning_progress import LearningProgress
 from app.db.models.dismissed_requirement import DismissedRequirement
 from app.db.models.assistant_feedback import AssistantFeedback
+from app.db.models.note_embedding import NoteEmbedding
 
 __all__ = [
     "Skill",
@@ -34,4 +35,5 @@ __all__ = [
     "LearningProgress",
     "DismissedRequirement",
     "AssistantFeedback",
+    "NoteEmbedding",
 ]

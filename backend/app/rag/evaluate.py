@@ -157,18 +157,98 @@ def summary(scores: list[QuestionScore]) -> tuple[float, float]:
 
 
 def _ollama_embedder():
-    """The real embedder if Ollama answers, else (None, reason)."""
+    """The real embedder if it answers, else (None, reason). EMBED_PROVIDER=gemini measures
+    the production model (needs GEMINI_API_KEY); otherwise local Ollama. Vectors stay in
+    memory: an eval never writes to a database."""
     import os
 
-    from app.rag.embeddings import DEFAULT_MODEL, CachedEmbedder, EmbeddingUnavailableError, OllamaEmbedder
+    from app.rag import vector_store
+    from app.rag.embeddings import (
+        DEFAULT_MODEL,
+        GEMINI_EMBED_MODEL,
+        CachedEmbedder,
+        EmbeddingUnavailableError,
+        GeminiEmbedder,
+        OllamaEmbedder,
+    )
 
-    model = (os.getenv("OLLAMA_EMBED_MODEL") or DEFAULT_MODEL).strip()
-    embedder = CachedEmbedder(OllamaEmbedder(model, base_url=os.getenv("OLLAMA_BASE_URL") or "http://127.0.0.1:11434"))
+    vector_store.session_factory_override = None  # in case anything reaches the stored cache
+    if (os.getenv("EMBED_PROVIDER") or "").strip().lower() == "gemini":
+        model = (os.getenv("GEMINI_EMBED_MODEL") or "").strip() or GEMINI_EMBED_MODEL
+        embedder = CachedEmbedder(GeminiEmbedder((os.getenv("GEMINI_API_KEY") or "").strip(), model=model))
+    else:
+        model = (os.getenv("OLLAMA_EMBED_MODEL") or DEFAULT_MODEL).strip()
+        embedder = CachedEmbedder(OllamaEmbedder(model, base_url=os.getenv("OLLAMA_BASE_URL") or "http://127.0.0.1:11434"))
     try:
         embedder.embed(["probe"])
     except EmbeddingUnavailableError as error:
         return None, str(error)
     return embedder, model
+
+
+class PatientChat:
+    """Eval-only: retries a hosted writer that failed BEFORE sending text (free-tier 429s),
+    so a score measures the model, not the per-minute rate limit. Production never waits
+    like this: it hands over to the fallback writer at once (FallbackChat)."""
+
+    WAITS = (10.0, 20.0, 40.0, 60.0)
+
+    def __init__(self, inner, sleep=None) -> None:
+        import time
+
+        self.inner = inner
+        self.name = inner.name
+        self.temperature = getattr(inner, "temperature", None)
+        self.retries = 0  # how often the rate limit (or an outage) was hit
+        self._sleep = sleep or time.sleep
+
+    def stream(self, messages):
+        from app.rag.generate import GenerationUnavailableError
+
+        for wait in (*self.WAITS, None):
+            started = False
+            try:
+                for piece in self.inner.stream(messages):
+                    started = True
+                    yield piece
+                return
+            except GenerationUnavailableError:
+                if started or wait is None:
+                    raise
+                self.retries += 1
+                self._sleep(wait)
+
+
+def eval_chat(temperature: float | None = None, seed: int | None = None):
+    """The writer an eval measures. CHAT_PROVIDER=groq: Groq alone (or Gemini alone with
+    EVAL_WRITER=gemini), made patient about rate limits; otherwise local Ollama."""
+    import os
+
+    from app.rag.generate import (
+        DEFAULT_CHAT_MODEL,
+        GEMINI_CHAT_MODEL,
+        GROQ_CHAT_MODEL,
+        TEMPERATURE,
+        GeminiChat,
+        GroqChat,
+        OllamaChat,
+    )
+
+    temperature = TEMPERATURE if temperature is None else temperature
+    if (os.getenv("CHAT_PROVIDER") or "").strip().lower() == "groq":
+        if (os.getenv("EVAL_WRITER") or "").strip().lower() == "gemini":
+            model = (os.getenv("GEMINI_CHAT_MODEL") or "").strip() or GEMINI_CHAT_MODEL
+            return PatientChat(GeminiChat((os.getenv("GEMINI_API_KEY") or "").strip(), model=model, temperature=temperature))
+        model = (os.getenv("GROQ_CHAT_MODEL") or "").strip() or GROQ_CHAT_MODEL
+        return PatientChat(GroqChat((os.getenv("GROQ_API_KEY") or "").strip(), model=model, temperature=temperature, seed=seed))
+    model = os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL
+    return OllamaChat(model, base_url=os.getenv("OLLAMA_BASE_URL") or "http://127.0.0.1:11434", temperature=temperature, seed=seed)
+
+
+def hosted_eval() -> bool:
+    import os
+
+    return (os.getenv("CHAT_PROVIDER") or "").strip().lower() == "groq"
 
 
 def main() -> int:

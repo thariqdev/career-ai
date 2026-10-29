@@ -15,5 +15,13 @@ services:
         sync: false
       - key: DEMO_MODE             # made-up data only; backup import/restore switched off
         value: "true"
+      - key: EMBED_PROVIDER        # meaning search with Gemini embeddings (no Ollama on the server)
+        value: gemini
+      - key: CHAT_PROVIDER         # the writer: Groq, then Gemini Flash-Lite, then the notes
+        value: groq
+      - key: GROQ_API_KEY          # from console.groq.com/keys (never committed)
+        sync: false
+      - key: GEMINI_API_KEY        # from aistudio.google.com/apikey (never committed)
+        sync: false
       - key: DEMO_RESET_TOKEN      # copy it into the GitHub secret of the same name
         generateValue: true

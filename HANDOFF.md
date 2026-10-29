@@ -2498,6 +2498,29 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 96 (production AI without Ollama):**
+  - **Embeddings:** `GeminiEmbedder` (`rag/embeddings.py`): `gemini-embedding-2`, 768 dims, batches of 100.
+    - It rewrites nomic's `search_document:` / `search_query:` prefixes into Gemini's formats (`title: none | text:` and `task: search result | query:`).
+    - `rag/http_retry.py` retries 429 / 5xx / network errors with 1-2-4-8 s backoff (honouring `Retry-After`, capped at 20 s).
+  - **Writers:** `GroqChat` (`openai/gpt-oss-20b`, `reasoning_effort` low, `include_reasoning` false, SSE), `GeminiChat` (`gemini-3.5-flash-lite`, `streamGenerateContent?alt=sse`, thought parts skipped), and `FallbackChat`.
+    - `FallbackChat` switches writer only before the first token; it raises if every writer fails, and the assistant then shows the notes.
+    - `HOSTED_TIMEOUT` is 20 s read. `gemini-3.8-flash` timed out / gave 503 on the free tier in a smoke test.
+  - **Switches:** `EMBED_PROVIDER=gemini`, `CHAT_PROVIDER=groq`, `GROQ_API_KEY`, `GEMINI_API_KEY`, plus optional `GEMINI_EMBED_MODEL` / `GROQ_CHAT_MODEL` / `GEMINI_CHAT_MODEL`.
+    - They're read only in `configured_embedder` / `configured_chat` / `configured_rewriter`. Unset means Ollama, as before. A provider with no key means keyword-only search or notes-only answers.
+  - **Stored vectors:**
+    - Table `note_embeddings` (`note_key` = sha256 of the embedded text, `model_name`, `dims`, `vector`; unique on all three), migration `a7c3e91d4f20`.
+    - The migration enables pgvector and converts the column to `vector` only where `pg_available_extensions` lists it (Neon). The local PG 18 has no pgvector, so the column stays `text`.
+    - `VectorText` writes `[..]` text, which PostgreSQL casts itself (pg8000 sends str as unknown).
+    - `PersistentEmbedder` (`rag/vector_store.py`) replaces `CachedEmbedder` in `configured_embedder`. It stores only `DOC_PREFIX` texts, never questions, and falls back to plain embedding if the DB fails.
+    - `note_cache.IGNORED` includes the table. Tests set `vector_store.session_factory_override = None` (conftest).
+  - **Evals:** `_ollama_embedder()` and the new `eval_chat()` follow the same env vars.
+    - Hosted evals measure Groq alone (or Gemini with `EVAL_WRITER=gemini`) through `PatientChat`, which retries 10/20/40/60 s on a failure before the first token. Eval vectors stay in memory.
+    - `router_eval` and `latency_eval` are still Ollama-only.
+  - **Results (one run, frozen sets):** hybrid MRR 0.967 (was 0.933); glued follow-ups MRR 0.713 (was 0.637); completeness 0.991; steady 14/15.
+    - The judge caught 8/8 with 0/8 false alarms. Injection: no defence 6/32; held-out after cleaning 5/24 (was 3/24). AI answers kept 20/45.
+    - `MIN_COSINE` 0.6 still separates right notes (0.69-0.81) from the documented off-topic questions (0.52, 0.58). The baseline was not saved.
+  - **Open:** see README "What is broken or unfinished". The pgvector branch is untested until the Render deploy; the demo banner text is out of date.
+  - **Tests:** `test_gemini_embedder.py` (8), `test_hosted_chat.py` (10), `test_vector_store.py` (8), `test_eval_providers.py` (4). `pyproject` filters Starlette's anyio `BlockingPortal` deprecation warning.
 - **Stage 95 (start fresh with a new CV):**
   - **`app/core/services/cv_replace_service.py`:**
     - `clear_person(db, user)` bulk-deletes the person's rows, children first: comparison evidence -> results -> dismissed -> requirements -> jobs -> claim evidence -> claims -> CV marks -> learning progress -> evidence -> projects / work / education -> assistant feedback.

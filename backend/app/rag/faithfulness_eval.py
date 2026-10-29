@@ -17,13 +17,12 @@ The rule checks run anywhere. The judge needs Ollama (OLLAMA_CHAT_MODEL, default
 and runs each answer JUDGE_RUNS times, because a model doesn't always say the same thing.
 """
 
-import os
 import sys
 from dataclasses import dataclass
 
 from app.rag.evaluate import build_fixture_chunks
 from app.rag.faithfulness import check, judge, vocabulary
-from app.rag.generate import DEFAULT_CHAT_MODEL, Note, OllamaChat
+from app.rag.generate import Note
 
 JUDGE_RUNS = 3
 
@@ -92,7 +91,9 @@ def main() -> int:
     known = vocabulary(chunks)
     rule_flags = [not check(c.answer, _notes(chunks, c.notes), known).ok for c in LABELLED]
 
-    chat = OllamaChat(os.getenv("OLLAMA_CHAT_MODEL") or DEFAULT_CHAT_MODEL)
+    from app.rag.evaluate import eval_chat
+
+    chat = eval_chat()
     judge_flags: list[bool | None] = []
     judge_detail: list[str] = []
     for case in LABELLED:
