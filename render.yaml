@@ -13,8 +13,8 @@ services:
         sync: false
       - key: CORS_ORIGINS          # the Vercel site, e.g. https://career-ai.vercel.app
         sync: false
-      - key: DEMO_MODE             # made-up data only; backup import/restore switched off
-        value: "true"
+      - key: DEMO_MODE             # "false": the live site is the owner's own app (real data, no daily reset).
+        value: "false"            # "true" = public demo: made-up data, reset daily, backup restore off
       - key: EMBED_PROVIDER        # meaning search with Gemini embeddings (no Ollama on the server)
         value: gemini
       - key: CHAT_PROVIDER         # the writer: Groq, then Gemini Flash-Lite, then the notes

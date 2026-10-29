@@ -2,7 +2,7 @@
 
 A personal career and technical-knowledge system: it keeps track of the skills you can actually prove, reads job postings, shows how well you match each job and what to learn next, and has a grounded AI assistant that answers questions only from your own data.
 
-**Live demo:** https://career-ai-inky-ten.vercel.app (made-up data for a fictional "Alex Demo", reset daily; the Assistant runs on free hosted AI models, so the first visit after a quiet spell can take up to a minute).
+**Live app:** https://career-ai-inky-ten.vercel.app. It's my own Career AI with my real CV and job applications (there's no login, so anyone with the link can see it). The Assistant runs on free hosted AI models, so the first visit after a quiet spell can take up to a minute. To run it as a public demo with made-up data instead, see below.
 
 **How the AI assistant was built and measured:** [docs/RAG_CASE_STUDY.md](docs/RAG_CASE_STUDY.md) (a write-up), and [docs/RAG_GUIDE.md](docs/RAG_GUIDE.md) (the stage-by-stage guide).
 
@@ -348,9 +348,9 @@ Locally the assistant runs on Ollama (free, nothing leaves your computer). A fre
 - **"Start fresh with this CV" leaves the old person's note vectors** in `note_embeddings` (vectors only, no text). The demo's daily reset empties them.
 - **`gemini-3.8-flash` was overloaded** on the free tier (timeouts, 503) in testing, so the fallback is Flash-Lite.
 
-## Deploy the public demo (free tiers)
+## Deploy it (free tiers)
 
-The demo runs the same code with `DEMO_MODE=true`: an empty database is filled with a fictional career at startup, backup import/restore is switched off, and `POST /demo/reset` (protected by a secret token) puts everything back. Never point a demo at your real data.
+**Two ways to run it.** As your own app (`DEMO_MODE=false`, what `render.yaml` sets now): your real data stays, and you can restore a "Download my data" backup into the empty live database. As a **public demo** (`DEMO_MODE=true`): an empty database is filled with a fictional career at startup, backup import/restore is switched off, and `POST /demo/reset` (protected by a secret token) puts everything back. Never point a demo at your real data.
 
 1. **Database (Neon):** create a project and copy its connection string (`postgresql://...?sslmode=require` works as pasted).
 2. **Backend (Render):** New > Blueprint > this repo. `render.yaml` builds `backend/Dockerfile`, which runs `alembic upgrade head` and starts the API. Fill in `DATABASE_URL` (from Neon) and `CORS_ORIGINS` (the Vercel URL from step 3; you can set it after step 3). `DEMO_RESET_TOKEN` is generated: copy it for step 4.
