@@ -13,17 +13,19 @@ class LearningResource(Base):
 
     Only ever created by the user (PROJECT_RULES.md section 15: curated, reviewable,
     editable). Nothing writes here automatically, and the app never fetches the URL.
-    Resources belong to the skill, not to a user, like the skill taxonomy itself.
+    Each link belongs to the user who saved it (stage 97: private per account); the skill
+    it's for comes from the shared skill dictionary.
     YouTube search links are NOT stored here: they're derived per request
     (learning_service.youtube_search_url).
     """
 
     __tablename__ = "learning_resources"
     __table_args__ = (
-        UniqueConstraint("skill_id", "mode", "url", name="uq_learning_resource"),
+        UniqueConstraint("user_id", "skill_id", "mode", "url", name="uq_learning_resource"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     skill_id: Mapped[int] = mapped_column(ForeignKey("skills.id"), nullable=False)
     mode: Mapped[LearningMode] = mapped_column(
         SAEnum(LearningMode, name="learning_mode"), nullable=False

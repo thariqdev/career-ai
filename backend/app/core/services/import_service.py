@@ -563,7 +563,7 @@ def restore(db: Session, user: User, raw: bytes) -> dict[str, int]:
     for r in file.learning_resources:
         db.add(
             LearningResource(
-                skill_id=skill[r.skill_id].id, mode=r.mode, title=r.title, url=r.url.strip(),
+                user_id=user.id, skill_id=skill[r.skill_id].id, mode=r.mode, title=r.title, url=r.url.strip(),
                 created_at=r.created_at,
             )
         )

@@ -2498,6 +2498,33 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 97 (accounts, backend):**
+  - **Model and migration `d4e8b2a6c913`:**
+    - `users` gains `password_hash` (None = can't log in, e.g. the old built-in user), `failed_logins` and `locked_until`.
+    - New `auth_sessions` table (`token_hash` = SHA-256 of the cookie token, unique; `expires_at`).
+    - `learning_resources.user_id` (NOT NULL; existing rows go to the oldest user). The unique key is now (user, skill, mode, url).
+  - **`core/services/auth_service.py`:**
+    - `hash_password` / `verify_password`: stdlib `hashlib.scrypt` (n=2^14, r=8, p=1, 16-byte salt) in the format `scrypt$n$r$p$salt$hash`, compared with `hmac.compare_digest`.
+    - `sign_up` (lower-cased email, 8-128 characters, 409 if taken); `log_in` (the same 401 for an unknown email or a wrong password; a dummy hash is checked for unknown emails; 5 failures lock for 5 minutes, then 429).
+    - `create_session` (`secrets.token_urlsafe(32)`, 30 days), `user_for_token` (removes expired rows), `end_session`, `end_all_sessions`.
+  - **`api/auth.py`:** `POST /auth/signup` (201, logs you in), `POST /auth/login`, `POST /auth/logout` (204), `GET /auth/me`.
+    - The `career_ai_session` cookie is HttpOnly, SameSite=Lax and Secure (`SESSION_COOKIE_SECURE=false` for local http).
+  - **`dependencies.get_current_user`:** reads the cookie; no valid session means 401.
+    - `ALLOW_DEFAULT_USER` is a code-only test seam, set True in conftest, so older tests run as the built-in user.
+    - `main.py` mounts every router except health, auth and demo with `dependencies=[Depends(get_current_user)]`. CORS has `allow_credentials=True`.
+  - **Private links:** `learning_service.list_resources` and `add_resource` take `user`; deleting another user's link is 404. The learning path, export and import are scoped to the user. Merge de-duplicates links per user.
+  - **Shared dictionary guard:** `skill_service.used_by_another_account` / `ensure_mine_to_change`.
+    - Another account counts as using a skill if it has a claim, a CV mark, progress, a link, or a requirement or removed skill in its jobs.
+    - Rename, merge (both skills), delete and nickname add/remove return 409 `SkillSharedError` in that case.
+  - **Notes (`chunker.build_chunks`):** only skills that concern the user (claimed, on CV, in progress, or needed by their jobs) become notes, so another account's skills never show as "yours". The quick scorecard has no regressions.
+  - **Tests:** `test_auth.py` (9) and `test_account_isolation.py` (5: account B gets 404 on 27 id routes, sees empty lists and export, gets no A data from the Assistant, and hits the guard).
+    - Updated: the practice endpoint test now uses in-memory SQLite (the login check reads the DB); the merge test now expects the guard's 409.
+  - **Not deployed:** the frontend has no login pages until stage 99, so don't deploy the backend before then.
+  - **Open:**
+    - Demo mode can't log in (the seeded user has no password).
+    - Export still includes the whole shared skill dictionary.
+    - Restore needs "no skills at all" (`app_is_empty`), which fails once other accounts exist; stage 100.
+    - The notes fingerprint hashes every user's rows (any user's change rebuilds everyone's notes).
 - **Stage 96 (production AI without Ollama):**
   - **Embeddings:** `GeminiEmbedder` (`rag/embeddings.py`): `gemini-embedding-2`, 768 dims, batches of 100.
     - It rewrites nomic's `search_document:` / `search_query:` prefixes into Gemini's formats (`title: none | text:` and `task: search result | query:`).

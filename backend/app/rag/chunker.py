@@ -117,6 +117,12 @@ def build_chunks(db: Session, user: User, matches: dict | None = None) -> list[C
                 if item.skill_id is not None:
                     needed_by.setdefault(item.skill_id, []).append(f"{job_label(job)} ({word})")
 
+    # The skill dictionary is shared between accounts (stage 97): only skills that concern
+    # THIS user (claimed, on their CV, being learned, or needed by one of their jobs) become
+    # notes, so another account's skills never appear as "yours".
+    mine = set(claims) | on_cv | set(progress) | set(needed_by)
+    skills = [skill for skill in skills if skill.id in mine]
+
     chunks: list[Chunk] = []
 
     # --- skills -------------------------------------------------------------------------------

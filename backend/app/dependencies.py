@@ -2,7 +2,7 @@ import os
 from collections.abc import Generator
 from typing import Literal
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.ai.client import RequirementExtractor
@@ -13,7 +13,7 @@ from app.ai.providers.ollama_extractor import (
     OllamaRequirementExtractor,
 )
 from app.ai.providers.skill_list_extractor import SkillListExtractor
-from app.core.services import skill_service, user_service
+from app.core.services import auth_service, skill_service, user_service
 from app.db.models import User
 from database import SessionLocal
 
@@ -31,18 +31,33 @@ def get_db() -> Generator[Session, None, None]:
         db.close()
 
 
-def get_current_user(db: Session = Depends(get_db)) -> User:
-    """Resolve the single hardcoded user this system runs as (see user_service).
+SESSION_COOKIE = "career_ai_session"
 
-    Unlike a service, this DOES commit. Services flush but never commit because a
-    route owns the transaction — but this dependency runs BEFORE the route body, so
-    the user must already be durably in the database before the route's own service
-    calls (which may reference user_id) and its own commit run. It is a narrow,
-    deliberate exception to "services don't commit, routes do", not a new pattern:
-    it exists to guarantee the user exists, nothing else.
+# Test seam ONLY: the test suite sets this to True (tests/conftest.py) so the hundreds of
+# tests written before accounts keep running as the old built-in user. It is never read
+# from the environment, so a deployment can't switch it on by accident.
+ALLOW_DEFAULT_USER = False
+
+
+def session_cookie_secure() -> bool:
+    """Secure cookies are only sent over HTTPS. On by default; local http dev turns it off
+    with SESSION_COOKIE_SECURE=false."""
+    return (os.getenv("SESSION_COOKIE_SECURE") or "true").strip().lower() not in ("0", "false", "no")
+
+
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """The logged-in user, from the session cookie (stage 97: accounts). No valid session
+    means 401, so every route that depends on this is private to its owner.
+
+    Commits because it runs BEFORE the route body: an expired session it removes (and,
+    in tests, the built-in user it creates) must be saved independently of the route.
     """
-    user = user_service.get_or_create_default_user(db)
+    user = auth_service.user_for_token(db, request.cookies.get(SESSION_COOKIE))
+    if user is None and ALLOW_DEFAULT_USER:
+        user = user_service.get_or_create_default_user(db)
     db.commit()
+    if user is None:
+        raise HTTPException(status_code=401, detail="Please log in.")
     return user
 
 

@@ -30,15 +30,18 @@ from app.core.exceptions import (
     SkillMergeConflictError,
     SkillMergeIntoItselfError,
     SkillNameCollisionError,
+    SkillSharedError,
 )
 from app.db.models import (
     CVSkillPresence,
     DismissedRequirement,
+    JobDescription,
     JobRequirement,
     LearningProgress,
     LearningResource,
     Skill,
     SkillAlias,
+    User,
     UserSkill,
 )
 from app.db.models.enums import LearningStatus
@@ -262,13 +265,15 @@ def merge_skills(db: Session, source: Skill, target: Skill) -> Skill:
     for row in [*source.user_skills, *source.job_requirements, *source.aliases]:
         row.skill = target
 
-    saved = {(resource.mode, resource.url) for resource in target.learning_resources}
+    # Links are private per user (stage 97): a duplicate is the same user's same link.
+    saved = {(resource.user_id, resource.mode, resource.url) for resource in target.learning_resources}
     for resource in list(source.learning_resources):
-        if (resource.mode, resource.url) in saved:
+        key = (resource.user_id, resource.mode, resource.url)
+        if key in saved:
             db.delete(resource)
         else:
             resource.skill = target
-            saved.add((resource.mode, resource.url))
+            saved.add(key)
 
     progress_by_user = {row.user_id: row for row in target.learning_progress}
     for row in list(source.learning_progress):
@@ -365,3 +370,28 @@ def add_catalogue_skill(db: Session, name: str) -> tuple[Skill, bool]:
         except SkillNameCollisionError:
             pass  # that spelling already belongs to another skill: the name is enough
     return skill, True
+
+
+def used_by_another_account(db: Session, skill: Skill, user: User) -> bool:
+    """Does any OTHER account use this skill (claim, CV mark, progress, saved link, or a
+    requirement / removed skill in one of their jobs)? The dictionary is shared (stage 97),
+    so renaming, merging, deleting or re-nicknaming it would change their data too."""
+    db.flush()
+    others = [
+        select(UserSkill.id).where(UserSkill.skill_id == skill.id, UserSkill.user_id != user.id),
+        select(CVSkillPresence.id).where(CVSkillPresence.skill_id == skill.id, CVSkillPresence.user_id != user.id),
+        select(LearningProgress.id).where(LearningProgress.skill_id == skill.id, LearningProgress.user_id != user.id),
+        select(LearningResource.id).where(LearningResource.skill_id == skill.id, LearningResource.user_id != user.id),
+        select(JobRequirement.id)
+        .join(JobDescription, JobRequirement.job_description_id == JobDescription.id)
+        .where(JobRequirement.skill_id == skill.id, JobDescription.user_id != user.id),
+        select(DismissedRequirement.id)
+        .join(JobDescription, DismissedRequirement.job_description_id == JobDescription.id)
+        .where(DismissedRequirement.skill_id == skill.id, JobDescription.user_id != user.id),
+    ]
+    return any(db.scalar(query.limit(1)) is not None for query in others)
+
+
+def ensure_mine_to_change(db: Session, skill: Skill, user: User) -> None:
+    if used_by_another_account(db, skill, user):
+        raise SkillSharedError(skill.name)

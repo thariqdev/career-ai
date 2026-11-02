@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import DuplicateLearningResourceError, EmptyResourceTitleError
 from app.core.web_links import require_web_link
-from app.db.models import LearningResource, Skill
+from app.db.models import LearningResource, Skill, User
 from app.db.models.enums import LearningMode
 
 SEARCH_QUERY_TEMPLATES: dict[LearningMode, str] = {
@@ -38,22 +38,22 @@ def youtube_search_url(skill_name: str, mode: LearningMode) -> str:
     return YOUTUBE_SEARCH_URL + quote_plus(search_query(skill_name, mode))
 
 
-def list_resources(db: Session, skill: Skill) -> list[LearningResource]:
-    """The skill's saved resources, oldest first. Read-only."""
+def list_resources(db: Session, user: User, skill: Skill) -> list[LearningResource]:
+    """This user's saved resources for the skill, oldest first. Read-only."""
     db.flush()
     return list(
         db.scalars(
             select(LearningResource)
-            .where(LearningResource.skill_id == skill.id)
+            .where(LearningResource.user_id == user.id, LearningResource.skill_id == skill.id)
             .order_by(LearningResource.created_at, LearningResource.id)
         )
     )
 
 
 def add_resource(
-    db: Session, skill: Skill, mode: LearningMode, title: str, url: str
+    db: Session, user: User, skill: Skill, mode: LearningMode, title: str, url: str
 ) -> LearningResource:
-    """Save a user-chosen link. Rejects a blank title, a non-http(s) URL, or a duplicate."""
+    """Save a link for this user (private to them). Rejects a blank title, a non-http(s) URL, or a duplicate."""
     clean_title = title.strip()
     if not clean_title:
         raise EmptyResourceTitleError()
@@ -63,6 +63,7 @@ def add_resource(
     db.flush()
     existing = db.scalar(
         select(LearningResource.id).where(
+            LearningResource.user_id == user.id,
             LearningResource.skill_id == skill.id,
             LearningResource.mode == mode,
             LearningResource.url == clean_url,
@@ -71,7 +72,7 @@ def add_resource(
     if existing is not None:
         raise DuplicateLearningResourceError(clean_url)
 
-    resource = LearningResource(skill=skill, mode=mode, title=clean_title, url=clean_url)
+    resource = LearningResource(user_id=user.id, skill=skill, mode=mode, title=clean_title, url=clean_url)
     db.add(resource)
     db.flush()
     return resource

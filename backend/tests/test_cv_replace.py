@@ -57,7 +57,7 @@ def engine() -> Iterator[Engine]:
     demo.seed_if_empty(factory)  # person A: a full career
     with factory() as db:
         python = db.scalar(select(Skill).where(Skill.name == "Python"))
-        db.add(LearningResource(skill=python, mode=LearningMode.THEORY_INTERVIEW, title="Python docs",
+        db.add(LearningResource(user_id=db.scalar(select(User.id)), skill=python, mode=LearningMode.THEORY_INTERVIEW, title="Python docs",
                                 url="https://docs.python.org"))
         db.add(AssistantFeedback(user_id=db.scalar(select(User.id)), message_id="m1", rating="up",
                                  question="q", answer="a", sources=[], retrieval="bm25", written_by="notes"))

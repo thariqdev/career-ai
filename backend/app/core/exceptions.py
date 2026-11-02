@@ -282,3 +282,44 @@ class NotACatalogueSkillError(DomainError):
 
     def __init__(self, name: str) -> None:
         super().__init__(f'"{name}" isn\'t a skill in the catalogue. Add it on the Skills page instead.')
+
+
+# --- accounts (stage 97) ------------------------------------------------------------------
+
+
+class InvalidCredentialsError(DomainError):
+    """Wrong email or password (the same message either way, so emails can't be probed)."""
+
+    def __init__(self, message: str = "Wrong email or password.") -> None:
+        super().__init__(message)
+
+
+class InvalidEmailError(DomainError):
+    def __init__(self) -> None:
+        super().__init__("Please enter a valid email address.")
+
+
+class EmailTakenError(DomainError):
+    def __init__(self) -> None:
+        super().__init__("An account with this email already exists. Log in instead.")
+
+
+class WeakPasswordError(DomainError):
+    def __init__(self, minimum: int, maximum: int) -> None:
+        super().__init__(f"Use a password of {minimum} to {maximum} characters.")
+
+
+class AccountLockedError(DomainError):
+    def __init__(self, minutes: int) -> None:
+        super().__init__(f"Too many wrong passwords. Try again in {minutes} minutes.")
+
+
+class SkillSharedError(DomainError):
+    """The skill dictionary is shared: one account may not rename, merge or delete a skill
+    (or change its nicknames) while another account uses it."""
+
+    def __init__(self, skill_name: str) -> None:
+        super().__init__(
+            f'"{skill_name}" is also used by another account, so it can\'t be renamed, merged, '
+            "deleted or have its nicknames changed."
+        )

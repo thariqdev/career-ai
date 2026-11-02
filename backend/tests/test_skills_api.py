@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 from app.core.exceptions import SkillNameCollisionError
+from app.core.services.user_service import get_or_create_default_user
 from app.db.models import CVSkillPresence, JobDescription, JobRequirement, Skill, SkillAlias, User
 from app.dependencies import get_db
 from app.main import app
@@ -368,7 +369,8 @@ def _claim(client, engine, skill_id):
 
 def _job_requirement(client, engine, skill_id):
     with Session(engine) as db:
-        job = JobDescription(user=User(email="someone@example.com"), raw_text="Need Python.")
+        job = JobDescription(user=get_or_create_default_user(db), raw_text="Need Python.")  # the caller's own job
+        db.add(job)
         db.add(JobRequirement(job_description=job, skill=db.get(Skill, skill_id), requirement_text="Python"))
         db.commit()
 

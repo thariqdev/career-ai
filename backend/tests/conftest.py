@@ -17,7 +17,13 @@ def _no_local_ai_reader(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in ("EMBED_PROVIDER", "CHAT_PROVIDER", "GEMINI_API_KEY", "GROQ_API_KEY", "GEMINI_EMBED_MODEL",
                  "GROQ_CHAT_MODEL", "GEMINI_CHAT_MODEL", "EVAL_WRITER"):
         monkeypatch.delenv(name, raising=False)  # tests never call a hosted AI API
+    from app import dependencies
     from app.rag import vector_store
+
+    # Accounts (stage 97): tests written before login run as the old built-in user when no
+    # session cookie is sent. tests/test_auth.py switches this off to test real logins.
+    monkeypatch.setattr(dependencies, "ALLOW_DEFAULT_USER", True)
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "false")  # the test client talks plain http
 
     monkeypatch.setattr(vector_store, "session_factory_override", None)  # never store vectors in a real DB
     monkeypatch.delenv("DEMO_MODE", raising=False)  # the public demo is never on in tests

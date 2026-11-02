@@ -2,11 +2,12 @@ import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
     assistant,
+    auth,
     cv,
     demo,
     evidence,
@@ -26,6 +27,7 @@ from app.api import (
 from app.api.errors import domain_error_handler
 from app import demo as demo_mode
 from app.core.exceptions import DomainError
+from app.dependencies import get_current_user
 from app.rag.warmup import start_warm_up
 
 
@@ -53,23 +55,20 @@ app.add_middleware(
     CORSMiddleware,
     # Comma-separated; the deployed frontend's address is added via CORS_ORIGINS (stage 94).
     allow_origins=[o.strip() for o in (os.getenv("CORS_ORIGINS") or "http://localhost:3000,http://127.0.0.1:3000").split(",") if o.strip()],
+    allow_credentials=True,  # the session cookie (stage 97), for the listed origins only
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Public: health check, the account routes themselves, and the demo (token-protected reset).
 app.include_router(health.router)
-app.include_router(assistant.router)
-app.include_router(skills.router)
-app.include_router(me.router)
-app.include_router(job_descriptions.router)
-app.include_router(user_skills.router)
-app.include_router(evidence.router)
-app.include_router(learning_resources.router)
-app.include_router(learning_progress.router)
-app.include_router(learning_path.router)
-app.include_router(cv.router)
-app.include_router(profile.router)
-app.include_router(export.router)
-app.include_router(import_backup.router)
-app.include_router(practice.router)
+app.include_router(auth.router)
 app.include_router(demo.router)
+
+# Everything else needs a logged-in user (stage 97). Routes that read `user` get the same
+# one (FastAPI caches the dependency per request); routes that don't are protected too.
+for private in (
+    assistant, skills, me, job_descriptions, user_skills, evidence, learning_resources,
+    learning_progress, learning_path, cv, profile, export, import_backup, practice,
+):
+    app.include_router(private.router, dependencies=[Depends(get_current_user)])

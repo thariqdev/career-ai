@@ -91,7 +91,7 @@ def learning_paths(db: Session, user: User, skills: list[Skill]) -> list[Learnin
     saved: dict[int, list[PathLink]] = {}
     for resource in db.scalars(
         select(LearningResource)
-        .where(LearningResource.skill_id.in_(ids))
+        .where(LearningResource.user_id == user.id, LearningResource.skill_id.in_(ids))
         .order_by(LearningResource.created_at, LearningResource.id)
     ):
         saved.setdefault(resource.skill_id, []).append(PathLink(resource.title, resource.url))

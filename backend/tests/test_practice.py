@@ -64,7 +64,25 @@ def test_ids_depend_on_the_question_only_so_progress_survives_reordering() -> No
 
 
 def test_the_endpoint_serves_the_cards() -> None:
-    body = TestClient(app).get("/practice/rag-questions").json()
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from sqlalchemy.pool import StaticPool
+
+    from app.dependencies import get_db
+    from database import Base
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+
+    def test_db():
+        with Session(engine, autoflush=False) as db:
+            yield db
+
+    app.dependency_overrides[get_db] = test_db  # the login check reads the DB: never the live one
+    try:
+        body = TestClient(app).get("/practice/rag-questions").json()
+    finally:
+        app.dependency_overrides.clear()
 
     assert len(body) == len(practice.cards())
     assert set(body[0]) == {"id", "stage", "stage_title", "question", "answer"}

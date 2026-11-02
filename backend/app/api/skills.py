@@ -5,9 +5,10 @@ after a successful service call. If the service raises a DomainError the route n
 reaches commit; the session closes and the transaction rolls back, and the app-wide
 handler in errors.py turns the error into an HTTP response.
 
-Skills themselves are a shared taxonomy, not per-user data, so most routes here are not
-user-scoped. The cv-presence/cv-status routes are the exception: a skill's presence on
-*your* CV is per-user, so those two use Depends(get_current_user).
+Skills themselves are a shared dictionary, not per-user data. Every route needs a
+logged-in user (stage 97); renaming, merging, deleting and nickname changes are refused
+while another account uses the skill (skill_service.ensure_mine_to_change). A skill's
+presence on *your* CV is per-user, so the cv-presence/cv-status routes are scoped to you.
 
 Setting CV presence is an UPSERT (see cv_presence_service, shared with the CV upload).
 """
@@ -67,28 +68,34 @@ def similar_skills(name: str, db: Session = Depends(get_db)) -> list[Skill]:
 
 
 @router.patch("/{skill_id}", response_model=SkillResponse)
-def update_skill(skill_id: int, payload: SkillUpdate, db: Session = Depends(get_db)) -> Skill:
+def update_skill(
+    skill_id: int, payload: SkillUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> Skill:
     """Rename and/or re-categorize. 422 for a blank name, 409 for a name already in use."""
     skill = skill_service.get_skill(db, skill_id)
     if skill is None:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found.")
+    skill_service.ensure_mine_to_change(db, skill, user)
     skill_service.update_skill(db, skill, payload.model_dump(exclude_unset=True))
     db.commit()
     return skill
 
 
 @router.delete("/{skill_id}", status_code=204)
-def delete_skill(skill_id: int, db: Session = Depends(get_db)) -> Response:
+def delete_skill(skill_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Response:
     skill = skill_service.get_skill(db, skill_id)
     if skill is None:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found.")
+    skill_service.ensure_mine_to_change(db, skill, user)
     skill_service.delete_skill(db, skill)
     db.commit()
     return Response(status_code=204)
 
 
 @router.post("/{source_id}/merge-into/{target_id}", response_model=SkillResponse)
-def merge_skills(source_id: int, target_id: int, db: Session = Depends(get_db)) -> Skill:
+def merge_skills(
+    source_id: int, target_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> Skill:
     """Fold a duplicate skill into another. 422 for itself, 409 when both are claimed."""
     source = skill_service.get_skill(db, source_id)
     if source is None:
@@ -96,6 +103,8 @@ def merge_skills(source_id: int, target_id: int, db: Session = Depends(get_db)) 
     target = skill_service.get_skill(db, target_id)
     if target is None:
         raise HTTPException(status_code=404, detail=f"Skill {target_id} not found.")
+    skill_service.ensure_mine_to_change(db, source, user)
+    skill_service.ensure_mine_to_change(db, target, user)
     skill_service.merge_skills(db, source, target)
     db.commit()
     return target
@@ -112,10 +121,13 @@ def resolve_skill(text: str, db: Session = Depends(get_db)) -> Skill:
 
 
 @router.post("/{skill_id}/aliases", response_model=SkillResponse, status_code=201)
-def add_alias(skill_id: int, payload: AliasCreate, db: Session = Depends(get_db)) -> Skill:
+def add_alias(
+    skill_id: int, payload: AliasCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> Skill:
     skill = skill_service.get_skill(db, skill_id)
     if skill is None:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found.")
+    skill_service.ensure_mine_to_change(db, skill, user)
     skill_service.add_alias(db, skill, payload.alias)
     db.commit()
     return skill
@@ -124,10 +136,13 @@ def add_alias(skill_id: int, payload: AliasCreate, db: Session = Depends(get_db)
 # The alias goes in the query string, not the path: an alias like "CI/CD" would be
 # split on its "/" by path routing even when URL-encoded.
 @router.delete("/{skill_id}/aliases", response_model=SkillResponse)
-def remove_alias(skill_id: int, alias: str, db: Session = Depends(get_db)) -> Skill:
+def remove_alias(
+    skill_id: int, alias: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> Skill:
     skill = skill_service.get_skill(db, skill_id)
     if skill is None:
         raise HTTPException(status_code=404, detail=f"Skill {skill_id} not found.")
+    skill_service.ensure_mine_to_change(db, skill, user)
     skill_service.remove_alias(db, skill, alias)
     db.commit()
     return skill

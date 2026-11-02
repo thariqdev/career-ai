@@ -8,7 +8,13 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from app.core.exceptions import (
+    AccountLockedError,
     AliasNotFoundError,
+    EmailTakenError,
+    InvalidEmailError,
+    InvalidCredentialsError,
+    SkillSharedError,
+    WeakPasswordError,
     AmbiguousSkillMatchError,
     AppNotEmptyError,
     ApplicationDateError,
@@ -76,6 +82,12 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     EvidenceAlreadyLinkedError: 409,
     InsufficientEvidenceError: 409,
     RequirementsAlreadyExistError: 409,
+    InvalidCredentialsError: 401,
+    EmailTakenError: 409,
+    InvalidEmailError: 422,
+    WeakPasswordError: 422,
+    AccountLockedError: 429,
+    SkillSharedError: 409,
 }
 _DEFAULT_STATUS = 400  # any other DomainError subclass
 

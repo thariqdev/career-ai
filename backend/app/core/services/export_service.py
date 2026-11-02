@@ -138,5 +138,5 @@ def export_all(db: Session, user: User) -> dict[str, Any]:
         "job_descriptions": jobs,
         "cv_marks": [_row(m) for m in mine(CVSkillPresence)],
         "learning_progress": [_row(p) for p in mine(LearningProgress)],
-        "learning_resources": [_row(r) for r in db.scalars(select(LearningResource).order_by(LearningResource.id))],
+        "learning_resources": [_row(r) for r in mine(LearningResource)],  # private per user (stage 97)
     }

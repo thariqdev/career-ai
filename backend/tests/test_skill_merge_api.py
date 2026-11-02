@@ -238,7 +238,8 @@ def test_both_claimed_is_refused_and_nothing_changes(client: TestClient, engine:
     assert _progress_by_skill(client) == {source_id: "finished"}
 
 
-def test_claims_by_different_users_are_not_a_conflict(client: TestClient, engine: Engine) -> None:
+def test_a_skill_another_account_uses_is_never_merged(client: TestClient, engine: Engine) -> None:
+    """Stage 97: the dictionary is shared, so merging would move another account's claim."""
     target_id = _skill(engine, "Python")
     source_id = _skill(engine, "Pythonn")
     my_claim_id = _claim(client, source_id)
@@ -246,11 +247,12 @@ def test_claims_by_different_users_are_not_a_conflict(client: TestClient, engine
         db.add(UserSkill(user=User(email="other@example.com"), skill_id=target_id))
         db.commit()
 
-    assert _merge(client, source_id, target_id).status_code == 200
+    response = _merge(client, source_id, target_id)
 
+    assert response.status_code == 409 and "another account" in response.json()["detail"]
     with Session(engine) as db:
-        assert {c.skill_id for c in db.scalars(select(UserSkill))} == {target_id}
-        assert db.get(UserSkill, my_claim_id).skill_id == target_id
+        assert db.get(UserSkill, my_claim_id).skill_id == source_id  # nothing moved
+        assert db.get(Skill, source_id) is not None
 
 
 def test_merging_into_itself_is_refused(client: TestClient, engine: Engine) -> None:
