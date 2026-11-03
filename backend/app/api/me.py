@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.models import UserResponse
-from app.core.services import user_service
+from app.core.services import auth_service, cv_replace_service, user_service
+from app.core.exceptions import WrongCurrentPasswordError
 from app.db.models import User
 from app.dependencies import get_current_user, get_db
 
@@ -34,3 +35,25 @@ def update_current_user(
     user_service.set_full_name(db, user, payload.full_name)
     db.commit()
     return user
+
+
+class EmptyAccount(BaseModel):
+    password: str = Field(max_length=auth_service.MAX_PASSWORD_CHARS)
+
+
+@router.post("/me/empty")
+def empty_account(
+    payload: EmptyAccount,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Remove everything in your account but keep your login and name (so you can restore
+    a backup into it). Needs your password, so it can't happen by one stray click."""
+    from app.rag import note_cache
+
+    if not auth_service.verify_password(payload.password, user.password_hash):
+        raise WrongCurrentPasswordError()
+    removed = cv_replace_service.empty_account(db, user)
+    db.commit()
+    note_cache.clear()
+    return {"removed": removed}

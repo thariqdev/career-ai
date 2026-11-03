@@ -96,3 +96,21 @@ def replace_with_cv(db: Session, user: User, text: str) -> ReplaceResult:
     adopted = cv_adopt_service.add_all_from_cv(db, user, text)
     drafts = cv_profile_service.read_drafts(db, user, text)
     return ReplaceResult(removed=removed, adopted=adopted, drafts=drafts)
+
+
+def empty_account(db: Session, user: User) -> dict[str, int]:
+    """"Empty my account" (stage 100 follow-up): remove everything this person saved,
+    including their private study links, but keep the login (email, password) and name,
+    so a backup can be restored into it. Other accounts and the shared skill list are
+    untouched. Flushes, never commits."""
+    from app.db.models import LearningResource
+
+    name = user.full_name
+    removed = clear_person(db, user)
+    removed["learning_resources"] = len(
+        db.scalars(select(LearningResource.id).where(LearningResource.user_id == user.id)).all()
+    )
+    db.execute(delete(LearningResource).where(LearningResource.user_id == user.id).execution_options(synchronize_session=False))
+    user.full_name = name
+    db.flush()
+    return removed

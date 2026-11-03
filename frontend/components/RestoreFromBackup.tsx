@@ -52,7 +52,7 @@ function CountList({ counts }: { counts: Record<string, number> }) {
 }
 
 // Step 1: choose a file and preview it (the backend writes nothing). Step 2: restore,
-// which the backend only allows into an empty app, all or nothing.
+// which the backend only allows into an account with none of your data yet, all or nothing.
 export default function RestoreFromBackup() {
   const [state, setState] = useState<State>({ status: "idle" });
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +77,7 @@ export default function RestoreFromBackup() {
   async function handleRestore(file: File, preview: Preview) {
     const ok = await confirm({
       title: "Restore this backup?",
-      message: "Everything in the file is added to Career AI. It only works on an empty app.",
+      message: "Everything in the file is added to your account. It only works while your account has none of your data yet.",
       confirmLabel: "Restore",
     });
     if (!ok) return;
@@ -100,7 +100,7 @@ export default function RestoreFromBackup() {
     <Card>
       <SectionHeading
         title="Restore from backup"
-        hint="Load a file made by “Download my data”. It's checked first, and only restores into an empty app (after a reset or on a new computer), so nothing you already have is overwritten."
+        hint="Load a file made by “Download my data”. It's checked first, and only restores into an account with none of your data yet (a new account, or after “Empty my account”), so nothing you already have is overwritten."
       />
 
       {state.status === "restored" ? (
@@ -137,8 +137,13 @@ export default function RestoreFromBackup() {
               )}
               {previewed.preview.problems.length === 0 && !previewed.preview.app_empty && (
                 <p className="rounded-md bg-warm-soft px-3 py-2 text-sm text-ink">
-                  The file looks good, but this app already has data. Restore only works on an
-                  empty app, so nothing you have is overwritten or merged by guesswork.
+                  The file looks good, but your account already has data. Restore only works on an
+                  account with none of your data yet, so nothing is overwritten or merged by guesswork.
+                  To start over, use{" "}
+                  <Link href="/account" className="font-medium underline underline-offset-2">
+                    Empty my account
+                  </Link>{" "}
+                  on the Account page first.
                 </p>
               )}
               <Button

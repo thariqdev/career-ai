@@ -6,7 +6,9 @@ import { MIN_PASSWORD, passwordProblem } from "@/lib/auth";
 import { logOut } from "@/lib/session";
 import { useMe } from "@/lib/useMe";
 import type { User } from "@/lib/types";
+import Link from "next/link";
 import { Button, Card, Page, SectionHeading } from "@/components/ui";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { FormError, FormNotice, PasswordField } from "@/components/AuthCard";
 
 function ChangePassword() {
@@ -79,6 +81,76 @@ function ChangePassword() {
   );
 }
 
+function EmptyAccount() {
+  const confirm = useConfirm();
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setProblem(null);
+    setDone(false);
+    if (!password) {
+      setError("Enter your password to confirm.");
+      return;
+    }
+    setError(null);
+    const ok = await confirm({
+      title: "Empty your account?",
+      message:
+        "Your CV skills, proof, profile, job postings and their results, learning progress and saved links are removed. " +
+        "Your login and name stay, so you can restore a backup next. Download your data first if you might want it back.",
+      confirmLabel: "Empty my account",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await apiPost("/me/empty", { password });
+      setPassword("");
+      setDone(true);
+    } catch (err) {
+      setProblem(err instanceof ApiError ? err.message : "Could not reach the server. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card className="border-not-verified/40">
+      <SectionHeading
+        title="Empty my account"
+        hint="Start over, or make room to restore a backup. Removes everything you've saved; keeps your login."
+      />
+      <form onSubmit={handleSubmit} noValidate className="mt-4 flex max-w-sm flex-col gap-4">
+        <FormError message={problem} />
+        {done && (
+          <FormNotice>
+            ✓ Your account is empty. To bring a backup in, use{" "}
+            <Link href="/profile" className="font-medium underline underline-offset-2">
+              Restore from backup on My Profile
+            </Link>
+            .
+          </FormNotice>
+        )}
+        <PasswordField
+          label="Your password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          error={error}
+        />
+        <Button type="submit" variant="danger" className="self-start" disabled={busy}>
+          {busy ? "Emptying…" : "Empty my account"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
 export default function AccountPage() {
   const me = useMe();
   return (
@@ -102,6 +174,7 @@ export default function AccountPage() {
           </Button>
         </Card>
         <ChangePassword />
+        <EmptyAccount />
       </div>
     </Page>
   );

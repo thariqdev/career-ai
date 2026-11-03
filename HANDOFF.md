@@ -2498,6 +2498,11 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 101 (empty my account):**
+  - **`cv_replace_service.empty_account(db, user)`:** `clear_person` plus the user's own `learning_resources`; it keeps the email, password hash and `full_name`.
+  - **`POST /me/empty` {password}:** returns 422 `WrongCurrentPasswordError` on a wrong password; on success it commits and runs `note_cache.clear()`.
+  - **Frontend:** an `EmptyAccount` card on `/account` (password, then confirm dialog, then a link to Restore). The `RestoreFromBackup` wording now says "an account with none of your data yet" and links to it.
+  - **Tests:** `test_empty_account.py` (3).
 - **Stage 100 (claim the built-in user; multi-account restore):**
   - **`auth_service.claim_built_in_user(db, email, password, full_name)`:** gives `me@career-ai.local` your email and a scrypt hash; all its rows are kept.
     - It raises `AccountClaimError` if that user is missing or already has a password, `EmailTakenError` if another account owns the email, and refuses an invalid email or a weak password.
