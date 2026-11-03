@@ -47,7 +47,18 @@ function LoginForm() {
       }
     >
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
-        <FormError message={problem} />
+        {problem === "Wrong email or password." ? (
+          // Still never says whether the email has an account (that would let anyone probe
+          // emails), but points new people to sign-up.
+          <p role="alert" className="rounded-md bg-not-verified-bg px-3 py-2 text-sm text-not-verified">
+            Wrong email or password. New here?{" "}
+            <Link href="/signup" className="font-medium underline underline-offset-2">
+              Create an account
+            </Link>
+          </p>
+        ) : (
+          <FormError message={problem} />
+        )}
         <AuthField
           label="Email"
           type="email"
