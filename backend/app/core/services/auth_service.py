@@ -31,13 +31,17 @@ from app.core.exceptions import (
     EmailTakenError,
     InvalidCredentialsError,
     InvalidEmailError,
+    InvalidResetLinkError,
     WeakPasswordError,
+    WrongCurrentPasswordError,
 )
-from app.db.models import AuthSession, User
+from app.db.models import AuthSession, PasswordReset, User
 
 SESSION_DAYS = 30
 MAX_FAILED_LOGINS = 5
 LOCK_MINUTES = 5
+RESET_MINUTES = 30  # a forgot-password link works this long, once
+MAX_RESETS_PER_HOUR = 3  # per account, so nobody can flood someone's inbox
 MIN_PASSWORD_CHARS = 8
 MAX_PASSWORD_CHARS = 128
 # scrypt cost: n=2**14, r=8, p=1 (about 16 MB of memory and ~50 ms per check).
@@ -165,3 +169,61 @@ def end_all_sessions(db: Session, user: User) -> None:
     """Log this user out everywhere (used when the password changes, stage 98)."""
     db.execute(delete(AuthSession).where(AuthSession.user_id == user.id))
     db.flush()
+
+
+# --- forgot password and change password (stage 98) -------------------------------------
+
+
+def request_reset(db: Session, email: str) -> tuple[User, str] | None:
+    """A new one-time reset link's token for this email, or None (no such account, or
+    already MAX_RESETS_PER_HOUR links in the last hour). The caller replies the same way
+    either way, so nobody can find out which emails have accounts."""
+    user = find_user(db, email)
+    if user is None:
+        return None
+    hour_ago = _now() - timedelta(hours=1)
+    recent = [
+        moment for moment in db.scalars(select(PasswordReset.created_at).where(PasswordReset.user_id == user.id))
+        if _aware(moment) > hour_ago
+    ]
+    if len(recent) >= MAX_RESETS_PER_HOUR:
+        return None
+    token = secrets.token_urlsafe(32)
+    db.add(PasswordReset(user_id=user.id, token_hash=_token_hash(token), created_at=_now(),
+                         expires_at=_now() + timedelta(minutes=RESET_MINUTES)))
+    db.flush()
+    return user, token
+
+
+def _set_password(db: Session, user: User, new_password: str) -> None:
+    check_new_password(new_password)
+    user.password_hash = hash_password(new_password)
+    user.failed_logins = 0
+    user.locked_until = None
+    end_all_sessions(db, user)  # every other device is logged out
+
+
+def reset_password(db: Session, token: str, new_password: str) -> User:
+    """Use a reset link: set the new password, log out everywhere. Raises
+    InvalidResetLinkError for an unknown, used or expired link (nothing changes)."""
+    reset = db.scalar(select(PasswordReset).where(PasswordReset.token_hash == _token_hash(token or "")))
+    if reset is None or reset.used_at is not None or _aware(reset.expires_at) <= _now():
+        raise InvalidResetLinkError()
+    user = db.get(User, reset.user_id)
+    _set_password(db, user, new_password)
+    for open_link in db.scalars(
+        select(PasswordReset).where(PasswordReset.user_id == user.id, PasswordReset.used_at.is_(None))
+    ):
+        open_link.used_at = _now()  # this link, and any other unused one, can't be used again
+    db.flush()
+    return user
+
+
+def change_password(db: Session, user: User, current_password: str, new_password: str) -> None:
+    """While logged in: needs the current password. Logs out every session (the caller
+    starts a fresh one for this browser)."""
+    if not verify_password(current_password, user.password_hash):
+        raise WrongCurrentPasswordError()
+    _set_password(db, user, new_password)
+    db.flush()
+

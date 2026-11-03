@@ -23,5 +23,11 @@ services:
         sync: false
       - key: GEMINI_API_KEY        # from aistudio.google.com/apikey (never committed)
         sync: false
+      - key: SMTP_USER             # the Gmail address that sends forgot-password emails
+        sync: false
+      - key: SMTP_PASSWORD         # a Gmail app password (never committed)
+        sync: false
+      - key: APP_URL               # the website, for reset links, e.g. https://career-ai-inky-ten.vercel.app
+        sync: false
       - key: DEMO_RESET_TOKEN      # copy it into the GitHub secret of the same name
         generateValue: true

@@ -15,8 +15,9 @@ def _no_local_ai_reader(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OLLAMA_CHAT_MODEL", raising=False)
     monkeypatch.delenv("OLLAMA_KEEP_ALIVE", raising=False)
     for name in ("EMBED_PROVIDER", "CHAT_PROVIDER", "GEMINI_API_KEY", "GROQ_API_KEY", "GEMINI_EMBED_MODEL",
-                 "GROQ_CHAT_MODEL", "GEMINI_CHAT_MODEL", "EVAL_WRITER"):
-        monkeypatch.delenv(name, raising=False)  # tests never call a hosted AI API
+                 "GROQ_CHAT_MODEL", "GEMINI_CHAT_MODEL", "EVAL_WRITER",
+                 "SMTP_USER", "SMTP_PASSWORD", "SMTP_HOST", "SMTP_PORT", "MAIL_FROM", "APP_URL"):
+        monkeypatch.delenv(name, raising=False)  # tests never call a hosted AI API or send email
     from app import dependencies
     from app.rag import vector_store
 

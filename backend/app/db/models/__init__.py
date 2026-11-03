@@ -16,6 +16,7 @@ from app.db.models.dismissed_requirement import DismissedRequirement
 from app.db.models.assistant_feedback import AssistantFeedback
 from app.db.models.note_embedding import NoteEmbedding
 from app.db.models.auth_session import AuthSession
+from app.db.models.password_reset import PasswordReset
 
 __all__ = [
     "Skill",
@@ -38,4 +39,5 @@ __all__ = [
     "AssistantFeedback",
     "NoteEmbedding",
     "AuthSession",
+    "PasswordReset",
 ]

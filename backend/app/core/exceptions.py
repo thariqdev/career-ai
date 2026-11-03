@@ -314,6 +314,16 @@ class AccountLockedError(DomainError):
         super().__init__(f"Too many wrong passwords. Try again in {minutes} minutes.")
 
 
+class InvalidResetLinkError(DomainError):
+    def __init__(self) -> None:
+        super().__init__("This reset link is invalid, already used or expired. Ask for a new one.")
+
+
+class WrongCurrentPasswordError(DomainError):
+    def __init__(self) -> None:
+        super().__init__("Your current password is wrong.")
+
+
 class SkillSharedError(DomainError):
     """The skill dictionary is shared: one account may not rename, merge or delete a skill
     (or change its nicknames) while another account uses it."""
