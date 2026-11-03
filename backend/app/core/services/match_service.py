@@ -23,7 +23,7 @@ asks for the CV first instead of showing a discouraging 0%.
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.ai.providers.skill_list_extractor import SkillListExtractor
 from app.core.exceptions import AmbiguousSkillMatchError
@@ -58,7 +58,19 @@ class JobMatch:
         return round(100 * (len(self.proven) + len(self.on_cv)) / self.total) if self.total else 0
 
 
-def job_match(db: Session, user: User, job: JobDescription) -> JobMatch:
+@dataclass
+class MatchContext:
+    """What every job's match needs and that doesn't change between jobs: the skill
+    dictionary and the user's claims and CV marks. Built once per request and shared when
+    matching several jobs (stage 102: the job list went from hundreds of queries to a
+    handful). Don't keep it across requests."""
+
+    index: skill_service.SkillIndex
+    claims: dict[int, VerificationStatus]
+    on_cv: set[int]
+
+
+def match_context(db: Session, user: User) -> MatchContext:
     claims = {
         c.skill_id: c.status
         for c in db.scalars(select(UserSkill).where(UserSkill.user_id == user.id))
@@ -70,6 +82,14 @@ def job_match(db: Session, user: User, job: JobDescription) -> JobMatch:
             )
         )
     )
+    return MatchContext(skill_service.SkillIndex(db), claims, on_cv)
+
+
+def job_match(db: Session, user: User, job: JobDescription, context: MatchContext | None = None) -> JobMatch:
+    """One job's match, always computed from the current data. Pass `context` (from
+    match_context) when matching several jobs in one request; the answer is the same."""
+    context = context if context is not None else match_context(db, user)
+    claims, on_cv, index = context.claims, context.on_cv, context.index
     removed = set(
         db.scalars(
             select(DismissedRequirement.skill_id).where(DismissedRequirement.job_description_id == job.id)
@@ -78,6 +98,7 @@ def job_match(db: Session, user: User, job: JobDescription) -> JobMatch:
     requirements = list(
         db.scalars(
             select(JobRequirement)
+            .options(selectinload(JobRequirement.skill))
             .where(JobRequirement.job_description_id == job.id)
             .order_by(JobRequirement.id)
         )
@@ -98,9 +119,9 @@ def job_match(db: Session, user: User, job: JobDescription) -> JobMatch:
         asked.append(MatchItem(skill_id, name, is_required))
 
     # 1. Your skills the posting mentions (current taxonomy, so later additions count).
-    for proposal in SkillListExtractor(skill_service.skill_terms(db)).extract_requirements(job.raw_text).requirements:
+    for proposal in SkillListExtractor(index.terms).extract_requirements(job.raw_text).requirements:
         try:
-            skill = skill_service.resolve_skill(db, proposal.text)
+            skill = index.resolve(proposal.text)
         except AmbiguousSkillMatchError:
             continue
         if skill is not None:
@@ -112,7 +133,7 @@ def job_match(db: Session, user: User, job: JobDescription) -> JobMatch:
         else:
             add(None, requirement.requirement_text, requirement.is_required)
     # 3. Common skills the posting names that you haven't saved: missing by definition.
-    for suggestion in suggestion_service.suggest(db, job.raw_text):
+    for suggestion in suggestion_service.suggest(db, job.raw_text, index.terms):
         add(None, suggestion.name, True)
 
     match = JobMatch(has_cv=bool(on_cv or claims), asked=list(asked))

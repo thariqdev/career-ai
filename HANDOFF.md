@@ -2498,6 +2498,17 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 102 (N+1 fix, keep-awake):**
+  - **`skill_service.list_skills`** now uses `selectinload(Skill.aliases)`, so `skill_terms` takes 2 queries instead of one per skill.
+  - **`skill_service.SkillIndex(db)`:** the dictionary read once per request, with `.terms` (== `skill_terms`) and `.resolve(text)` (same answers as `resolve_skill`, including `AmbiguousSkillMatchError`).
+  - **`match_service.MatchContext` / `match_context(db, user)`:** the index plus the user's claims and CV marks.
+    - `job_match(db, user, job, context=None)` builds one when not given. Requirements are loaded with `selectinload(JobRequirement.skill)`.
+    - `suggestion_service.suggest(db, text, terms=None)` reuses the loaded terms.
+    - The job list route and `chunker.job_matches` share one context across jobs.
+  - **Query counts** (demo career plus 20 extra skills, in-memory SQLite): job list 214 → 19; match 70 → 10; prep 75 → 15; first assistant ask 364 → 164.
+  - **Tests:** `test_query_counts.py` (3): the job list stays ≤25 queries and doesn't grow with more skills; shared and unshared matches are equal; the index resolves like `resolve_skill`. Reverting to the per-lookup resolve fails the test (39 queries).
+  - **Workflows:** `.github/workflows/keep-awake.yml` calls `${{ vars.DEMO_API_URL }}/health` every 10 minutes. `demo-reset.yml` is now manual-only (DEMO_MODE is false live, so `/demo/reset` returns 404).
+  - **Open:** the assistant's first answer is still 164 queries (the notes fingerprint hashes every table; chunker lazy loads); the database region (option C) is unchanged.
 - **Stage 101 (empty my account):**
   - **`cv_replace_service.empty_account(db, user)`:** `clear_person` plus the user's own `learning_resources`; it keeps the email, password hash and `full_name`.
   - **`POST /me/empty` {password}:** returns 422 `WrongCurrentPasswordError` on a wrong password; on success it commits and runs `note_cache.clear()`.

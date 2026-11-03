@@ -65,12 +65,13 @@ def mentioned(text: str, extra_names: Iterable[str] = ()) -> set[str]:
     return found
 
 
-def suggest(db: Session, text: str) -> list[Suggestion]:
-    """Catalogue skills mentioned in `text` that aren't saved yet, in text order."""
+def suggest(db: Session, text: str, terms: dict[str, list[str]] | None = None) -> list[Suggestion]:
+    """Catalogue skills mentioned in `text` that aren't saved yet, in text order. `terms`
+    (skill_service.skill_terms) may be passed in when already loaded (stage 102)."""
     saved = {
         skill_service.normalize_text(term)
-        for terms in skill_service.skill_terms(db).values()
-        for term in terms
+        for names in (terms if terms is not None else skill_service.skill_terms(db)).values()
+        for term in names
     }
     found: list[tuple[int, Suggestion]] = []
     for skill, patterns in _PATTERNS:

@@ -1,13 +1,14 @@
-# Puts the public demo back to its made-up starting data once a day (stage 94), so
+# Puts the public demo back to its made-up starting data (stage 94), so
 # visitors' changes don't pile up. Needs, in GitHub > Settings > Secrets and variables:
 #   secret   DEMO_RESET_TOKEN  (the same value as on Render)
 #   variable DEMO_API_URL      (the Render backend URL, e.g. https://career-ai-api.onrender.com)
 name: Reset the public demo
 
+# Manual only (stage 102): the live site now runs as a real multi-user app (DEMO_MODE=false),
+# where /demo/reset answers 404, so a nightly run would just fail. Put the schedule back if
+# the site is ever turned into a public demo again.
 on:
-  schedule:
-    - cron: "0 3 * * *"   # every day at 03:00 UTC
-  workflow_dispatch: {}   # and a "Run workflow" button for a manual reset
+  workflow_dispatch: {}   # a "Run workflow" button for a manual reset
 
 jobs:
   reset:

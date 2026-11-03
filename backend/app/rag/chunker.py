@@ -83,7 +83,8 @@ def _join(names: list[str]) -> str:
 def job_matches(db: Session, user: User) -> dict[int, "match_service.JobMatch"]:
     """Every job's current match (the slow part of building notes: ~0.7 s on real data)."""
     jobs = db.scalars(select(JobDescription).where(JobDescription.user_id == user.id))
-    return {job.id: match_service.job_match(db, user, job) for job in jobs}
+    context = match_service.match_context(db, user)  # shared by every job (stage 102)
+    return {job.id: match_service.job_match(db, user, job, context) for job in jobs}
 
 
 def build_chunks(db: Session, user: User, matches: dict | None = None) -> list[Chunk]:

@@ -20,7 +20,7 @@ SessionLocal uses autoflush=False.
 """
 
 from sqlalchemy import delete, func, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import (
     AliasNotFoundError,
@@ -141,9 +141,40 @@ def similar_skills(db: Session, name: str) -> list[Skill]:
 
 
 def list_skills(db: Session) -> list[Skill]:
-    """All canonical skills ordered by name. Read-only."""
+    """All canonical skills ordered by name, nicknames loaded in the same go (one extra
+    query in total, not one per skill: stage 102). Read-only."""
     db.flush()
-    return list(db.scalars(select(Skill).order_by(Skill.name, Skill.id)))
+    return list(db.scalars(select(Skill).options(selectinload(Skill.aliases)).order_by(Skill.name, Skill.id)))
+
+
+class SkillIndex:
+    """The skill dictionary, read ONCE (stage 102), for code that resolves many texts:
+    matching every job's posting used to re-read all skills and nicknames per lookup
+    (hundreds of queries for one page). Same answers as resolve_skill / skill_terms, from
+    memory. Build it, use it within one request, then throw it away (it doesn't see
+    skills added after it was built)."""
+
+    def __init__(self, db: Session) -> None:
+        self.skills = list_skills(db)
+        self.terms: dict[str, list[str]] = {
+            skill.name: [skill.name, *(a.alias for a in skill.aliases)] for skill in self.skills
+        }
+        self._by_text: dict[str, dict[int, Skill]] = {}
+        for skill in self.skills:
+            for term in self.terms[skill.name]:
+                self._by_text.setdefault(normalize_text(term), {})[skill.id] = skill
+
+    def resolve(self, text: str) -> Skill | None:
+        """Exactly like resolve_skill: None, the one match, or AmbiguousSkillMatchError."""
+        normalized = normalize_text(text)
+        if not normalized:
+            return None
+        matches = list(self._by_text.get(normalized, {}).values())
+        if not matches:
+            return None
+        if len(matches) > 1:
+            raise AmbiguousSkillMatchError(text, [skill.name for skill in matches])
+        return matches[0]
 
 
 def skill_terms(db: Session) -> dict[str, list[str]]:

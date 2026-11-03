@@ -104,8 +104,9 @@ def list_job_descriptions(
         .order_by(JobDescription.created_at.desc(), JobDescription.id.desc())
     )
     items = []
+    context = match_service.match_context(db, user)  # shared by every job (stage 102)
     for job in jobs:
-        match = match_service.job_match(db, user, job)
+        match = match_service.job_match(db, user, job, context)
         comparable = match.has_cv and match.total > 0
         items.append(
             JobDescriptionListItemResponse(
