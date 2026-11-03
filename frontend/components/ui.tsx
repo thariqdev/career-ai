@@ -39,7 +39,8 @@ export function Button({
   type = "button",
   ...props
 }: ComponentPropsWithRef<"button"> & { variant?: Variant; size?: Size }) {
-  return <button type={type} className={buttonClasses(variant, className, size)} {...props} />;
+  // suppressHydrationWarning: autofill extensions stamp attributes (fdprocessedid) on buttons.
+  return <button type={type} suppressHydrationWarning className={buttonClasses(variant, className, size)} {...props} />;
 }
 
 /** One option in a row of choices (status, progress): filled when selected. */

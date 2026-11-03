@@ -354,7 +354,7 @@ Locally the assistant runs on Ollama (free, nothing leaves your computer). A fre
 
 1. **Database (Neon):** create a project and copy its connection string (`postgresql://...?sslmode=require` works as pasted).
 2. **Backend (Render):** New > Blueprint > this repo. `render.yaml` builds `backend/Dockerfile`, which runs `alembic upgrade head` and starts the API. Fill in `DATABASE_URL` (from Neon) and `CORS_ORIGINS` (the Vercel URL from step 3; you can set it after step 3). `DEMO_RESET_TOKEN` is generated: copy it for step 4.
-3. **Frontend (Vercel):** import this repo with root directory `frontend`, and set `NEXT_PUBLIC_API_BASE_URL` (the Render URL) and `NEXT_PUBLIC_DEMO_MODE=true` (shows the demo banner).
+3. **Frontend (Vercel):** import this repo with root directory `frontend`, and set `BACKEND_URL` (the Render URL; the site forwards `/api/...` to it so the login cookie works) and, for a public demo only, `NEXT_PUBLIC_DEMO_MODE=true` (shows the demo banner).
 4. **Daily reset (GitHub):** in the repo's Settings > Secrets and variables > Actions, add the secret `DEMO_RESET_TOKEN` and the variable `DEMO_API_URL` (the Render URL). `.github/workflows/demo-reset.yml` then runs every day at 03:00 UTC, and on demand from the Actions tab.
 5. **AI on the server (optional, free):** paste `GROQ_API_KEY` and `GEMINI_API_KEY` into Render's Environment (both are `sync: false` in `render.yaml`, so they're never in the repo). `render.yaml` already sets `EMBED_PROVIDER=gemini` and `CHAT_PROVIDER=groq`. Without the keys the Assistant still works, answering with the matching notes.
 

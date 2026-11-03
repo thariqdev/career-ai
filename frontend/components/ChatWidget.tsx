@@ -7,6 +7,7 @@ import { apiGet } from "@/lib/api";
 import ChatPanel from "@/components/ChatPanel";
 import { pageTarget, type PageContext } from "@/lib/chat";
 import { jobLabel } from "@/lib/jobs";
+import { isAuthPage } from "@/lib/auth";
 import { useChat } from "@/lib/chatStore";
 import type { JobDescription, Skill } from "@/lib/types";
 
@@ -15,7 +16,12 @@ import type { JobDescription, Skill } from "@/lib/types";
  * panel. On a job's or skill's page, the suggestions are about that job or skill.
  * Esc closes the panel and focus returns to the button.
  */
+/** The 💬 assistant, on every page except the account pages (stage 99). */
 export default function ChatWidget() {
+  return isAuthPage(usePathname()) ? null : <ChatWidgetInner />;
+}
+
+function ChatWidgetInner() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [context, setContext] = useState<PageContext>(null);
