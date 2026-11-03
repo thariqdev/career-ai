@@ -218,7 +218,7 @@ def test_restore_into_a_non_empty_app_is_refused(client: TestClient, engines) ->
     response = _upload(client, source, backup)
 
     assert response.status_code == 409
-    assert "empty app" in response.json()["detail"]
+    assert "none of your data yet" in response.json()["detail"]
     assert _row_counts(source) == before
 
 

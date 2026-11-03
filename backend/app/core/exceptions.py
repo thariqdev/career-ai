@@ -175,11 +175,11 @@ class ImportFileError(DomainError):
 
 
 class AppNotEmptyError(DomainError):
-    """Restoring is only allowed into an app with no skills and none of your data."""
+    """Restoring is only allowed into an account with none of your data yet."""
 
     def __init__(self) -> None:
         super().__init__(
-            "Restore only works on an empty app (no skills and none of your data yet), so "
+            "Restore only works on an account with none of your data yet, so "
             "nothing you already have is overwritten or merged by guesswork."
         )
 
@@ -322,6 +322,10 @@ class InvalidResetLinkError(DomainError):
 class WrongCurrentPasswordError(DomainError):
     def __init__(self) -> None:
         super().__init__("Your current password is wrong.")
+
+
+class AccountClaimError(DomainError):
+    """The built-in user can't be claimed (missing, or it already has a password)."""
 
 
 class SkillSharedError(DomainError):

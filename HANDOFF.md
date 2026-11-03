@@ -2498,6 +2498,47 @@ Added 2026-10-10. This is the user's request to learn RAG by building it; the te
   - **when Ollama is installed:** pull `nomic-embed-text`, run `python -m app.rag.evaluate`, calibrate `MIN_COSINE` from real cosines, record bm25 vs vector vs hybrid in the guide, then set `OLLAMA_EMBED_MODEL` in `.env`
   - **when Ollama is installed (generation):** `ollama pull llama3.2`, set `OLLAMA_CHAT_MODEL=llama3.2`, and check live answers (citations, the "couldn't find" rule, follow-ups, speed)
   - ideas: grow the golden and labelled sets with paraphrased questions and answers; a stronger judge model, if one is ever affordable locally
+- **Stage 100 (claim the built-in user; multi-account restore):**
+  - **`auth_service.claim_built_in_user(db, email, password, full_name)`:** gives `me@career-ai.local` your email and a scrypt hash; all its rows are kept.
+    - It raises `AccountClaimError` if that user is missing or already has a password, `EmailTakenError` if another account owns the email, and refuses an invalid email or a weak password.
+    - `scripts/claim_account.py --email … [--name …]` asks for the password twice (getpass) and changes nothing on a mismatch or error.
+  - **`import_service.app_is_empty`:** now means none of *this user's* records (claims, evidence, profile, jobs, CV marks, progress, links); shared skills are ignored.
+  - **`restore`:** maps each backup skill to an existing dictionary skill with `skill_service.resolve_skill` (by name or nickname) or creates it.
+    - Nicknames are added (collisions skipped) only to new skills, or to existing ones no other account uses.
+    - The `AppNotEmptyError` text now says "an account with none of your data yet".
+  - **Local upgrade path:** `pg_dump` backup, then `alembic upgrade head`, then `scripts/claim_account.py`, then log in.
+    - Rehearsed on a throwaway copy of the real local DB (restored via pg_dump/psql): 4 jobs kept after the claim and after the download-and-restore.
+  - **Live path:** deploy, sign up, then restore the local "Download my data" file. The old live rows stay under the unclaimed built-in user.
+  - **Tests:** `test_claim_and_restore.py` (4). `test_import_api` now expects the new message.
+- **Stage 99 (account pages):**
+  - **One site for the browser:** `next.config.ts` rewrites `/api/:path*` to `${BACKEND_URL}/:path*` (server-only env var, default `127.0.0.1:8000`, baked in at build).
+    - `lib/api.ts` always calls `/api` with `credentials: same-origin`, so the session cookie is first-party. `NEXT_PUBLIC_API_BASE_URL` is no longer used.
+    - A 401 on any non-`/auth/` call sends the person to `/login?next=…`.
+  - **`proxy.ts`** (Next 16's name for middleware): an optimistic cookie-presence check.
+    - No `career_ai_session` cookie: redirect to `loginUrl(path)`. Logged in on `/login` or `/signup`: redirect to `/`.
+    - The matcher skips `api`, `_next` and files. The backend still checks every request.
+  - **`lib/auth.ts`:** `isAuthPage`, `safeNext` (relative paths only: no `//` or backslash, never an account page), `loginUrl`, `passwordProblem`, `emailProblem` (same rules as the backend). Tested in `tests/auth.test.mjs`.
+  - **Pages:** `app/login`, `app/signup` (then `/cv`), `app/forgot-password`, `app/reset-password` (`?token=`; `useSearchParams` inside `<Suspense>`), and `app/account` (change password, log out).
+    - Shared frame and fields are in `components/AuthCard.tsx` (`AuthCard`, `AuthField`, `PasswordField` with Show/Hide, `FormError`, `FormNotice`).
+    - After log in, sign up or reset, the page does a full load (`window.location.assign`) so the header, chat and caches start as the new user.
+  - **Header:** `AppHeader` and `ChatWidget` render nothing on account pages. `UserMenu` shows the name, email, Account and Log out (`lib/session.ts` `logOut`).
+  - **Deploy:** on Vercel, set `BACKEND_URL` to the Render URL (and drop `NEXT_PUBLIC_API_BASE_URL`); `CORS_ORIGINS` is no longer needed. On Render, set `APP_URL` to the Vercel URL for reset links.
+  - **Open:** existing local and live data belongs to the old built-in user, which has no password (stage 100).
+- **Stage 98 (forgot and change password):**
+  - **Table `password_resets`:** `token_hash` = SHA-256 of the emailed token (unique), `expires_at` (30 minutes), `used_at`, `created_at`. Migration `f2b7c1d9e450`; `note_cache.IGNORED` includes it.
+  - **`auth_service`:**
+    - `request_reset` returns None for an unknown email or after 3 links in an hour, so the route's reply never changes.
+    - `reset_password` raises 400 `InvalidResetLinkError` for an unknown, used or expired link. On success it sets the hash, clears the lockout, ends all sessions, and marks every open link used.
+    - `change_password` needs the current password (422 `WrongCurrentPasswordError` otherwise) and ends all sessions.
+  - **`mail_service`:**
+    - stdlib `smtplib.SMTP_SSL`, by default `smtp.gmail.com:465`. Settings: `SMTP_USER`, `SMTP_PASSWORD` (Gmail app password), optional `SMTP_HOST` / `SMTP_PORT` / `MAIL_FROM`, and `APP_URL` for the link `{APP_URL}/reset-password?token=...`.
+    - `send_email` never raises. When SMTP isn't set, it only logs that nothing was sent; the link is never logged.
+  - **Routes:**
+    - `POST /auth/forgot-password` returns 202 with the same message every time; the email goes out as a `BackgroundTasks` job, after the reply.
+    - `POST /auth/reset-password` (token, new_password) logs you in here.
+    - `POST /auth/change-password` (logged in) starts a fresh session for this browser.
+  - **Config:** `.env.example`; `render.yaml` sets `SMTP_USER`, `SMTP_PASSWORD` and `APP_URL` as `sync: false`. Conftest clears all mail variables.
+  - **Tests:** `test_password_reset.py` (8).
 - **Stage 97 (accounts, backend):**
   - **Model and migration `d4e8b2a6c913`:**
     - `users` gains `password_hash` (None = can't log in, e.g. the old built-in user), `failed_logins` and `locked_until`.

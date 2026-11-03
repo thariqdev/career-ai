@@ -31,9 +31,11 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
     AppNotEmptyError,
+    SkillNameCollisionError,
     ImportFileError,
     InvalidResourceUrlError,
 )
+from app.core.services import skill_service
 from app.core.services.skill_service import normalize_text
 from app.core.web_links import require_web_link
 from app.db.models import (
@@ -419,11 +421,11 @@ def _as_utc(value: datetime | None) -> datetime | None:
 
 
 def app_is_empty(db: Session, user: User) -> bool:
-    """No skills at all, and none of this user's own records."""
+    """None of this user's own records. The skill dictionary is shared between accounts
+    (stage 97), so other people's skills don't count (stage 100)."""
     db.flush()
-    if db.scalar(select(func.count()).select_from(Skill)):
-        return False
-    for model in (UserSkill, Evidence, Project, WorkExperience, Education, JobDescription, CVSkillPresence, LearningProgress):
+    for model in (UserSkill, Evidence, Project, WorkExperience, Education, JobDescription, CVSkillPresence,
+                  LearningProgress, LearningResource):
         if db.scalar(select(func.count()).select_from(model).where(model.user_id == user.id)):
             return False
     return True
@@ -459,12 +461,22 @@ def restore(db: Session, user: User, raw: bytes) -> dict[str, int]:
         db.flush()
         return obj
 
-    skill = {
-        s.id: flushed(Skill(name=s.name.strip(), category=s.category)) for s in file.skills
-    }
+    # The dictionary is shared (stage 100): a backup skill that already exists under that name
+    # or a nickname is reused, not duplicated. Missing ones are created with their nicknames.
+    # An existing skill only gains the backup's nicknames when no other account uses it.
+    skill: dict[int, Skill] = {}
     for s in file.skills:
-        for alias in s.aliases:
-            db.add(SkillAlias(skill_id=skill[s.id].id, alias=alias.strip()))
+        existing = skill_service.resolve_skill(db, s.name)
+        if existing is None:
+            skill[s.id] = flushed(Skill(name=s.name.strip(), category=s.category))
+        else:
+            skill[s.id] = existing
+        if existing is None or not skill_service.used_by_another_account(db, existing, user):
+            for alias in s.aliases:
+                try:
+                    skill_service.add_alias(db, skill[s.id], alias.strip())
+                except SkillNameCollisionError:
+                    pass  # that spelling already names a skill (maybe this one): nothing to add
 
     project = {
         p.id: flushed(

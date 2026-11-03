@@ -27,6 +27,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import (
+    AccountClaimError,
     AccountLockedError,
     EmailTakenError,
     InvalidCredentialsError,
@@ -227,3 +228,31 @@ def change_password(db: Session, user: User, current_password: str, new_password
     _set_password(db, user, new_password)
     db.flush()
 
+
+# --- claiming the old built-in user (stage 100) -------------------------------------------
+
+
+def claim_built_in_user(db: Session, email: str, password: str, full_name: str | None = None) -> User:
+    """Turn the pre-accounts built-in user (me@career-ai.local, no password) into a real
+    account: your email and password, all its data kept. Refuses when there's nothing to
+    claim, when it already has a password, or when the email belongs to another account."""
+    from app.core.services.user_service import DEFAULT_USER_EMAIL
+
+    user = find_user(db, DEFAULT_USER_EMAIL)
+    if user is None:
+        raise AccountClaimError("There's no built-in user to claim (it was claimed already, or never created).")
+    if user.password_hash is not None:
+        raise AccountClaimError("The built-in user already has a password: log in instead.")
+    clean = normalize_email(email)
+    if not _EMAIL.match(clean):
+        raise InvalidEmailError()
+    other = find_user(db, clean)
+    if other is not None and other.id != user.id:
+        raise EmailTakenError()
+    check_new_password(password)
+    user.email = clean
+    user.password_hash = hash_password(password)
+    if full_name and full_name.strip():
+        user.full_name = full_name.strip()
+    db.flush()
+    return user
