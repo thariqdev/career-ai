@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "career-ai-backend"
 version = "0.1.0"
 description = "Backend for the Career AI application"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.12"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
