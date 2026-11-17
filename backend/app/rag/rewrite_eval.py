@@ -230,7 +230,6 @@ def decide_on_fresh(runs: int = FRESH_RUNS) -> int:
 
 
 def main() -> int:
-    import os
     import sys
 
     from app.rag.evaluate import K, _ollama_embedder, eval_chat

@@ -22,6 +22,7 @@ from app.core.services.skill_service import normalize_text
 from app.core.skill_catalog import CATALOG
 from app.db.models import (
     CVSkillPresence,
+    ComparisonResult,
     Evidence,
     JobDescription,
     JobRequirement,

@@ -16,7 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.exceptions import SkillNameCollisionError
 from app.core.services.user_service import get_or_create_default_user
-from app.db.models import CVSkillPresence, JobDescription, JobRequirement, Skill, SkillAlias, User
+from app.db.models import CVSkillPresence, JobDescription, JobRequirement, Skill, SkillAlias
 from app.dependencies import get_db
 from app.main import app
 from database import Base

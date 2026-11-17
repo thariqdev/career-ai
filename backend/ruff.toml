@@ -1,0 +1,7 @@
+target-version = "py312"
+
+[lint]
+select = ["E9", "F"]
+
+[lint.per-file-ignores]
+"app/db/models/*" = ["F821"]

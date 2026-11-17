@@ -39,7 +39,7 @@ from app.db.models import Skill, User
 from app.rag import general, note_cache, smalltalk, tools
 from app.rag.actions import Action, detect_action, reply_for
 from app.rag.bm25 import BM25Index
-from app.rag.chunker import Chunk, build_chunks
+from app.rag.chunker import Chunk
 from app.rag.embeddings import (
     DEFAULT_BASE_URL,
     GEMINI_EMBED_MODEL,

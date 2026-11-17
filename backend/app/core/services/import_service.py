@@ -51,7 +51,6 @@ from app.db.models import (
     LearningResource,
     Project,
     Skill,
-    SkillAlias,
     User,
     UserSkill,
     UserSkillEvidence,
